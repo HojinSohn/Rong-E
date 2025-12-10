@@ -90,18 +90,3 @@ class JobTracker:
         except Exception as e:
             print(f"Sheet Error: {e}")
             return False
-
-
-if __name__ == "__main__":
-    try:
-        print("Attempting to connect...")
-        gc = gspread.service_account(filename="credentials.json")
-
-    except Exception as e:
-        print("\n--- CONNECTION FAILED ---")
-        print(e)
-    try:
-        tracker = JobTracker()
-        tracker.find_and_update_empty_row("META", "AI Intern", "https://www.metacareers.com")
-    except Exception as e:
-        print(f"Critical Failure: {e}")

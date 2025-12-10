@@ -1,7 +1,8 @@
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from tools import get_current_time, web_search, record_job_application
+from tools import get_tools, get_tool_map
 from utils import speak
+from memory import memory
 
 class EchoAgent:
     def __init__(self):
@@ -11,14 +12,16 @@ class EchoAgent:
         )
 
         # Bind the tools to the model so it knows they exist
-        self.tools = [get_current_time, web_search, record_job_application]
+        self.tools = get_tools()
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
         starting_system_message = "You are an intelligent agent, named Echo, that was born to help me, Hojin Sohn. I, Hojin, am your creator. Use the tools at your disposal to answer my questions."
         self.messages = [SystemMessage(content=starting_system_message)]
 
-    def run(self, user_query):
-        print(f"\nUser: {user_query}")
+    def run(self, user_query, page_content=None, url=None):
+        print(f"\nUser: {user_query}\nPage Content: {page_content}\nURL: {url}")
+        
+        memory.set_page_info(page_content, url)
         self.messages.append(HumanMessage(content=user_query))
         
         # Safety: Prevent infinite loops (e.g., if the agent keeps searching forever)
@@ -38,13 +41,8 @@ class EchoAgent:
                     tool_name = tool_call["name"].lower()
                     tool_args = tool_call["args"]
                     tool_call_id = tool_call["id"]  # Critical for linking result to request
-                    
-                    # Map names to functions
-                    tool_map = {
-                        "get_current_time": get_current_time, 
-                        "web_search": web_search,
-                        "record_job_application": record_job_application
-                    }
+
+                    tool_map = get_tool_map()
                     
                     selected_tool = tool_map.get(tool_name)
                     
@@ -62,6 +60,7 @@ class EchoAgent:
                             name=tool_name
                         ))
             else:
+                print(f"Output: {ai_msg}")
                 print(f"Agent: {ai_msg.content}")
                 speak(ai_msg.content)
-                break  # Exit the loop
+                return ai_msg.content

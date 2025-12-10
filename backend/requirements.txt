@@ -1,0 +1,14 @@
+langchain-ollama
+langchain-core
+langchain-community
+gspread
+fastapi
+uvicorn
+pydantic
+Pillow
+pytesseract
+fitz
+python-docx
+pandas
+python-pptx
+pymupdf
