@@ -15,10 +15,15 @@ class EchoAgent:
         self.tools = get_tools()
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
-        starting_system_message = "You are an intelligent agent, named Echo, that was born to help me, Hojin Sohn. I, Hojin, am your creator. Use the tools at your disposal to answer my questions."
+        starting_system_message = '''You are Echo, an AI assistant for Hojin Sohn.
+Be concise, logical, and formal.
+Follow Hojin’s instructions exactly.
+Use tools whenever they help.
+Ask only essential clarification questions.
+No emojis.'''
         self.messages = [SystemMessage(content=starting_system_message)]
 
-    def run(self, user_query, page_content=None, url=None):
+    async def run(self, user_query, page_content=None, url=None, callback=None):
         print(f"\nUser: {user_query}\nPage Content: {page_content}\nURL: {url}")
         
         memory.set_page_info(page_content, url)
@@ -27,7 +32,6 @@ class EchoAgent:
         # Safety: Prevent infinite loops (e.g., if the agent keeps searching forever)
         max_iterations = 5
         iteration = 0
-
         while iteration < max_iterations:
             iteration += 1
             
@@ -47,7 +51,8 @@ class EchoAgent:
                     selected_tool = tool_map.get(tool_name)
                     
                     if selected_tool:
-                        speak(f"I am using {tool_name}.")
+                        if callback:
+                            await callback(f"Loading {tool_name}.")
                         # Debugging output
                         print(f"   > Tool: {tool_name} with args {tool_args}")
                         # Execute
@@ -62,5 +67,4 @@ class EchoAgent:
             else:
                 print(f"Output: {ai_msg}")
                 print(f"Agent: {ai_msg.content}")
-                speak(ai_msg.content)
                 return ai_msg.content
