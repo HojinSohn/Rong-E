@@ -3,3 +3,4 @@ __pycache__/
 credentials.json
 config.json
 .env
+tts/
