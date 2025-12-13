@@ -79,8 +79,24 @@ def get_page_content():
     print(f"Page Content: {content}\nURL: {url}")
     return {"page_content": content, "url": url}
 
+@tool("open_application", description="Opens a specified application on the system.")
+def open_application(app_name: str):
+    """Opens a specified application on the system."""
+    try: 
+        if platform.system() == "Windows":
+            os.startfile(app_name)
+        elif platform.system() == "Darwin":  # macOS
+            os.system(f"open -a {app_name}")
+        elif platform.system() == "Linux":
+            os.system(f"xdg-open {app_name}")
+        else:
+            return f"Unsupported operating system: {platform.system()}"
+    except Exception as e:
+        return f"Failed to open {app_name}: {e}"
+    return f"Opened {app_name}"
+
 def get_tools():
-    return [get_current_time, web_search, record_job_application, list_directory, read_file, collect_files, separate_files, pwd, get_page_content]
+    return [get_current_time, web_search, record_job_application, list_directory, read_file, collect_files, separate_files, pwd, get_page_content, open_application]
 
 def get_tool_map():
     tool_map = {
@@ -92,6 +108,7 @@ def get_tool_map():
         "collect_files": collect_files,
         "separate_files": separate_files,
         "pwd": pwd,
-        "get_page_content": get_page_content
+        "get_page_content": get_page_content,
+        "open_application": open_application
     }
     return tool_map

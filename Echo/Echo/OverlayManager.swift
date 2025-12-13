@@ -3,8 +3,10 @@ import AppKit
 
 class OverlayWindow: NSPanel {
     init(contentRect: NSRect, backing: NSWindow.BackingStoreType, defer flag: Bool) {
-        super.init(contentRect: contentRect, styleMask: [.nonactivatingPanel], backing: backing, defer: flag)
-        
+        super.init(contentRect: contentRect, 
+           styleMask: [.borderless, .nonactivatingPanel], // Add .borderless
+           backing: backing, 
+           defer: flag)
         // 1. Allow this window to sit over full-screen apps
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         
@@ -30,13 +32,20 @@ class OverlayWindow: NSPanel {
 
 class WindowManager: NSObject, ObservableObject {
     var window: OverlayWindow?
+    var textWindow: OverlayWindow?
+
+    var context = AppContext()
+    var themeManager = ThemeManager() // Initialize ThemeManager
 
     func showOverlay() {
         if window == nil {
             // Create the hosting controller with your SwiftUI View
-            let contentView = ContentView() // Your view here
+            // Inject ThemeManager
+            let contentView = ContentView()
+                .environmentObject(context)
+                .environmentObject(themeManager)
             let hostingController = NSHostingController(rootView: contentView)
-            
+
             // Calculate screen size
             let screenRect = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
             let width: CGFloat = 600
@@ -49,9 +58,31 @@ class WindowManager: NSObject, ObservableObject {
             // Initialize the custom NSPanel
             window = OverlayWindow(contentRect: frame, backing: .buffered, defer: false)
             window?.contentViewController = hostingController
-            
+
             // Show it without activating the app (keeps focus on your other work)
             window?.orderFrontRegardless()
+        }
+
+        if textWindow == nil {
+            // If textWindow is nil, create and show it
+            let textView = TextView()
+                            .environmentObject(context)
+                            .environmentObject(themeManager)
+            let textHostingController = NSHostingController(rootView: textView)
+
+            let screenRect = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+            let width: CGFloat = 400
+            let height: CGFloat = 400
+            // put it on left side of screen
+            
+            let xPos = screenRect.minX + 40
+            let yPos = screenRect.maxY - height // Stick to top
+            let textFrame = NSRect(x: xPos, y: yPos, width: width, height: height)
+            textWindow = OverlayWindow(contentRect: textFrame, backing: .buffered, defer: false)
+            textWindow?.contentViewController = textHostingController
+            textWindow?.orderFrontRegardless()
+            // print
+            print("Text window created and shown.")
         }
     }
 }

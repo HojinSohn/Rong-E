@@ -1,13 +1,6 @@
 import SwiftUI
 import Combine
 
-// MARK: - Monochrome Style
-extension Color {
-    static let themeAccent = Color.white
-    static let themeBackground = Color.black.opacity(0.6)
-    static let themeGray = Color.white.opacity(0.3)
-}
-
 struct ContentView: View {
     // --- State ---
     @State private var isHovering = false
@@ -18,6 +11,9 @@ struct ContentView: View {
     @State private var shouldAnimateResponse = true 
     
     @StateObject private var client = EchoSocketClient()
+    
+    @EnvironmentObject var context: AppContext
+    @EnvironmentObject var themeManager: ThemeManager
 
     @State private var isListening = false
     @State private var isProcessing = false
@@ -30,55 +26,62 @@ struct ContentView: View {
     }
     
     var body: some View {
-        ZStack {
-            // 1. Dynamic Background
-            RoundedRectangle(cornerRadius: isExpanded ? 18 : 25)
-                .fill(Color.themeBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: isExpanded ? 18 : 25)
-                        .strokeBorder(
-                            LinearGradient(
-                                gradient: Gradient(colors: [.themeGray.opacity(0.1), .themeGray.opacity(0.5), .themeGray.opacity(0.1)]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 5)
-                .frame(width: isExpanded ? 600 : 140, height: isExpanded ? 160 : 50)
-                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isExpanded)
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .top) { // Align content to top
+                // 1. Dynamic Background
+                RoundedRectangle(cornerRadius: isExpanded ? 18 : 25)
+                    .fill(themeManager.current.background)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: isExpanded ? 18 : 25)
+                            .strokeBorder(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        themeManager.current.secondary.opacity(0.1),
+                                        themeManager.current.secondary.opacity(0.5),
+                                        themeManager.current.secondary.opacity(0.1)
+                                    ]),
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 5)
+                    .frame(width: isExpanded ? 600 : 140, height: isExpanded ? 160 : 50, alignment: .top) // Anchor top
+                    .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isExpanded)
 
-            // 2. Content Switcher
-            if isExpanded {
-                FullDashboardView(
-                    inputMode: $inputMode,
-                    inputText: $inputText,
-                    aiResponse: $aiResponse,
-                    isListening: $isListening,
-                    isProcessing: $isProcessing,
-                    activeTool: $activeTool,
-                    shouldAnimate: $shouldAnimateResponse, // Pass the binding
-                    isInputFocused: $isInputFocused,
-                    toggleListening: toggleListening,
-                    submitQuery: submitQuery
-                )
-                .transition(.opacity.combined(with: .scale))
-            } else {
-                CompactStatusView(isProcessing: isProcessing)
+                // 2. Content Switcher
+                if isExpanded {
+                    FullDashboardView(
+                        inputMode: $inputMode,
+                        inputText: $inputText,
+                        isListening: $isListening,
+                        isProcessing: $isProcessing,
+                        activeTool: $activeTool,
+                        shouldAnimate: $shouldAnimateResponse,
+                        isInputFocused: $isInputFocused,
+                        toggleListening: toggleListening,
+                        submitQuery: submitQuery
+                    )
                     .transition(.opacity.combined(with: .scale))
+                } else {
+                    CompactStatusView(isProcessing: isProcessing)
+                        .transition(.opacity.combined(with: .scale))
+                }
             }
+            Spacer() // push other content down
         }
         .onHover { hovering in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 self.isHovering = hovering
             }
         }
-        .frame(width: 600, height: 160)
+        .frame(width: 600, height: 160, alignment: .top) // Anchor top in outer frame
         .onAppear {
             setupSocketListeners()
         }
     }
+
     
     // MARK: - Logic
     func setupSocketListeners() {
@@ -109,6 +112,8 @@ struct ContentView: View {
         inputMode = false
         isProcessing = true
         aiResponse = "" 
+        // update context with query
+        context.response = ""
 
         client.sendMessage(query)
         
@@ -123,6 +128,7 @@ struct ContentView: View {
             activeTool = nil
             shouldAnimateResponse = true
             aiResponse = response
+            context.response = response
         }
     }
     
@@ -132,6 +138,7 @@ struct ContentView: View {
                 isListening = false
                 isProcessing = true
                 aiResponse = ""
+                context.response = ""
                 client.sendMessage("Hello (Voice Input)") 
             } else {
                 isListening = true
@@ -140,6 +147,7 @@ struct ContentView: View {
                 // NEW: Text Changed, so we MUST animate
                 shouldAnimateResponse = true
                 aiResponse = "Listening..."
+                context.response = "Listening..."
             }
         }
     }
@@ -149,16 +157,18 @@ struct ContentView: View {
 
 struct CompactStatusView: View {
     var isProcessing: Bool
+    @EnvironmentObject var themeManager: ThemeManager
+    
     var body: some View {
         HStack(spacing: 10) {
             Circle()
-                .fill(Color.white)
+                .fill(themeManager.current.accent)
                 .frame(width: 8, height: 8)
-                .shadow(color: .white.opacity(0.8), radius: 5)
+                .shadow(color: themeManager.current.accent.opacity(0.8), radius: 5)
             
             Text("ECHO")
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
+                .foregroundColor(themeManager.current.text)
                 .tracking(2)
         }
         .padding(.horizontal, 20)
@@ -166,14 +176,141 @@ struct CompactStatusView: View {
     }
 }
 
+struct SpinningLoader: View {
+    @State private var isSpinning = false
+    @EnvironmentObject var themeManager: ThemeManager
+    
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: 0.75)
+            .stroke(themeManager.current.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .frame(width: 88, height: 88)
+            .rotationEffect(.degrees(isSpinning ? 360 : 0))
+            .animation(.linear(duration: 1.5).repeatForever(autoreverses: false), value: isSpinning)
+            .onAppear {
+                isSpinning = true
+            }
+    }
+}
+
+struct SpinningRing: View {
+    let diameter: CGFloat
+    let lineWidth: CGFloat
+    let color: Color
+    let duration: Double
+    
+    @State private var rotate = false
+    
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: 0.7)
+            .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+            .frame(width: diameter, height: diameter)
+            .rotationEffect(.degrees(rotate ? 360 : 0))
+            .animation(.linear(duration: duration).repeatForever(autoreverses: false), value: rotate)
+            .onAppear { rotate = true }
+    }
+}
+
+// Helper: Pulsing Ring
+struct PulsingRing: View {
+    let diameter: CGFloat
+    let lineWidth: CGFloat
+    let color: Color
+    let duration: Double
+    let delay: Double
+    
+    @State private var pulse = false
+    
+    var body: some View {
+        Circle()
+            .stroke(color, lineWidth: lineWidth)
+            .frame(width: diameter, height: diameter)
+            .opacity(pulse ? 0.2 : 0.8)
+            .scaleEffect(pulse ? 1.1 : 1.0)
+            .animation(
+                .easeInOut(duration: duration)
+                    .repeatForever(autoreverses: true)
+                    .delay(delay),
+                value: pulse
+            )
+            .onAppear { pulse = true }
+    }
+}
+
+// Main Energy Core
+struct EchoEnergyCore: View {
+    @Binding var isListening: Bool
+    @Binding var isProcessing: Bool
+    let toggleListening: () -> Void
+    
+    var body: some View {
+        ZStack {
+            // Outermost Ring - Slow rotation
+            SpinningRing(diameter: 110, lineWidth: 1.5, color: .cyan.opacity(0.4), duration: 8)
+            
+            // Second Ring - Medium rotation (opposite direction)
+            SpinningRing(diameter: 90, lineWidth: 2, color: .blue.opacity(0.5), duration: 5)
+                .rotationEffect(.degrees(180))
+            
+            // Third Ring - Pulsing
+            PulsingRing(diameter: 70, lineWidth: 2.5, color: .blue.opacity(0.6), duration: 1.5, delay: 0)
+            
+            // Fourth Ring - Pulsing (offset timing)
+            PulsingRing(diameter: 70, lineWidth: 2.5, color: .white.opacity(0.4), duration: 1.5, delay: 0.75)
+            
+            // Static Ring - Always visible
+            Circle()
+                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                .frame(width: 60, height: 60)
+            
+            // Core Button
+            Button(action: toggleListening) {
+                ZStack {
+                    // Core Glow
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: isListening ? 
+                                    [.white, .blue.opacity(0.8)] : 
+                                    [.gray.opacity(0.5), .black.opacity(0.3)],
+                                center: .center,
+                                startRadius: 5,
+                                endRadius: 25
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                    
+                    // --- UPDATED TEXT STYLE ---
+                    Text("ECHO")
+                        // Size 10 (Small), Heavy Weight (Bold), Default Design (Cleanest)
+                        .font(.system(size: 10, weight: .heavy, design: .default))
+                        // Dynamic color based on state
+                        .foregroundColor(isListening ? .black.opacity(0.8) : .white.opacity(0.9))
+                        // Wide spacing makes it look "Techy"
+                        .tracking(3)
+                        // Tiny shadow to make it readable over the glow
+                        .shadow(color: isListening ? .clear : .black.opacity(0.5), radius: 1, x: 0, y: 1)
+                }
+                .shadow(color: isListening ? Color.blue.opacity(0.8) : .clear, radius: 20)
+                .shadow(color: isListening ? Color.white.opacity(0.6) : .clear, radius: 10)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 130, height: 130)
+        .padding(.leading, 20)
+    }
+}
+
 struct FullDashboardView: View {
     @Binding var inputMode: Bool
     @Binding var inputText: String
-    @Binding var aiResponse: String
     @Binding var isListening: Bool
     @Binding var isProcessing: Bool
     @Binding var activeTool: String?
     @Binding var shouldAnimate: Bool // Received from Parent
+    
+    @EnvironmentObject var themeManager: ThemeManager
     
     var isInputFocused: FocusState<Bool>.Binding
     
@@ -181,55 +318,41 @@ struct FullDashboardView: View {
     var submitQuery: () -> Void
     
     var body: some View {
+        @State var isSpinning = false
         HStack(spacing: 0) {
             // CENTER: Core
-            ZStack {
-                Circle().stroke(Color.themeGray.opacity(0.3), lineWidth: 1).frame(width: 80, height: 80)
-                if isProcessing {
-                    Circle().trim(from: 0, to: 0.75)
-                        .stroke(Color.themeAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .frame(width: 88, height: 88)
-                        .rotationEffect(.degrees(isProcessing ? 360 : 0))
-                        .animation(.linear(duration: 1.5).repeatForever(autoreverses: false), value: isProcessing)
-                }
-                Button(action: toggleListening) {
-                    Circle().fill(isListening ? Color.white : Color.black.opacity(0.3))
-                        .frame(width: 50, height: 50)
-                        .overlay(Image(systemName: isListening ? "mic.fill" : (isProcessing ? "cpu" : "waveform")).font(.system(size: 20)).foregroundColor(isListening ? .black : .white))
-                        .shadow(color: isListening ? Color.white.opacity(0.6) : .clear, radius: 15)
-                }.buttonStyle(.plain)
-            }
-            .frame(width: 110).padding(.leading, 20)
+            EchoEnergyCore(isListening: $isListening, isProcessing: $isProcessing, toggleListening: toggleListening)
             
             // RIGHT: Chat
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     if let tool = activeTool {
-                        Label(tool, systemImage: "network").font(.system(size: 9, weight: .bold, design: .monospaced)).padding(4).background(Color.white.opacity(0.2)).cornerRadius(4).foregroundColor(.white)
+                        Label(tool, systemImage: "network").font(.system(size: 9, weight: .bold, design: .monospaced)).padding(4).background(themeManager.current.secondary.opacity(0.2)).cornerRadius(4).foregroundColor(themeManager.current.text)
                     } else {
-                        Text("READY").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(Color.gray)
+                        Text("READY").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(themeManager.current.secondary)
                     }
                     Spacer()
-                    Text(inputMode ? "TYPING" : "VOICE").font(.system(size: 9, design: .monospaced)).foregroundColor(inputMode ? .white : .gray)
+                    Text(inputMode ? "TYPING" : "VOICE").font(.system(size: 9, design: .monospaced)).foregroundColor(inputMode ? themeManager.current.text : themeManager.current.secondary)
                 }
                 .padding(.bottom, 8).padding(.top, 25)
                 
                 ZStack(alignment: .topLeading) {
                     if inputMode {
                         HStack {
-                            Image(systemName: "chevron.right").foregroundColor(.white).font(.system(size: 14, weight: .bold))
-                            TextField("", text: $inputText).font(.system(size: 16, design: .monospaced)).foregroundColor(.white).textFieldStyle(.plain).focused(isInputFocused).onSubmit { submitQuery() }.onAppear { isInputFocused.wrappedValue = true }.submitLabel(.send)
+                            Image(systemName: "chevron.right").foregroundColor(themeManager.current.text).font(.system(size: 14, weight: .bold))
+                            TextField("", text: $inputText).font(.system(size: 16, design: .monospaced)).foregroundColor(themeManager.current.text).textFieldStyle(.plain).focused(isInputFocused).onSubmit { submitQuery() }.onAppear { isInputFocused.wrappedValue = true }.submitLabel(.send)
                         }
-                        .padding(8).background(Color.white.opacity(0.1)).cornerRadius(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                        .padding(8).background(themeManager.current.secondary.opacity(0.1)).cornerRadius(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(themeManager.current.secondary.opacity(0.2), lineWidth: 1))
                     } else {
-                        // Pass the binding here
-                        TypewriterView(text: aiResponse, shouldAnimate: $shouldAnimate)
-                            .onTapGesture {
-                                withAnimation {
-                                    inputMode = true
-                                    NSApplication.shared.activate(ignoringOtherApps: true)
-                                }
+                        HStack {
+                            Image(systemName: "chevron.right").foregroundColor(themeManager.current.text).font(.system(size: 14, weight: .bold))
+                        }
+                        .padding(8).background(themeManager.current.secondary.opacity(0.1)).cornerRadius(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(themeManager.current.secondary.opacity(0.2), lineWidth: 1))
+                        .onTapGesture {
+                            withAnimation {
+                                inputMode = true
                             }
+                        }
                     }
                 }
                 .frame(height: 70, alignment: .topLeading)
@@ -238,74 +361,5 @@ struct FullDashboardView: View {
             .padding(.horizontal, 20)
         }
         .frame(width: 600, height: 160)
-    }
-}
-
-// MARK: - Smart Typewriter View
-struct TypewriterView: View {
-    let text: String
-    @Binding var shouldAnimate: Bool // Controls whether to type or show instantly
-    
-    @State private var displayedText = ""
-    @State private var timer: AnyCancellable?
-    @State private var isTyping = false
-
-    var body: some View {
-        ScrollView {
-            Text(displayedText)
-                .font(.system(size: 15, weight: .medium, design: .monospaced))
-                .foregroundColor(.white.opacity(0.9))
-                .lineSpacing(4)
-                .shadow(color: .black.opacity(0.5), radius: 1, x: 1, y: 1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(alignment: .bottomTrailing) {
-                    if isTyping {
-                        Rectangle().fill(Color.white).frame(width: 8, height: 16).opacity(0.8)
-                    }
-                }
-        }
-        .onChange(of: text) { newValue in
-            // Text changed! We must animate this new text.
-            startTyping(newValue, forceAnimate: true)
-        }
-        .onAppear {
-            // View appeared (e.g. expanded from hover). 
-            // Check if we should animate or show instantly.
-            if shouldAnimate {
-                startTyping(text, forceAnimate: true)
-            } else {
-                // RESTORE STATE: Show full text immediately
-                displayedText = text
-                isTyping = false
-            }
-        }
-    }
-    
-    func startTyping(_ fullText: String, forceAnimate: Bool) {
-        timer?.cancel()
-        
-        if !forceAnimate {
-            displayedText = fullText
-            return
-        }
-        
-        displayedText = ""
-        isTyping = true
-        var currentIndex = 0
-        
-        timer = Timer.publish(every: 0.03, on: .main, in: .common)
-            .autoconnect()
-            .sink { _ in
-                if currentIndex < fullText.count {
-                    let index = fullText.index(fullText.startIndex, offsetBy: currentIndex)
-                    displayedText.append(fullText[index])
-                    currentIndex += 1
-                } else {
-                    timer?.cancel()
-                    isTyping = false
-                    // Mark as complete so we don't re-animate on hover
-                    shouldAnimate = false
-                }
-            }
     }
 }
