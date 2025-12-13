@@ -19,14 +19,23 @@ struct ContentView: View {
     @State private var isProcessing = false
     @State private var activeTool: String? = nil
     
-    @FocusState private var isInputFocused: Bool
-    
     var isExpanded: Bool {
         return isHovering || inputMode || isListening || isProcessing
     }
-    
+
+    private func updateOverlayWidth() {
+        let newWidth: CGFloat = isExpanded ? (inputMode ? 500 : 300) : 140
+        
+        // Only update if the value actually changed to prevent infinite loops
+        if context.overlayWidth != newWidth {
+            context.overlayWidth = newWidth
+            print("Updated overlay width to: \(context.overlayWidth)")
+        }
+        print("Overlay width updated to: \(newWidth)")
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .center, spacing: 0) {
             ZStack(alignment: .top) { // Align content to top
                 // 1. Dynamic Background
                 RoundedRectangle(cornerRadius: isExpanded ? 18 : 25)
@@ -47,8 +56,7 @@ struct ContentView: View {
                             )
                     )
                     .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 5)
-                    .frame(width: isExpanded ? 600 : 140, height: isExpanded ? 160 : 50, alignment: .top) // Anchor top
-                    .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isExpanded)
+                    .frame(width: isExpanded ? (inputMode ? 500 : 300) : 140, height: isExpanded ? (inputMode ? 300 : 160) : 50, alignment: .top) // Anchor top
 
                 // 2. Content Switcher
                 if isExpanded {
@@ -59,27 +67,32 @@ struct ContentView: View {
                         isProcessing: $isProcessing,
                         activeTool: $activeTool,
                         shouldAnimate: $shouldAnimateResponse,
-                        isInputFocused: $isInputFocused,
                         toggleListening: toggleListening,
                         submitQuery: submitQuery
                     )
+                    .environmentObject(context)
+                    .environmentObject(themeManager)
                     .transition(.opacity.combined(with: .scale))
                 } else {
                     CompactStatusView(isProcessing: isProcessing)
                         .transition(.opacity.combined(with: .scale))
                 }
             }
-            Spacer() // push other content down
         }
         .onHover { hovering in
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 self.isHovering = hovering
             }
         }
-        .frame(width: 600, height: 160, alignment: .top) // Anchor top in outer frame
+        .frame(width: 500, height: 300, alignment: .top) // Anchor top in outer frame
         .onAppear {
             setupSocketListeners()
         }
+        .onChange(of: inputMode) { _ in
+            updateOverlayWidth()
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isExpanded)
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: inputMode)
     }
 
     
@@ -173,23 +186,6 @@ struct CompactStatusView: View {
         }
         .padding(.horizontal, 20)
         .frame(width: 140, height: 50)
-    }
-}
-
-struct SpinningLoader: View {
-    @State private var isSpinning = false
-    @EnvironmentObject var themeManager: ThemeManager
-    
-    var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.75)
-            .stroke(themeManager.current.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            .frame(width: 88, height: 88)
-            .rotationEffect(.degrees(isSpinning ? 360 : 0))
-            .animation(.linear(duration: 1.5).repeatForever(autoreverses: false), value: isSpinning)
-            .onAppear {
-                isSpinning = true
-            }
     }
 }
 
@@ -301,65 +297,197 @@ struct EchoEnergyCore: View {
         .padding(.leading, 20)
     }
 }
-
 struct FullDashboardView: View {
     @Binding var inputMode: Bool
     @Binding var inputText: String
     @Binding var isListening: Bool
     @Binding var isProcessing: Bool
     @Binding var activeTool: String?
-    @Binding var shouldAnimate: Bool // Received from Parent
+    @Binding var shouldAnimate: Bool
+    
     
     @EnvironmentObject var themeManager: ThemeManager
-    
-    var isInputFocused: FocusState<Bool>.Binding
+    @EnvironmentObject var context: AppContext
     
     var toggleListening: () -> Void
     var submitQuery: () -> Void
     
+    @State private var currentMode = "mode1"
+    
     var body: some View {
-        @State var isSpinning = false
-        HStack(spacing: 0) {
-            // CENTER: Core
-            EchoEnergyCore(isListening: $isListening, isProcessing: $isProcessing, toggleListening: toggleListening)
-            
-            // RIGHT: Chat
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    if let tool = activeTool {
-                        Label(tool, systemImage: "network").font(.system(size: 9, weight: .bold, design: .monospaced)).padding(4).background(themeManager.current.secondary.opacity(0.2)).cornerRadius(4).foregroundColor(themeManager.current.text)
-                    } else {
-                        Text("READY").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(themeManager.current.secondary)
-                    }
-                    Spacer()
-                    Text(inputMode ? "TYPING" : "VOICE").font(.system(size: 9, design: .monospaced)).foregroundColor(inputMode ? themeManager.current.text : themeManager.current.secondary)
+        VStack(spacing: 15) {
+            // MARK: - 1. Top Control Row (Anchored to Top)
+            HStack(spacing: 0) {
+                // Left Column
+                VStack(alignment: .leading, spacing: 15) {
+                    MenuLinkButton(title: "HISTORY") { print("History clicked") }
+                    MenuLinkButton(title: "SETTINGS") { print("Settings clicked") }
                 }
-                .padding(.bottom, 8).padding(.top, 25)
-                
-                ZStack(alignment: .topLeading) {
+                .padding(.leading, 15)
+                .frame(width: 80)
+
+                // Center Core
+                ZStack {
+                    EchoEnergyCore(
+                        isListening: $isListening,
+                        isProcessing: $isProcessing,
+                        toggleListening: toggleListening
+                    )
+                    .zIndex(1)
+
                     if inputMode {
-                        HStack {
-                            Image(systemName: "chevron.right").foregroundColor(themeManager.current.text).font(.system(size: 14, weight: .bold))
-                            TextField("", text: $inputText).font(.system(size: 16, design: .monospaced)).foregroundColor(themeManager.current.text).textFieldStyle(.plain).focused(isInputFocused).onSubmit { submitQuery() }.onAppear { isInputFocused.wrappedValue = true }.submitLabel(.send)
-                        }
-                        .padding(8).background(themeManager.current.secondary.opacity(0.1)).cornerRadius(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(themeManager.current.secondary.opacity(0.2), lineWidth: 1))
-                    } else {
-                        HStack {
-                            Image(systemName: "chevron.right").foregroundColor(themeManager.current.text).font(.system(size: 14, weight: .bold))
-                        }
-                        .padding(8).background(themeManager.current.secondary.opacity(0.1)).cornerRadius(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(themeManager.current.secondary.opacity(0.2), lineWidth: 1))
-                        .onTapGesture {
-                            withAnimation {
-                                inputMode = true
+                        Group {
+                            // --- RIGHT SIDE ---
+                            // Angle: -30 degrees (Top Right)
+                            CircularMenuItem(title: "Shrink", angle: -30, radius: 90, selected: false) {
+                                // Action
+                                withAnimation { inputMode.toggle() }
+                            }
+                            
+                            CircularMenuItem(title: "Mode 4", angle: 0, radius: 90, selected: currentMode == "mode4") {
+                                // Action
+                                // set currentMode to "mode4"
+                                withAnimation { currentMode = "mode4" }
+                            }
+
+                            // Angle: +30 degrees (Bottom Right)
+                            CircularMenuItem(title: "Mode 5", angle: 30, radius: 90, selected: currentMode == "mode5") {
+                                // Action
+                                withAnimation { currentMode = "mode5" }
+                            }
+
+                            // --- LEFT SIDE ---
+                            // Angle: -150 degrees (Top Left)
+                            CircularMenuItem(title: "Mode 1", angle: -150, radius: 80, selected: currentMode == "mode1") {
+                                withAnimation {
+                                    currentMode = "mode1"
+                                }
+                            }
+
+                            // Angle: -180 degrees (Top Left)
+                            CircularMenuItem(title: "Mode 2", angle: -180, radius: 80, selected: currentMode == "mode2") {
+                                withAnimation {
+                                    currentMode = "mode2"
+                                }
+                            }
+
+                            // Angle: +150 degrees (Bottom Left)
+                            CircularMenuItem(title: "Mode 3", angle: 150, radius: 80, selected: currentMode == "mode3") {
+                                withAnimation {
+                                    currentMode = "mode3"
+                                }
                             }
                         }
+                        .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .frame(height: 70, alignment: .topLeading)
-                Spacer()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+
+
+                // Right Column
+                VStack(alignment: .trailing, spacing: 15) {
+                    MenuLinkButton(title: "Type") {
+                        // Delay inputMode toggle so button animation completes first
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            inputMode.toggle()
+                        }
+                    }
+                    MenuLinkButton(title: "DEBUG") { print("Debug clicked") }
+                }
+                .padding(.trailing, 10)
+                .frame(width: 80)
             }
-            .padding(.horizontal, 20)
+            .frame(height: 140)
+            .padding(.horizontal, 15) 
+
+            Spacer()
+            // MARK: - 2. Bottom Content (Expands)
+            if !context.response.isEmpty {
+                // When reading, scroll view allows text to flow
+                ScrollView {
+                    Text(context.response)
+                        .font(.system(size: 12, weight: .regular, design: .default))
+                        .foregroundColor(themeManager.current.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if inputMode {
+                // When typing, show a larger text editor that fills the space
+                HStack {
+                    TextField(">_", text: $inputText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 16, design: .monospaced))
+                        .foregroundColor(themeManager.current.text)
+                        .padding(10)
+                        .background(themeManager.current.secondary.opacity(0.1))
+                        .cornerRadius(8)
+                        .onSubmit(submitQuery)
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+            }
         }
-        .frame(width: 600, height: 160)
+        .frame(width: inputMode ? 500 : 300, height: inputMode ? 300 : 160, alignment: .top)
+    }
+}
+
+struct CircularMenuItem: View {
+    let title: String
+    let angle: Double // In Degrees
+    let radius: CGFloat
+    let selected: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
+    @EnvironmentObject var themeManager: ThemeManager
+
+    // Convert Degrees to Radian for swift math
+    private var xOffset: CGFloat {
+        radius * CGFloat(cos(angle * .pi / 180))
+    }
+    
+    private var yOffset: CGFloat {
+        radius * CGFloat(sin(angle * .pi / 180))
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10, weight: isHovering ? .heavy : .medium, design: .monospaced))
+                .foregroundColor(selected ? themeManager.current.text : (isHovering ? themeManager.current.text : themeManager.current.secondary))
+                .underline(selected, color: themeManager.current.text.opacity(selected ? 1.0 : 0.5))
+                .frame(height: 15) 
+        }
+        .buttonStyle(.plain) // Removes default button background/styling
+        .onHover { hovering in
+            self.isHovering = hovering
+        }
+        .offset(x: xOffset, y: yOffset)
+    }
+}
+
+// MARK: - Custom Hover Button Component
+struct MenuLinkButton: View {
+    let title: String
+    let action: () -> Void
+    
+    @State private var isHovering = false
+    @EnvironmentObject var themeManager: ThemeManager
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                // 1. Change weight on hover
+                .font(.system(size: 12, weight: isHovering ? .heavy : .medium, design: .monospaced))
+                .foregroundColor(themeManager.current.text)
+                // 2. Add Underline
+                .underline(isHovering, color: themeManager.current.text.opacity(isHovering ? 1.0 : 0.5))
+                // 4. Fixed frame to prevent layout jumping when font gets bold/wider
+                .frame(height: 15) 
+        }
+        .buttonStyle(.plain) // Removes default button background/styling
+        .onHover { hovering in
+            self.isHovering = hovering
+        }
     }
 }

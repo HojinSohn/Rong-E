@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine // 1. Import Combine
 
 class OverlayWindow: NSPanel {
     init(contentRect: NSRect, backing: NSWindow.BackingStoreType, defer flag: Bool) {
@@ -36,30 +37,25 @@ class WindowManager: NSObject, ObservableObject {
 
     var context = AppContext()
     var themeManager = ThemeManager() // Initialize ThemeManager
-
     func showOverlay() {
         if window == nil {
-            // Create the hosting controller with your SwiftUI View
-            // Inject ThemeManager
             let contentView = ContentView()
                 .environmentObject(context)
                 .environmentObject(themeManager)
             let hostingController = NSHostingController(rootView: contentView)
 
-            // Calculate screen size
             let screenRect = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-            let width: CGFloat = 600
-            let height: CGFloat = 160
+            
+            // Initial Frame Calculation
+            let width: CGFloat = 500
+            let height: CGFloat = 300 
             let xPos = screenRect.midX - (width / 2)
-            let yPos = screenRect.maxY - height // Stick to top
+            let yPos = screenRect.maxY - height
             
             let frame = NSRect(x: xPos, y: yPos, width: width, height: height)
             
-            // Initialize the custom NSPanel
             window = OverlayWindow(contentRect: frame, backing: .buffered, defer: false)
             window?.contentViewController = hostingController
-
-            // Show it without activating the app (keeps focus on your other work)
             window?.orderFrontRegardless()
         }
 
