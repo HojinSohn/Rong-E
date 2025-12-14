@@ -3,9 +3,11 @@ import os
 import platform
 from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchRun
+from rag import rag
 from google_service import JobTracker
 from file_utils import read_file_data, display_directory_tree, collect_file_paths, separate_files_by_type
 from memory import memory
+import subprocess
 
 search = DuckDuckGoSearchRun()
 
@@ -86,17 +88,26 @@ def open_application(app_name: str):
         if platform.system() == "Windows":
             os.startfile(app_name)
         elif platform.system() == "Darwin":  # macOS
-            os.system(f"open -a {app_name}")
+            os.system(f"open -a '{app_name}'")
+            cmd = f'osascript -e \'activate application "{app_name}"\''
+            subprocess.run(cmd, shell=True)
+            print(f"YEEEEEEE {app_name}")
         elif platform.system() == "Linux":
-            os.system(f"xdg-open {app_name}")
+            os.system(f"xdg-open '{app_name}'")
         else:
             return f"Unsupported operating system: {platform.system()}"
+        
     except Exception as e:
         return f"Failed to open {app_name}: {e}"
     return f"Opened {app_name}"
 
+@tool("search_knowledge_base", description="Searches the knowledge base for information. Must be used when information regarding Hojin's personal information, projects, files, or context-sensitive data.")
+def kb_search(query: str):
+    output = rag.search_knowledge_base(query)
+    return output
+
 def get_tools():
-    return [get_current_time, web_search, record_job_application, list_directory, read_file, collect_files, separate_files, pwd, get_page_content, open_application]
+    return [get_current_time, web_search, record_job_application, list_directory, read_file, collect_files, separate_files, pwd, get_page_content, open_application, kb_search]
 
 def get_tool_map():
     tool_map = {
@@ -109,6 +120,7 @@ def get_tool_map():
         "separate_files": separate_files,
         "pwd": pwd,
         "get_page_content": get_page_content,
-        "open_application": open_application
+        "open_application": open_application,
+        "search_knowledge_base": kb_search
     }
     return tool_map

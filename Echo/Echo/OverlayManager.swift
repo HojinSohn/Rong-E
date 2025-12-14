@@ -33,7 +33,6 @@ class OverlayWindow: NSPanel {
 
 class WindowManager: NSObject, ObservableObject {
     var window: OverlayWindow?
-    var textWindow: OverlayWindow?
 
     var context = AppContext()
     var themeManager = ThemeManager() // Initialize ThemeManager
@@ -57,28 +56,6 @@ class WindowManager: NSObject, ObservableObject {
             window = OverlayWindow(contentRect: frame, backing: .buffered, defer: false)
             window?.contentViewController = hostingController
             window?.orderFrontRegardless()
-        }
-
-        if textWindow == nil {
-            // If textWindow is nil, create and show it
-            let textView = TextView()
-                            .environmentObject(context)
-                            .environmentObject(themeManager)
-            let textHostingController = NSHostingController(rootView: textView)
-
-            let screenRect = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-            let width: CGFloat = 400
-            let height: CGFloat = 400
-            // put it on left side of screen
-            
-            let xPos = screenRect.minX + 40
-            let yPos = screenRect.maxY - height // Stick to top
-            let textFrame = NSRect(x: xPos, y: yPos, width: width, height: height)
-            textWindow = OverlayWindow(contentRect: textFrame, backing: .buffered, defer: false)
-            textWindow?.contentViewController = textHostingController
-            textWindow?.orderFrontRegardless()
-            // print
-            print("Text window created and shown.")
         }
     }
 }

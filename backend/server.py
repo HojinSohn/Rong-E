@@ -64,7 +64,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "content": final_response
             })
             await websocket.send_text(final_payload)
-            speak(f"{final_response}")
+            # speak(f"{final_response}")
             print(f"📤 Sent Final: {final_response}")
 
     except WebSocketDisconnect:

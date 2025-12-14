@@ -117,12 +117,10 @@ struct ContentView: View {
 
     func submitQuery() {
         guard !inputText.isEmpty else { 
-            inputMode = false
             return 
         }
         let query = inputText
         inputText = ""
-        inputMode = false
         isProcessing = true
         aiResponse = "" 
         // update context with query
@@ -305,7 +303,6 @@ struct FullDashboardView: View {
     @Binding var activeTool: String?
     @Binding var shouldAnimate: Bool
     
-    
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var context: AppContext
     
@@ -313,10 +310,21 @@ struct FullDashboardView: View {
     var submitQuery: () -> Void
     
     @State private var currentMode = "mode1"
+
+    // Helper to determine if we are in "Expanded" state
+    var isExpanded: Bool {
+        return inputMode || isProcessing
+    }
+    
+    // Helper to determine if we are in "Expanded" state
+    var isExpandedText: Bool {
+        return inputMode || isProcessing
+    }
     
     var body: some View {
-        VStack(spacing: 15) {
-            // MARK: - 1. Top Control Row (Anchored to Top)
+        VStack(spacing: 0) {
+            
+            // MARK: - 1. Top Control Row (Fixed Height)
             HStack(spacing: 0) {
                 // Left Column
                 VStack(alignment: .leading, spacing: 15) {
@@ -335,47 +343,29 @@ struct FullDashboardView: View {
                     )
                     .zIndex(1)
 
-                    if inputMode {
+                    // Show radial menu only when typing or thinking
+                    if inputMode || isProcessing {
                         Group {
                             // --- RIGHT SIDE ---
-                            // Angle: -30 degrees (Top Right)
                             CircularMenuItem(title: "Shrink", angle: -30, radius: 90, selected: false) {
-                                // Action
                                 withAnimation { inputMode.toggle() }
                             }
-                            
                             CircularMenuItem(title: "Mode 4", angle: 0, radius: 90, selected: currentMode == "mode4") {
-                                // Action
-                                // set currentMode to "mode4"
                                 withAnimation { currentMode = "mode4" }
                             }
-
-                            // Angle: +30 degrees (Bottom Right)
                             CircularMenuItem(title: "Mode 5", angle: 30, radius: 90, selected: currentMode == "mode5") {
-                                // Action
                                 withAnimation { currentMode = "mode5" }
                             }
 
                             // --- LEFT SIDE ---
-                            // Angle: -150 degrees (Top Left)
                             CircularMenuItem(title: "Mode 1", angle: -150, radius: 80, selected: currentMode == "mode1") {
-                                withAnimation {
-                                    currentMode = "mode1"
-                                }
+                                withAnimation { currentMode = "mode1" }
                             }
-
-                            // Angle: -180 degrees (Top Left)
                             CircularMenuItem(title: "Mode 2", angle: -180, radius: 80, selected: currentMode == "mode2") {
-                                withAnimation {
-                                    currentMode = "mode2"
-                                }
+                                withAnimation { currentMode = "mode2" }
                             }
-
-                            // Angle: +150 degrees (Bottom Left)
                             CircularMenuItem(title: "Mode 3", angle: 150, radius: 80, selected: currentMode == "mode3") {
-                                withAnimation {
-                                    currentMode = "mode3"
-                                }
+                                withAnimation { currentMode = "mode3" }
                             }
                         }
                         .transition(.scale.combined(with: .opacity))
@@ -383,51 +373,95 @@ struct FullDashboardView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
 
-
                 // Right Column
                 VStack(alignment: .trailing, spacing: 15) {
-                    MenuLinkButton(title: "Type") {
-                        // Delay inputMode toggle so button animation completes first
+                    MenuLinkButton(title: "TYPE") {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                             inputMode.toggle()
                         }
                     }
                     MenuLinkButton(title: "DEBUG") { print("Debug clicked") }
                 }
-                .padding(.trailing, 10)
+                .padding(.trailing, 15)
                 .frame(width: 80)
             }
-            .frame(height: 140)
-            .padding(.horizontal, 15) 
+            .frame(height: 140) // Fixed height for top section
+            .padding(.top, 10)
 
-            Spacer()
-            // MARK: - 2. Bottom Content (Expands)
-            if !context.response.isEmpty {
-                // When reading, scroll view allows text to flow
-                ScrollView {
-                    Text(context.response)
-                        .font(.system(size: 12, weight: .regular, design: .default))
-                        .foregroundColor(themeManager.current.text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            if inputMode {
-                // When typing, show a larger text editor that fills the space
-                HStack {
-                    TextField(">_", text: $inputText)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 16, design: .monospaced))
-                        .foregroundColor(themeManager.current.text)
-                        .padding(10)
-                        .background(themeManager.current.secondary.opacity(0.1))
-                        .cornerRadius(8)
-                        .onSubmit(submitQuery)
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 10)
+            // MARK: - 2. Bottom Content (Flexible Height)
+            // We show this section if we are typing OR if there is a response to read
+            if isExpandedText {
+                TextView (
+                    inputText: $inputText,
+                    isProcessing: $isProcessing,
+                    shouldAnimate: $shouldAnimate,
+                    submitQuery: submitQuery
+                )
+                .environmentObject(context)
+                .environmentObject(themeManager)
             }
         }
-        .frame(width: inputMode ? 500 : 300, height: inputMode ? 300 : 160, alignment: .top)
+        // Main Window Frame Logic
+        // We use 'isExpanded' here so the window doesn't snap shut while reading a response
+        .frame(
+            width: isExpanded ? 500 : 300, 
+            height: isExpanded ? 300 : 160, 
+            alignment: .top
+        )
+    }
+}
+
+struct TextView: View {
+    @Binding var inputText: String
+    @Binding var isProcessing: Bool
+    @Binding var shouldAnimate: Bool
+    var submitQuery: () -> Void
+
+    @EnvironmentObject var context: AppContext
+    @EnvironmentObject var themeManager: ThemeManager
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Divider()
+                .background(themeManager.current.secondary.opacity(0.3))
+                .padding(.horizontal, 20)
+            
+            // A. RESPONSE AREA (Scrollable)
+            ScrollView {
+                if !context.response.isEmpty {
+                    Text(context.response)
+                        .font(.system(size: 13, weight: .regular, design: .default))
+                        .foregroundColor(themeManager.current.text)
+                        .lineSpacing(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 5)
+                } else if isProcessing {
+                    Text("Processing...")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundColor(themeManager.current.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 5)
+                }
+            }
+            .frame(maxWidth: .infinity) // Fills available width
+            // Takes up all remaining vertical space, pushing Input down
+            
+            // B. INPUT FIELD (Anchored Bottom)
+            HStack {
+                TextField(">_", text: $inputText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .foregroundColor(themeManager.current.text)
+                    .padding(10)
+                    .background(themeManager.current.secondary.opacity(0.1))
+                    .cornerRadius(8)
+                    .onSubmit(submitQuery)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 15)
+        // This frame ensures the bottom section fills the rest of the window
+        .frame(maxWidth: .infinity, maxHeight: .infinity) 
     }
 }
 
@@ -478,7 +512,7 @@ struct MenuLinkButton: View {
         Button(action: action) {
             Text(title)
                 // 1. Change weight on hover
-                .font(.system(size: 12, weight: isHovering ? .heavy : .medium, design: .monospaced))
+                .font(.system(size: 10, weight: isHovering ? .heavy : .medium, design: .monospaced))
                 .foregroundColor(themeManager.current.text)
                 // 2. Add Underline
                 .underline(isHovering, color: themeManager.current.text.opacity(isHovering ? 1.0 : 0.5))
