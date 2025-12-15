@@ -8,6 +8,8 @@ struct ContentView: View {
     @State private var inputText = ""
     @State private var aiResponse = "System Idle."
     
+    @State private var currentMode = "mode1"
+    
     @State private var shouldAnimateResponse = true 
     
     @StateObject private var client = EchoSocketClient()
@@ -67,6 +69,7 @@ struct ContentView: View {
                         isProcessing: $isProcessing,
                         activeTool: $activeTool,
                         shouldAnimate: $shouldAnimateResponse,
+                        currentMode: $currentMode,
                         toggleListening: toggleListening,
                         submitQuery: submitQuery
                     )
@@ -120,13 +123,14 @@ struct ContentView: View {
             return 
         }
         let query = inputText
+        let selectedMode = currentMode.lowercased()
         inputText = ""
         isProcessing = true
         aiResponse = "" 
         // update context with query
         context.response = ""
 
-        client.sendMessage(query)
+        client.sendMessage(query, mode: selectedMode)
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.activeTool = "WS_STREAM"
@@ -150,7 +154,7 @@ struct ContentView: View {
                 isProcessing = true
                 aiResponse = ""
                 context.response = ""
-                client.sendMessage("Hello (Voice Input)") 
+                client.sendMessage("Hello (Voice Input)", mode: currentMode.lowercased()) 
             } else {
                 isListening = true
                 isProcessing = false
@@ -302,14 +306,13 @@ struct FullDashboardView: View {
     @Binding var isProcessing: Bool
     @Binding var activeTool: String?
     @Binding var shouldAnimate: Bool
+    @Binding var currentMode: String
     
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var context: AppContext
     
     var toggleListening: () -> Void
     var submitQuery: () -> Void
-    
-    @State private var currentMode = "mode1"
 
     
     var body: some View {

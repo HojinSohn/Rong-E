@@ -30,19 +30,41 @@ class EchoAgent:
             print(f"\nSystem Message:\n{starting_system_message}")
         self.messages = [SystemMessage(content=starting_system_message)]
 
-    async def run(self, user_query, callback=None):
+    def get_plan(self, user_query, mode):
+
+        plan_prompt = None
+        plan_msg = None
+
+        if mode == "mode1":
+            # Default mode
+            plan_prompt = None
+        elif mode == "mode2":
+            # Plan out the logical processing steps
+            with open(f"plan_prompt.txt", "r") as f:
+                plan_prompt = f.read()
+                plan_prompt += f"\n\nHere is the user's query: {user_query}"
+        else:
+            # Custom mode, open file and read prompt
+            with open(f"mode_{mode}_prompt.txt", "r") as f:
+                plan_prompt = f.read()
+                plan_prompt += f"\n\nHere is the user's query: {user_query}"
+
+        if plan_prompt:
+            plan_msg = self.llm.invoke([SystemMessage(content=plan_prompt)])
+            print(f"Plan: {plan_msg.content}")
+
+        return plan_msg
+
+    async def run(self, user_query, mode, callback=None):
         print(f"\nUser: {user_query}")
 
-        # Plan out the logical processing steps
-        plan_prompt = f"""
-        You are an AI agent. Your goal is to understand the user's query and provide logical processing steps to address it given tools. Write directly the step-by-step plan to follow to process this query. Make it straightforward and concise.
-        Here is the user's query: {user_query}"""
-        plan_msg = self.llm.invoke([SystemMessage(content=plan_prompt)])
+        plan_msg = self.get_plan(user_query, mode) # Get plan if needed
 
-        print(f"Plan: {plan_msg.content}")
-
-        # Full query
-        message = f"""{user_query}. Here is the plan you can follow: {plan_msg.content}"""
+        if plan_msg:
+            # Full query
+            message = f"""{user_query}. Here is the plan you can follow: {plan_msg.content}"""
+        else:
+            message = user_query
 
         self.messages.append(HumanMessage(content=message))
         

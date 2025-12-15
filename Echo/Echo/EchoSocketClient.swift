@@ -29,10 +29,14 @@ class EchoSocketClient: ObservableObject {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
     }
 
-    func sendMessage(_ text: String) {
-        let message = URLSessionWebSocketTask.Message.string(text)
-        webSocketTask?.send(message) { error in
-            if let error = error { print("❌ Send Error: \(error)") }
+    func sendMessage(_ text: String, mode: String) {
+        let json: [String: String] = ["mode": mode, "message": text]
+        let encoder = JSONEncoder()
+        if let jsonData = try? encoder.encode(json), let text = String(data: jsonData, encoding: .utf8) {
+            let message = URLSessionWebSocketTask.Message.string(text)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Send Error: \(error)") }
+            }
         }
     }
 

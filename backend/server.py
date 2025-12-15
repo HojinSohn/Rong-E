@@ -40,8 +40,12 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         while True:
+            # --- 0. Receive Data ---
+            #  ["mode": mode, "message": text]
             data = await websocket.receive_text()
-            print(f"📩 Received: {data}")
+            data = json.loads(data)
+            query, mode = data["message"], data["mode"]
+            print(f"📥 Received: {query} in mode: {mode}")
             
             # --- 1. Define the Callback Function ---
             # This function will be passed to the agent.
@@ -56,7 +60,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # --- 2. Run Agent with Callback ---
             # We await the agent, passing our new function
-            final_response = await agent.run(data, callback=send_thought)
+            final_response = await agent.run(query, mode, callback=send_thought)
             
             # --- 3. Send Final Response ---
             final_payload = json.dumps({
