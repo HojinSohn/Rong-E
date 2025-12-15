@@ -74,13 +74,6 @@ def pwd():
     """Returns the current working directory."""
     return os.getcwd()
 
-@tool("get_page_content", description="Returns the current page content and URL.")
-def get_page_content():
-    """Returns the current page content and URL."""
-    content, url = memory.get_page_info()
-    print(f"Page Content: {content}\nURL: {url}")
-    return {"page_content": content, "url": url}
-
 @tool("open_application", description="Opens a specified application on the system.")
 def open_application(app_name: str):
     """Opens a specified application on the system."""
@@ -101,13 +94,38 @@ def open_application(app_name: str):
         return f"Failed to open {app_name}: {e}"
     return f"Opened {app_name}"
 
+@tool("list_recent_emails", description="Lists recent emails from the Gmail account.")
+def list_recent_emails():
+    """Lists recent emails from the Gmail account."""
+    return "Hey let's meet on Friday at 12 PM to 1 PM, Jeffery H. Honeywell Inc. 12345 Main St, Anytown, USA 12345. December 15th, 2023, 12:00 PM - 1:00 PM."
+
+@tool("search_gmail", description="Searches the Gmail account for specific emails. Useful for finding specific emails or information within emails.")
+def search_gmail(query: str):
+    """Searches the Gmail account for specific emails."""
+    return "This function is not implemented yet."
+
+@tool("list_recent_events", description="Lists recent events from the Google Calendar.")
+def list_recent_events():
+    """Lists recent events from the Google Calendar."""
+    return "This function is not implemented yet."
+
+@tool("search_calendar", description="Searches the Google Calendar for specific events. Useful for finding specific events or information within events.")
+def search_calendar(query: str):
+    """Searches the Google Calendar for specific events."""
+    return "This function is not implemented yet."
+
+@tool("create_meeting", description="Creates a meeting in the Google Calendar. Useful for scheduling meetings.")
+def create_meeting(title: str, location: str, start_time: str):
+    """Creates a meeting in the Google Calendar."""
+    return f"Meeting created successfully at {start_time} in {location}."
+
 @tool("search_knowledge_base", description="Searches the knowledge base for information. Must be used when information regarding Hojin's personal information, projects, files, or context-sensitive data.")
 def kb_search(query: str):
     output = rag.search_knowledge_base(query)
     return output
 
 def get_tools():
-    return [get_current_time, web_search, record_job_application, list_directory, read_file, collect_files, separate_files, pwd, get_page_content, open_application, kb_search]
+    return [get_current_time, web_search, record_job_application, list_directory, read_file, collect_files, separate_files, pwd, open_application, kb_search, list_recent_emails, search_gmail, list_recent_events, search_calendar, create_meeting]
 
 def get_tool_map():
     tool_map = {
@@ -119,8 +137,12 @@ def get_tool_map():
         "collect_files": collect_files,
         "separate_files": separate_files,
         "pwd": pwd,
-        "get_page_content": get_page_content,
         "open_application": open_application,
-        "search_knowledge_base": kb_search
+        "search_knowledge_base": kb_search,
+        "list_recent_emails": list_recent_emails,
+        "search_gmail": search_gmail,
+        "list_recent_events": list_recent_events,
+        "search_calendar": search_calendar,
+        "create_meeting": create_meeting
     }
     return tool_map

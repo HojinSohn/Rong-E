@@ -311,15 +311,6 @@ struct FullDashboardView: View {
     
     @State private var currentMode = "mode1"
 
-    // Helper to determine if we are in "Expanded" state
-    var isExpanded: Bool {
-        return inputMode || isProcessing
-    }
-    
-    // Helper to determine if we are in "Expanded" state
-    var isExpandedText: Bool {
-        return inputMode || isProcessing
-    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -344,7 +335,7 @@ struct FullDashboardView: View {
                     .zIndex(1)
 
                     // Show radial menu only when typing or thinking
-                    if inputMode || isProcessing {
+                    if inputMode {
                         Group {
                             // --- RIGHT SIDE ---
                             CircularMenuItem(title: "Shrink", angle: -30, radius: 90, selected: false) {
@@ -390,7 +381,7 @@ struct FullDashboardView: View {
 
             // MARK: - 2. Bottom Content (Flexible Height)
             // We show this section if we are typing OR if there is a response to read
-            if isExpandedText {
+            if inputMode {
                 TextView (
                     inputText: $inputText,
                     isProcessing: $isProcessing,
@@ -402,10 +393,9 @@ struct FullDashboardView: View {
             }
         }
         // Main Window Frame Logic
-        // We use 'isExpanded' here so the window doesn't snap shut while reading a response
         .frame(
-            width: isExpanded ? 500 : 300, 
-            height: isExpanded ? 300 : 160, 
+            width: inputMode ? 500 : 300, 
+            height: inputMode ? 300 : 160, 
             alignment: .top
         )
     }

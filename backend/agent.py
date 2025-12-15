@@ -30,11 +30,21 @@ class EchoAgent:
             print(f"\nSystem Message:\n{starting_system_message}")
         self.messages = [SystemMessage(content=starting_system_message)]
 
-    async def run(self, user_query, page_content=None, url=None, callback=None):
-        print(f"\nUser: {user_query}\nPage Content: {page_content}\nURL: {url}")
-        
-        memory.set_page_info(page_content, url)
-        self.messages.append(HumanMessage(content=user_query))
+    async def run(self, user_query, callback=None):
+        print(f"\nUser: {user_query}")
+
+        # Plan out the logical processing steps
+        plan_prompt = f"""
+        You are an AI agent. Your goal is to understand the user's query and provide logical processing steps to address it given tools. Write directly the step-by-step plan to follow to process this query. Make it straightforward and concise.
+        Here is the user's query: {user_query}"""
+        plan_msg = self.llm.invoke([SystemMessage(content=plan_prompt)])
+
+        print(f"Plan: {plan_msg.content}")
+
+        # Full query
+        message = f"""{user_query}. Here is the plan you can follow: {plan_msg.content}"""
+
+        self.messages.append(HumanMessage(content=message))
         
         max_iterations = 5
         iteration = 0
@@ -49,6 +59,8 @@ class EchoAgent:
 
             if ai_msg.tool_calls:
                 print(f"Agent (Step {iteration}): Thinking... (Calling Tools)")
+
+                print(f"Agent message: {ai_msg}")
                 
                 for tool_call in ai_msg.tool_calls:
                     tool_name = tool_call["name"].lower()
@@ -70,7 +82,7 @@ class EchoAgent:
                         except Exception as e:
                             tool_output = f"Error executing tool: {e}"
 
-                        print(f"   > Output: {str(tool_output)[:100]}...") # Print preview
+                        print(f"   > Output: {str(tool_output)}...") # Print preview
                         
                         self.messages.append(ToolMessage(
                             content=str(tool_output),
