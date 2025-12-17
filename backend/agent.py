@@ -1,17 +1,31 @@
 from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_anthropic import ChatAnthropic
 from langchain_chroma import Chroma
 from langchain_core.tools import create_retriever_tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from tools import get_tools, get_tool_map
-from utils import speak
+from utils.audio import speak # Updated import
 from memory import memory
+from langchain_google_genai import ChatGoogleGenerativeAI
+from dotenv import load_dotenv
 
+load_dotenv()
 class EchoAgent:
     def __init__(self):
-        # 1. Initialize LLM
-        self.llm = ChatOllama(
-            model="qwen2.5:1.5b-instruct",
-            temperature=0,
+        # # 1. Initialize LLM
+        # self.llm = ChatOllama(
+        #     model="qwen2.5:1.5b-instruct",
+        #     temperature=0,
+        # )
+        
+        self.llm = ChatAnthropic(
+            model="claude-3-5-haiku-latest",
+            temperature=0
+        )
+
+        self.plan_llm = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash",
+            temperature=0
         )
 
         # 2. Load Existing Tools
@@ -19,19 +33,16 @@ class EchoAgent:
 
         # 5. Bind tools to model
         self.llm_with_tools = self.llm.bind_tools(self.tools)
+        self.plan_llm_with_tools = self.plan_llm.bind_tools(self.tools)
         
-        # 6. Update Tool Map (Crucial for execution loop)
-        # We need to manually add the new tool to the map so the loop can find it
+        # Load System Prompt
+        with open("prompts/system_prompt.txt", "r") as f: # Updated path
+            self.system_prompt = f.read()
+
+        self.messages = [SystemMessage(content=self.system_prompt)]
         self.tool_map = get_tool_map()
 
-        # Load system message from file
-        with open("system_prompt.txt", "r") as f:
-            starting_system_message = f.read()
-            print(f"\nSystem Message:\n{starting_system_message}")
-        self.messages = [SystemMessage(content=starting_system_message)]
-
     def get_plan(self, user_query, mode):
-
         plan_prompt = None
         plan_msg = None
 
@@ -40,17 +51,15 @@ class EchoAgent:
             plan_prompt = None
         elif mode == "mode2":
             # Plan out the logical processing steps
-            with open(f"plan_prompt.txt", "r") as f:
+            with open(f"prompts/plan_prompt.txt", "r") as f:
                 plan_prompt = f.read()
-                plan_prompt += f"\n\nHere is the user's query: {user_query}"
         else:
             # Custom mode, open file and read prompt
-            with open(f"mode_{mode}_prompt.txt", "r") as f:
+            with open(f"prompts/mode_{mode}_prompt.txt", "r") as f:
                 plan_prompt = f.read()
-                plan_prompt += f"\n\nHere is the user's query: {user_query}"
 
         if plan_prompt:
-            plan_msg = self.llm.invoke([SystemMessage(content=plan_prompt)])
+            plan_msg = self.plan_llm_with_tools.invoke([SystemMessage(content=plan_prompt), HumanMessage(content=user_query)])
             print(f"Plan: {plan_msg.content}")
 
         return plan_msg

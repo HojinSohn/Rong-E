@@ -1,8 +1,5 @@
 import os
-import re
-import shutil
 from PIL import Image
-import pytesseract
 import fitz  # PyMuPDF
 import docx
 import pandas as pd  # Import pandas to read Excel and CSV files

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agent import EchoAgent
 import uvicorn
 import json
-from utils import speak  # Assuming you have a speak function defined in a separate file
+from utils.audio import speak  # Assuming you have a speak function defined in a separate file
 
 app = FastAPI()
 

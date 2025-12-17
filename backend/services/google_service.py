@@ -2,9 +2,19 @@ import os
 import datetime
 import json
 import gspread
+from langchain_google_community import GmailToolkit
+from langchain_google_community.gmail.utils import (
+    build_resource_service,
+    get_gmail_credentials,
+)
 
-# Load configuration
-CONFIG_FILE = 'config.json'
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_DIR = os.path.join(BASE_DIR, 'config')
+
+# Define paths using the config directory
+CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
+TOKEN_FILE = os.path.join(CONFIG_DIR, 'token.json')
+CREDENTIALS_FILE = os.path.join(CONFIG_DIR, 'credentials.json')
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -15,7 +25,9 @@ def load_config():
 config = load_config()
 SPREADSHEET_ID = config.get('spreadsheet_id')
 SHEET_NAME = config.get('sheet_name')
-SHEETS_CREDS_FILE = config.get('credentials_file', 'credentials.json')
+
+_creds_filename = config.get('credentials_file', 'spreadsheet_credentials.json')
+SHEETS_CREDS_FILE = os.path.join(CONFIG_DIR, _creds_filename)
 
 class JobTracker:
     def __init__(self):
@@ -90,3 +102,42 @@ class JobTracker:
         except Exception as e:
             print(f"Sheet Error: {e}")
             return False
+
+
+def get_gmail_toolkit():
+    """
+    Authenticates with Gmail and returns the LangChain Toolkit.
+    On first run, this opens a browser for OAuth login.
+    """
+    # 1. Scopes: Permissions Echo needs
+    credentials = get_gmail_credentials(
+        token_file=TOKEN_FILE,
+        scopes=["https://mail.google.com/"], 
+        client_sercret_file=CREDENTIALS_FILE
+    )
+    
+    # 2. Build the API Service
+    api_resource = build_resource_service(credentials=credentials)
+    
+    # 3. Create the Toolkit
+    toolkit = GmailToolkit(api_resource=api_resource)
+    
+    return toolkit
+
+def get_access_gmail_tools():
+    access_tools = []
+    toolkit = get_gmail_toolkit()
+    for tool in toolkit.get_tools():
+        if tool.name == "search_gmail" or tool.name == "get_gmail_message" or tool.name == "get_gmail_thread":
+            access_tools.append(tool)
+    return access_tools
+
+gmail_tools = get_access_gmail_tools()
+tracker = JobTracker()
+
+# Helper to see what tools are included
+if __name__ == "__main__":
+    toolkit = get_gmail_toolkit()
+    print("Available Gmail Tools:")
+    for tool in toolkit.get_tools():
+        print(f"- {tool.name}: {tool.description}")

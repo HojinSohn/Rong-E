@@ -3,11 +3,13 @@ import os
 import platform
 from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchRun
-from rag import rag
-from google_service import JobTracker
-from file_utils import read_file_data, display_directory_tree, collect_file_paths, separate_files_by_type
-from memory import memory
+from utils.file_utils import display_directory_tree, read_file_data, collect_file_paths, separate_files_by_type
+from services.google_service import gmail_tools, tracker
+from services.rag import rag
+import datetime
+import os
 import subprocess
+from typing import List
 
 search = DuckDuckGoSearchRun()
 
@@ -27,7 +29,6 @@ def record_job_application(company: str, position: str, url: str) -> str:
         position (str): The job position applied for.
         url (str): The URL of the job posting.
     """
-    tracker = JobTracker()
     success = tracker.find_and_update_empty_row(company, position, url)
     if success:
         return f"Logged application for {position} at {company}."
@@ -61,7 +62,7 @@ def collect_files(path: str):
     return file_paths
 
 @tool("separate_files", description="Separates files into image and text categories.")
-def separate_files(file_paths: list):
+def separate_files(file_paths: List[str]):
     """Separates files into image and text categories."""
     image_files, text_files = separate_files_by_type(file_paths)
     return {
@@ -94,25 +95,15 @@ def open_application(app_name: str):
         return f"Failed to open {app_name}: {e}"
     return f"Opened {app_name}"
 
-@tool("list_recent_emails", description="Lists recent emails from the Gmail account.")
-def list_recent_emails():
-    """Lists recent emails from the Gmail account."""
-    return "Hey let's meet on Friday at 12 PM to 1 PM, Jeffery H. Honeywell Inc. 12345 Main St, Anytown, USA 12345. December 15th, 2023, 12:00 PM - 1:00 PM."
-
-@tool("search_gmail", description="Searches the Gmail account for specific emails. Useful for finding specific emails or information within emails.")
-def search_gmail(query: str):
-    """Searches the Gmail account for specific emails."""
-    return "This function is not implemented yet."
-
 @tool("list_recent_events", description="Lists recent events from the Google Calendar.")
 def list_recent_events():
     """Lists recent events from the Google Calendar."""
-    return "This function is not implemented yet."
+    return "No recent events found."
 
 @tool("search_calendar", description="Searches the Google Calendar for specific events. Useful for finding specific events or information within events.")
 def search_calendar(query: str):
     """Searches the Google Calendar for specific events."""
-    return "This function is not implemented yet."
+    return "No meeting for this query."
 
 @tool("create_meeting", description="Creates a meeting in the Google Calendar. Useful for scheduling meetings.")
 def create_meeting(title: str, location: str, start_time: str):
@@ -125,7 +116,9 @@ def kb_search(query: str):
     return output
 
 def get_tools():
-    return [get_current_time, web_search, record_job_application, list_directory, read_file, collect_files, separate_files, pwd, open_application, kb_search, list_recent_emails, search_gmail, list_recent_events, search_calendar, create_meeting]
+    existing_tools = [get_current_time, web_search, record_job_application, list_directory, read_file, collect_files, separate_files, pwd, open_application, kb_search, list_recent_events, search_calendar, create_meeting]
+    tools = existing_tools + gmail_tools
+    return tools
 
 def get_tool_map():
     tool_map = {
@@ -139,10 +132,13 @@ def get_tool_map():
         "pwd": pwd,
         "open_application": open_application,
         "search_knowledge_base": kb_search,
-        "list_recent_emails": list_recent_emails,
-        "search_gmail": search_gmail,
         "list_recent_events": list_recent_events,
         "search_calendar": search_calendar,
         "create_meeting": create_meeting
     }
+
+    # Add Gmail tools to the map dynamically
+    for tool in gmail_tools:
+        tool_map[tool.name] = tool
+
     return tool_map
