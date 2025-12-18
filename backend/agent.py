@@ -1,13 +1,21 @@
+import os
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_anthropic import ChatAnthropic
 from langchain_chroma import Chroma
 from langchain_core.tools import create_retriever_tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from tools import get_tools, get_tool_map
-from utils.audio import speak # Updated import
-from memory import memory
+from backend.tools import get_tools, get_tool_map
+from backend.utils.audio import speak # Updated import
+from backend.config.settings import PROMPTS_DIR
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
+import google.genai as genai
+
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+
+PROMPTS_DIR = BASE_DIR / "prompts"
 
 load_dotenv()
 class EchoAgent:
@@ -23,10 +31,20 @@ class EchoAgent:
             temperature=0
         )
 
-        self.plan_llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
+        self.plan_llm = ChatAnthropic(
+            model="claude-3-5-haiku-latest",
             temperature=0
         )
+
+        # self.llm = ChatGoogleGenerativeAI(
+        #     model="gemini-2.5-flash-lite",
+        #     temperature=0
+        # )
+
+        # self.plan_llm = ChatGoogleGenerativeAI(
+        #     model="gemini-2.5-flash-lite",
+        #     temperature=0
+        # )
 
         # 2. Load Existing Tools
         self.tools = get_tools()
@@ -36,7 +54,7 @@ class EchoAgent:
         self.plan_llm_with_tools = self.plan_llm.bind_tools(self.tools)
         
         # Load System Prompt
-        with open("prompts/system_prompt.txt", "r") as f: # Updated path
+        with open(os.path.join(PROMPTS_DIR, "system_prompt.txt"), "r") as f: # Updated path
             self.system_prompt = f.read()
 
         self.messages = [SystemMessage(content=self.system_prompt)]
@@ -51,11 +69,11 @@ class EchoAgent:
             plan_prompt = None
         elif mode == "mode2":
             # Plan out the logical processing steps
-            with open(f"prompts/plan_prompt.txt", "r") as f:
+            with open(os.path.join(PROMPTS_DIR, "plan_prompt.txt"), "r") as f:
                 plan_prompt = f.read()
         else:
             # Custom mode, open file and read prompt
-            with open(f"prompts/mode_{mode}_prompt.txt", "r") as f:
+            with open(os.path.join(PROMPTS_DIR, f"mode_{mode}_prompt.txt"), "r") as f:
                 plan_prompt = f.read()
 
         if plan_prompt:

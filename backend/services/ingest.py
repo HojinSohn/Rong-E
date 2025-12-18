@@ -4,7 +4,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 
-# 1. Define paths
 DOCS_PATH = "/Users/hojinsohn/Echo_RAG/Echo_documents"  # Put your PDF/TXT files here
 DB_PATH = "/Users/hojinsohn/Echo_RAG/chroma_db"       # Where the vector DB will be saved
 

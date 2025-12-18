@@ -1,11 +1,11 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect # <--- Added Imports
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from agent import EchoAgent
+from backend.agent import EchoAgent
 import uvicorn
 import json
-from utils.audio import speak  # Assuming you have a speak function defined in a separate file
-
+from backend.utils.audio import speak  # Assuming you have a speak function defined in a separate file
+    
 app = FastAPI()
 
 # Allow CORS (This handles HTTP requests)
@@ -68,7 +68,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "content": final_response
             })
             await websocket.send_text(final_payload)
-            # speak(f"{final_response}")
+            speak(f"{final_response}")
             print(f"📤 Sent Final: {final_response}")
 
     except WebSocketDisconnect:

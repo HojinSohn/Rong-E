@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
-credentials.json
-config.json
 .env
 tts/
+# Secrets
+.env
+backend/config/*credentials*.json
+backend/config/token.json
+backend/config/config.json

@@ -1,13 +1,13 @@
 import os
 import subprocess
 import shutil
+from backend.config.settings import TTS_DIR
 
 def speak(text):
     """Stream audio directly from Piper to Speakers (No WAV file saved)"""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    tts_dir = os.path.join(base_dir, "tts")
-    model_path = os.path.join(tts_dir, "jarvis.onnx")
+    model_path = os.path.join(TTS_DIR, "jarvis.onnx")
+
+    print(f"Using Piper model at: {model_path}")
     
     # 1. Check if 'play' (SoX) is installed
     if not shutil.which("play"):
