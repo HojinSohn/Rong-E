@@ -21,19 +21,24 @@ struct ContentView: View {
     @State private var isProcessing = false
     @State private var activeTool: String? = nil
     
+    @State private var fullTextViewMode = false
+    
     var isExpanded: Bool {
         return isHovering || inputMode || isListening || isProcessing
     }
 
-    private func updateOverlayWidth() {
-        let newWidth: CGFloat = isExpanded ? (inputMode ? 500 : 300) : 140
-        
-        // Only update if the value actually changed to prevent infinite loops
-        if context.overlayWidth != newWidth {
-            context.overlayWidth = newWidth
-            print("Updated overlay width to: \(context.overlayWidth)")
+    private func calculateWindowSize() -> CGSize {
+        if !isExpanded {
+            return CGSize(width: Constants.UI.overlayWindow.compactWidth, height: Constants.UI.overlayWindow.compactHeight)
         }
-        print("Overlay width updated to: \(newWidth)")
+        
+        if !inputMode {
+            return CGSize(width: Constants.UI.overlayWindow.expandedWidth, height: Constants.UI.overlayWindow.expandedHeight)
+        }
+        
+        let height = fullTextViewMode ? Constants.UI.windowHeight : Constants.UI.overlayWindow.inputModeHeight
+        
+        return CGSize(width: Constants.UI.windowWidth, height: height)
     }
 
     var body: some View {
@@ -58,7 +63,7 @@ struct ContentView: View {
                             )
                     )
                     .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 5)
-                    .frame(width: isExpanded ? (inputMode ? 500 : 300) : 140, height: isExpanded ? (inputMode ? 300 : 160) : 50, alignment: .top) // Anchor top
+                    .frame(width: calculateWindowSize().width, height: calculateWindowSize().height, alignment: .top) // Anchor top
 
                 // 2. Content Switcher
                 if isExpanded {
@@ -71,7 +76,8 @@ struct ContentView: View {
                         shouldAnimate: $shouldAnimateResponse,
                         currentMode: $currentMode,
                         toggleListening: toggleListening,
-                        submitQuery: submitQuery
+                        submitQuery: submitQuery,
+                        fullTextViewMode: $fullTextViewMode
                     )
                     .environmentObject(context)
                     .environmentObject(themeManager)
@@ -87,15 +93,13 @@ struct ContentView: View {
                 self.isHovering = hovering
             }
         }
-        .frame(width: 500, height: 300, alignment: .top) // Anchor top in outer frame
+        .frame(width: Constants.UI.windowWidth, height: Constants.UI.windowHeight, alignment: .top) // Anchor top in outer frame
         .onAppear {
             setupSocketListeners()
         }
-        .onChange(of: inputMode) { _ in
-            updateOverlayWidth()
-        }
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isExpanded)
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: inputMode)
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: fullTextViewMode)
     }
 
     
@@ -314,6 +318,17 @@ struct FullDashboardView: View {
     var toggleListening: () -> Void
     var submitQuery: () -> Void
 
+    @Binding var fullTextViewMode: Bool
+
+    private func calculateWindowSize() -> CGSize {
+        if !inputMode {
+            return CGSize(width: Constants.UI.overlayWindow.expandedWidth, height: Constants.UI.overlayWindow.expandedHeight)
+        }
+        
+        let height = fullTextViewMode ? Constants.UI.windowHeight : Constants.UI.overlayWindow.inputModeHeight
+        
+        return CGSize(width: Constants.UI.windowWidth, height: height)
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -389,16 +404,30 @@ struct FullDashboardView: View {
                     inputText: $inputText,
                     isProcessing: $isProcessing,
                     shouldAnimate: $shouldAnimate,
-                    submitQuery: submitQuery
+                    fullTextViewMode: $fullTextViewMode,
+                    submitQuery: submitQuery,
                 )
                 .environmentObject(context)
                 .environmentObject(themeManager)
+                Button(action: { 
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        fullTextViewMode.toggle() 
+                    }
+                }) {
+                    Capsule()
+                        .fill(themeManager.current.text.opacity(0.3))
+                        .frame(width: 40, height: 4)
+                        .padding(.vertical, 15)     
+                        .padding(.horizontal, 20)   
+                        .contentShape(Rectangle()) 
+                }
+                .buttonStyle(.plain)
             }
         }
         // Main Window Frame Logic
         .frame(
-            width: inputMode ? 500 : 300, 
-            height: inputMode ? 300 : 160, 
+            width: calculateWindowSize().width,
+            height: calculateWindowSize().height,
             alignment: .top
         )
     }
@@ -408,6 +437,7 @@ struct TextView: View {
     @Binding var inputText: String
     @Binding var isProcessing: Bool
     @Binding var shouldAnimate: Bool
+    @Binding var fullTextViewMode: Bool
     var submitQuery: () -> Void
 
     @EnvironmentObject var context: AppContext
@@ -452,7 +482,6 @@ struct TextView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 15)
         // This frame ensures the bottom section fills the rest of the window
         .frame(maxWidth: .infinity, maxHeight: .infinity) 
     }

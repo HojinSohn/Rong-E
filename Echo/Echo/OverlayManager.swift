@@ -43,11 +43,11 @@ class WindowManager: NSObject, ObservableObject {
                 .environmentObject(themeManager)
             let hostingController = NSHostingController(rootView: contentView)
 
-            let screenRect = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+            let screenRect = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 900)
             
             // Initial Frame Calculation
-            let width: CGFloat = 500
-            let height: CGFloat = 300 
+            let width: CGFloat = Constants.UI.windowWidth
+            let height: CGFloat = Constants.UI.windowHeight
             let xPos = screenRect.midX - (width / 2)
             let yPos = screenRect.maxY - height
             
