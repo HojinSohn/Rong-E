@@ -185,7 +185,7 @@ struct CompactStatusView: View {
                 .frame(width: 8, height: 8)
                 .shadow(color: themeManager.current.accent.opacity(0.8), radius: 5)
             
-            Text("ECHO")
+            Text("RONG-E")
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
                 .foregroundColor(themeManager.current.text)
                 .tracking(2)
@@ -245,64 +245,143 @@ struct EchoEnergyCore: View {
     @Binding var isListening: Bool
     @Binding var isProcessing: Bool
     let toggleListening: () -> Void
-    
+
+    private let darkRed = Color(red: 0.35, green: 0.02, blue: 0.02)
+
+    private var currentStyle: CoreStyle {
+        if isListening {
+            return CoreStyle(
+                speed: 1.5,
+                pulseColor: .blue.opacity(0.75),
+                spinColor: .cyan.opacity(0.6),
+                coreColor: .blue,
+                glowColors: [.white, .blue.opacity(0.85)],
+                textColor: .black.opacity(0.85),
+                textShadow: .clear
+            )
+
+        } else if isProcessing {
+            return CoreStyle(
+                speed: 2.0, // Slightly faster to feel "busy"
+                pulseColor: darkRed.opacity(0.9), // More opaque
+                spinColor: darkRed.opacity(0.8),
+                coreColor: darkRed,
+                glowColors: [Color.black.opacity(0.6), darkRed.opacity(0.9)],
+                textColor: .white.opacity(0.9),
+                textShadow: .red.opacity(0.5)
+            )
+
+        } else {
+            // IDLE — Alive, breathing presence
+            return CoreStyle(
+                speed: 0.6,
+                pulseColor: .blue.opacity(0.6),
+                spinColor: .blue.opacity(0.7),
+                coreColor: .gray.opacity(0.3),
+                glowColors: [.gray.opacity(0.5), .black.opacity(0.3)],
+                textColor: .white.opacity(0.75),
+                textShadow: .clear
+            )
+        }
+    }
+
+    private var animationKey: String {
+        "\(isListening)-\(isProcessing)"
+    }
+
     var body: some View {
         ZStack {
-            // Outermost Ring - Slow rotation
-            SpinningRing(diameter: 110, lineWidth: 1.5, color: .cyan.opacity(0.4), duration: 8)
-            
-            // Second Ring - Medium rotation (opposite direction)
-            SpinningRing(diameter: 90, lineWidth: 2, color: .blue.opacity(0.5), duration: 5)
-                .rotationEffect(.degrees(180))
-            
-            // Third Ring - Pulsing
-            PulsingRing(diameter: 70, lineWidth: 2.5, color: .blue.opacity(0.6), duration: 1.5, delay: 0)
-            
-            // Fourth Ring - Pulsing (offset timing)
-            PulsingRing(diameter: 70, lineWidth: 2.5, color: .white.opacity(0.4), duration: 1.5, delay: 0.75)
-            
-            // Static Ring - Always visible
+
+            SpinningRing(
+                diameter: 110,
+                lineWidth: 2,
+                color: currentStyle.spinColor.opacity(0.4),
+                duration: 8 / currentStyle.speed
+            )
+            .id("ring1-\(animationKey)")
+
+            SpinningRing(
+                diameter: 90,
+                lineWidth: 3,
+                color: currentStyle.spinColor.opacity(0.5),
+                duration: 5 / currentStyle.speed
+            )
+            .rotationEffect(.degrees(180))
+            .id("ring2-\(animationKey)")
+
+            Group {
+                PulsingRing(
+                    diameter: 70,
+                    lineWidth: 2.5,
+                    color: currentStyle.pulseColor,
+                    duration: 1.6,
+                    delay: 0
+                )
+
+                PulsingRing(
+                    diameter: 70,
+                    lineWidth: 2.5,
+                    color: currentStyle.pulseColor,
+                    duration: 1.6,
+                    delay: 0.8
+                )
+            }
+
             Circle()
-                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                .stroke(currentStyle.coreColor.opacity(0.3), lineWidth: 2)
                 .frame(width: 60, height: 60)
-            
-            // Core Button
+
             Button(action: toggleListening) {
                 ZStack {
-                    // Core Glow
                     Circle()
                         .fill(
                             RadialGradient(
-                                colors: isListening ? 
-                                    [.white, .blue.opacity(0.8)] : 
-                                    [.gray.opacity(0.5), .black.opacity(0.3)],
+                                colors: currentStyle.glowColors,
                                 center: .center,
-                                startRadius: 5,
-                                endRadius: 25
+                                startRadius: 2,
+                                endRadius: 30
                             )
                         )
                         .frame(width: 50, height: 50)
-                    
-                    // --- UPDATED TEXT STYLE ---
-                    Text("ECHO")
-                        // Size 10 (Small), Heavy Weight (Bold), Default Design (Cleanest)
-                        .font(.system(size: 10, weight: .heavy, design: .default))
-                        // Dynamic color based on state
-                        .foregroundColor(isListening ? .black.opacity(0.8) : .white.opacity(0.9))
-                        // Wide spacing makes it look "Techy"
+
+                    Text("RONG-E")
+                        .font(.system(size: 10, weight: .heavy))
                         .tracking(3)
-                        // Tiny shadow to make it readable over the glow
-                        .shadow(color: isListening ? .clear : .black.opacity(0.5), radius: 1, x: 0, y: 1)
+                        .foregroundColor(currentStyle.textColor)
+                        .shadow(color: currentStyle.textShadow, radius: 2)
+                        .offset(x: 1.5)
                 }
-                .shadow(color: isListening ? Color.blue.opacity(0.8) : .clear, radius: 20)
-                .shadow(color: isListening ? Color.white.opacity(0.6) : .clear, radius: 10)
+                .shadow(
+                    color: isListening
+                        ? Color.blue.opacity(0.8)
+                        : isProcessing
+                            ? darkRed
+                            : .clear,
+                    radius: isProcessing ? 25 : 22
+                )
+                .shadow(color: .white.opacity(isProcessing ? 0.1 : 0.8), radius: 10)
             }
             .buttonStyle(.plain)
+            .contentShape(Circle())
+            .accessibilityLabel(isListening ? "Stop Listening" : "Start Listening")
         }
         .frame(width: 130, height: 130)
         .padding(.leading, 20)
+        .animation(.easeInOut(duration: 0.45), value: animationKey)
     }
 }
+
+
+private struct CoreStyle {
+    let speed: Double
+    let pulseColor: Color
+    let spinColor: Color
+    let coreColor: Color
+    let glowColors: [Color]
+    let textColor: Color
+    let textShadow: Color
+}
+
 struct FullDashboardView: View {
     @Binding var inputMode: Bool
     @Binding var inputText: String
@@ -547,3 +626,61 @@ struct MenuLinkButton: View {
         }
     }
 }
+//
+//#Preview {
+//    struct CorePreviewWrapper: View {
+//        @State private var isListening = false
+//        @State private var isProcessing = false
+//        
+//        var body: some View {
+//            ZStack {
+//                // 1. Dark Background (Essential for glowing effects)
+//                Color.black.edgesIgnoringSafeArea(.all)
+//                
+//                VStack(spacing: 40) {
+//                    // 2. The Component
+//                    EchoEnergyCore(
+//                        isListening: $isListening,
+//                        isProcessing: $isProcessing,
+//                        toggleListening: {
+//                            // Simulate a realistic interaction flow
+//                            withAnimation {
+//                                if isListening {
+//                                    // Stop listening -> Start processing
+//                                    isListening = false
+//                                    isProcessing = true
+//                                    
+//                                    // Simulate processing delay (2 seconds)
+//                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+//                                        withAnimation {
+//                                            isProcessing = false
+//                                        }
+//                                    }
+//                                } else {
+//                                    // Start listening
+//                                    isListening = true
+//                                    isProcessing = false
+//                                }
+//                            }
+//                        }
+//                    )
+//                    
+//                    // 3. Manual Debug Controls
+//                    VStack(alignment: .leading, spacing: 10) {
+//                        Text("Debug Controls").font(.caption).foregroundColor(.gray)
+//                        
+//                        Toggle("State: Listening", isOn: $isListening)
+//                        Toggle("State: Processing", isOn: $isProcessing)
+//                    }
+//                    .padding()
+//                    .frame(width: 250)
+//                    .background(Color.white.opacity(0.1))
+//                    .cornerRadius(12)
+//                    .foregroundColor(.white)
+//                }
+//            }
+//        }
+//    }
+//    
+//    return CorePreviewWrapper()
+//}
