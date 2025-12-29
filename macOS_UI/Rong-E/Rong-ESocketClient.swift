@@ -6,7 +6,7 @@ struct AgentMessage: Codable {
     let content: String // The actual text
 }
 
-class EchoSocketClient: ObservableObject {
+class SocketClient: ObservableObject {
     private var webSocketTask: URLSessionWebSocketTask?
     private let url = URL(string: "ws://127.0.0.1:8000/ws")!
     

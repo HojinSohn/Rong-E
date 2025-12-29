@@ -7,13 +7,13 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		A4425FE02EEB6C620009FAC8 /* Echo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Echo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A4425FE02EEB6C620009FAC8 /* Rong-E.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Rong-E.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A4425FE22EEB6C620009FAC8 /* Echo */ = {
+		A4425FE22EEB6C620009FAC8 /* Rong-E */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Echo;
+			path = "Rong-E";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -32,7 +32,7 @@
 		A4425FD72EEB6C620009FAC8 = {
 			isa = PBXGroup;
 			children = (
-				A4425FE22EEB6C620009FAC8 /* Echo */,
+				A4425FE22EEB6C620009FAC8 /* Rong-E */,
 				A4425FE12EEB6C620009FAC8 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -40,7 +40,7 @@
 		A4425FE12EEB6C620009FAC8 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A4425FE02EEB6C620009FAC8 /* Echo.app */,
+				A4425FE02EEB6C620009FAC8 /* Rong-E.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,9 +48,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A4425FDF2EEB6C620009FAC8 /* Echo */ = {
+		A4425FDF2EEB6C620009FAC8 /* Rong-E */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A4425FEC2EEB6C660009FAC8 /* Build configuration list for PBXNativeTarget "Echo" */;
+			buildConfigurationList = A4425FEC2EEB6C660009FAC8 /* Build configuration list for PBXNativeTarget "Rong-E" */;
 			buildPhases = (
 				A4425FDC2EEB6C620009FAC8 /* Sources */,
 				A4425FDD2EEB6C620009FAC8 /* Frameworks */,
@@ -61,13 +61,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A4425FE22EEB6C620009FAC8 /* Echo */,
+				A4425FE22EEB6C620009FAC8 /* Rong-E */,
 			);
-			name = Echo;
+			name = "Rong-E";
 			packageProductDependencies = (
 			);
 			productName = Echo;
-			productReference = A4425FE02EEB6C620009FAC8 /* Echo.app */;
+			productReference = A4425FE02EEB6C620009FAC8 /* Rong-E.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -85,7 +85,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A4425FDB2EEB6C620009FAC8 /* Build configuration list for PBXProject "Echo" */;
+			buildConfigurationList = A4425FDB2EEB6C620009FAC8 /* Build configuration list for PBXProject "Rong-E" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -99,7 +99,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A4425FDF2EEB6C620009FAC8 /* Echo */,
+				A4425FDF2EEB6C620009FAC8 /* Rong-E */,
 			);
 		};
 /* End PBXProject section */
@@ -244,7 +244,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Echo/Echo.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "Rong-E/Rong-E.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -264,7 +264,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = Echo.Echo;
+				PRODUCT_BUNDLE_IDENTIFIER = "Rong-E.Rong-E";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -281,7 +281,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Echo/Echo.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "Rong-E/Rong-E.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -301,7 +301,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = Echo.Echo;
+				PRODUCT_BUNDLE_IDENTIFIER = "Rong-E.Rong-E";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -316,7 +316,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A4425FDB2EEB6C620009FAC8 /* Build configuration list for PBXProject "Echo" */ = {
+		A4425FDB2EEB6C620009FAC8 /* Build configuration list for PBXProject "Rong-E" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A4425FEA2EEB6C660009FAC8 /* Debug */,
@@ -325,7 +325,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A4425FEC2EEB6C660009FAC8 /* Build configuration list for PBXNativeTarget "Echo" */ = {
+		A4425FEC2EEB6C660009FAC8 /* Build configuration list for PBXNativeTarget "Rong-E" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A4425FED2EEB6C660009FAC8 /* Debug */,

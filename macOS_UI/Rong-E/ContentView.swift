@@ -12,7 +12,7 @@ struct ContentView: View {
     
     @State private var shouldAnimateResponse = true 
     
-    @StateObject private var client = EchoSocketClient()
+    @StateObject private var client = SocketClient()
     
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var themeManager: ThemeManager
