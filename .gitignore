@@ -7,3 +7,4 @@ tts/
 backend/config/*credentials*.json
 backend/config/token.json
 backend/config/config.json
+.DS_Store
