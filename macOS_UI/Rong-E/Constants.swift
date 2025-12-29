@@ -30,4 +30,8 @@ enum Constants {
         static let maxRetries = 3
         static let timeout: TimeInterval = 30.0
     }
+
+    enum Tools {
+        static let availableTools = ["web_search", "search_knowledge_base", "record_job_application", "email", "calendar"]
+    }
 }

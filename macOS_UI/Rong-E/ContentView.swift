@@ -16,6 +16,7 @@ struct ContentView: View {
     
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var coordinator: WindowCoordinator
 
     @State private var isListening = false
     @State private var isProcessing = false
@@ -81,6 +82,7 @@ struct ContentView: View {
                     )
                     .environmentObject(context)
                     .environmentObject(themeManager)
+                    .environmentObject(coordinator)
                     .transition(.opacity.combined(with: .scale))
                 } else {
                     CompactStatusView(isProcessing: isProcessing)
@@ -241,11 +243,13 @@ struct PulsingRing: View {
 }
 
 // Main Energy Core
-struct EchoEnergyCore: View {
+struct EnergyCore: View {
     @Binding var isListening: Bool
     @Binding var isProcessing: Bool
     let toggleListening: () -> Void
 
+    @EnvironmentObject var context: AppContext
+    @EnvironmentObject var themeManager: ThemeManager
     private let darkRed = Color(red: 0.35, green: 0.02, blue: 0.02)
 
     private var currentStyle: CoreStyle {
@@ -256,7 +260,7 @@ struct EchoEnergyCore: View {
                 spinColor: .cyan.opacity(0.6),
                 coreColor: .blue,
                 glowColors: [.white, .blue.opacity(0.85)],
-                textColor: .black.opacity(0.85),
+                textColor: themeManager.current.text.opacity(0.85),
                 textShadow: .clear
             )
 
@@ -279,7 +283,7 @@ struct EchoEnergyCore: View {
                 spinColor: .blue.opacity(0.7),
                 coreColor: .gray.opacity(0.3),
                 glowColors: [.gray.opacity(0.5), .black.opacity(0.3)],
-                textColor: .white.opacity(0.75),
+                textColor: themeManager.current.text.opacity(0.75),
                 textShadow: .clear
             )
         }
@@ -393,11 +397,17 @@ struct FullDashboardView: View {
     
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var context: AppContext
+    @EnvironmentObject var coordinator: WindowCoordinator
     
     var toggleListening: () -> Void
     var submitQuery: () -> Void
 
     @Binding var fullTextViewMode: Bool
+
+
+    func openSettings() {
+        coordinator.openSettings()
+    }
 
     private func calculateWindowSize() -> CGSize {
         if !inputMode {
@@ -417,42 +427,47 @@ struct FullDashboardView: View {
                 // Left Column
                 VStack(alignment: .leading, spacing: 15) {
                     MenuLinkButton(title: "HISTORY") { print("History clicked") }
-                    MenuLinkButton(title: "SETTINGS") { print("Settings clicked") }
+                    MenuLinkButton(title: "SETTINGS") {
+                        print("Settings clicked") 
+                        openSettings()
+                    }
                 }
                 .padding(.leading, 15)
                 .frame(width: 80)
 
                 // Center Core
                 ZStack {
-                    EchoEnergyCore(
+                    EnergyCore(
                         isListening: $isListening,
                         isProcessing: $isProcessing,
                         toggleListening: toggleListening
                     )
                     .zIndex(1)
+                    .environmentObject(context)
+                    .environmentObject(themeManager)
 
                     // Show radial menu only when typing or thinking
                     if inputMode {
                         Group {
                             // --- RIGHT SIDE ---
-                            CircularMenuItem(title: "Shrink", angle: -30, radius: 90, selected: false) {
+                            CircularMenuItem(title: "Shrink", subtitle: "", angle: -30, radius: 90, selected: false) {
                                 withAnimation { inputMode.toggle() }
                             }
-                            CircularMenuItem(title: "Mode 4", angle: 0, radius: 90, selected: currentMode == "mode4") {
+                            CircularMenuItem(title: "Mode 4", subtitle: context.modes.first(where: { $0.id == 4 })?.name ?? "Mode 4", angle: 0, radius: 90, selected: currentMode == "mode4") {
                                 withAnimation { currentMode = "mode4" }
                             }
-                            CircularMenuItem(title: "Mode 5", angle: 30, radius: 90, selected: currentMode == "mode5") {
+                            CircularMenuItem(title: "Mode 5", subtitle: context.modes.first(where: { $0.id == 5 })?.name ?? "Mode 5", angle: 30, radius: 90, selected: currentMode == "mode5") {
                                 withAnimation { currentMode = "mode5" }
                             }
 
                             // --- LEFT SIDE ---
-                            CircularMenuItem(title: "Mode 1", angle: -150, radius: 80, selected: currentMode == "mode1") {
+                            CircularMenuItem(title: "Mode 1", subtitle: context.modes.first(where: { $0.id == 1 })?.name ?? "Mode 1", angle: -150, radius: 80, selected: currentMode == "mode1") {
                                 withAnimation { currentMode = "mode1" }
                             }
-                            CircularMenuItem(title: "Mode 2", angle: -180, radius: 80, selected: currentMode == "mode2") {
+                            CircularMenuItem(title: "Mode 2", subtitle: context.modes.first(where: { $0.id == 2 })?.name ?? "Mode 2", angle: -180, radius: 80, selected: currentMode == "mode2") {
                                 withAnimation { currentMode = "mode2" }
                             }
-                            CircularMenuItem(title: "Mode 3", angle: 150, radius: 80, selected: currentMode == "mode3") {
+                            CircularMenuItem(title: "Mode 3", subtitle: context.modes.first(where: { $0.id == 3 })?.name ?? "Mode 3", angle: 150, radius: 80, selected: currentMode == "mode3") {
                                 withAnimation { currentMode = "mode3" }
                             }
                         }
@@ -468,7 +483,9 @@ struct FullDashboardView: View {
                             inputMode.toggle()
                         }
                     }
-                    MenuLinkButton(title: "DEBUG") { print("Debug clicked") }
+                    MenuLinkButton(title: "DEBUG") {
+                        print("Debug clicked") 
+                    }
                 }
                 .padding(.trailing, 15)
                 .frame(width: 80)
@@ -479,28 +496,59 @@ struct FullDashboardView: View {
             // MARK: - 2. Bottom Content (Flexible Height)
             // We show this section if we are typing OR if there is a response to read
             if inputMode {
+                Divider()
+                    .background(themeManager.current.secondary.opacity(0.3))
+                    .padding(.horizontal, 20)
+                    
+                // 1. Mode Label (The new display)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(themeManager.current.text)
+                        .frame(width: 4, height: 4)
+                        .opacity(0.8)
+                    
+                    Text("MODE: \(context.modes.first(where: { $0.id == Int(currentMode.replacingOccurrences(of: "mode", with: "")) })?.name.uppercased() ?? "UNKNOWN")")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .tracking(1.5) // Spacing for that "Sci-Fi" look
+                        .foregroundColor(themeManager.current.text.opacity(0.6))
+                    
+                    Circle()
+                        .fill(themeManager.current.text)
+                        .frame(width: 4, height: 4)
+                        .opacity(0.8)
+                }
+                .padding(.top, 4)
+                
+                // The Main Text Input
                 TextView (
                     inputText: $inputText,
                     isProcessing: $isProcessing,
                     shouldAnimate: $shouldAnimate,
                     fullTextViewMode: $fullTextViewMode,
-                    submitQuery: submitQuery,
+                    submitQuery: submitQuery
                 )
                 .environmentObject(context)
                 .environmentObject(themeManager)
-                Button(action: { 
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                        fullTextViewMode.toggle() 
+                
+                // --- NEW: Mode Indicator & Handle ---
+                VStack(spacing: 5) {
+                    
+                    // 2. Resize Handle (Existing Logic)
+                    Button(action: { 
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            fullTextViewMode.toggle() 
+                        }
+                    }) {
+                        Capsule()
+                            .fill(themeManager.current.text.opacity(0.2)) // Slightly lowered opacity
+                            .frame(width: 40, height: 4)
+                            .padding(.bottom, 15) // Adjust padding to fit the new label
+                            .padding(.horizontal, 20)   
+                            .contentShape(Rectangle()) 
                     }
-                }) {
-                    Capsule()
-                        .fill(themeManager.current.text.opacity(0.3))
-                        .frame(width: 40, height: 4)
-                        .padding(.vertical, 15)     
-                        .padding(.horizontal, 20)   
-                        .contentShape(Rectangle()) 
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .background(Color.black.opacity(0.01)) // Expands hit area slightly
             }
         }
         // Main Window Frame Logic
@@ -524,10 +572,6 @@ struct TextView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Divider()
-                .background(themeManager.current.secondary.opacity(0.3))
-                .padding(.horizontal, 20)
-            
             // A. RESPONSE AREA (Scrollable)
             ScrollView {
                 if !context.response.isEmpty {
@@ -568,6 +612,7 @@ struct TextView: View {
 
 struct CircularMenuItem: View {
     let title: String
+    let subtitle: String
     let angle: Double // In Degrees
     let radius: CGFloat
     let selected: Bool
@@ -576,7 +621,6 @@ struct CircularMenuItem: View {
     @State private var isHovering = false
     @EnvironmentObject var themeManager: ThemeManager
 
-    // Convert Degrees to Radian for swift math
     private var xOffset: CGFloat {
         radius * CGFloat(cos(angle * .pi / 180))
     }
@@ -587,16 +631,44 @@ struct CircularMenuItem: View {
 
     var body: some View {
         Button(action: action) {
+            // 1. The Anchor: This View defines the geometric center
             Text(title)
-                .font(.system(size: 10, weight: isHovering ? .heavy : .medium, design: .monospaced))
-                .foregroundColor(selected ? themeManager.current.text : (isHovering ? themeManager.current.text : themeManager.current.secondary))
-                .underline(selected, color: themeManager.current.text.opacity(selected ? 1.0 : 0.5))
-                .frame(height: 15) 
+                .font(.system(size: 11, weight: selected ? .bold : (isHovering ? .semibold : .medium), design: .monospaced))
+                .foregroundColor(selected ? themeManager.current.text : themeManager.current.secondary)
+                .shadow(color: selected ? themeManager.current.text.opacity(0.6) : .clear, radius: 4, x: 0, y: 0)
+                
+                // 2. The Subtitle: Hangs off the title without moving it
+                .overlay(alignment: .top) {
+                    if !subtitle.isEmpty && (isHovering || selected) {
+                        Text(subtitle)
+                            .font(.system(size: 8, weight: .light, design: .monospaced))
+                            .foregroundColor(themeManager.current.text)
+                            .fixedSize() // Prevents subtitle from wrapping weirdly
+                            .offset(y: 14) // Push it down below the title
+                            
+                            // Animation: Slide up from bottom
+                            .transition(
+                                .asymmetric(
+                                    insertion: .opacity.combined(with: .offset(y: 5)),
+                                    removal: .opacity.combined(with: .offset(y: 5))
+                                )
+                            )
+                    }
+                }
+                
+                // 3. Hit Area Expansion
+                .padding(.vertical, 15) 
+                .padding(.horizontal, 12)
         }
-        .buttonStyle(.plain) // Removes default button background/styling
+        .buttonStyle(.plain)
         .onHover { hovering in
-            self.isHovering = hovering
+            withAnimation(.easeInOut(duration: 0.2)) {
+                self.isHovering = hovering
+            }
         }
+        .scaleEffect(isHovering ? 1.05 : 1.0)
+        .animation(.easeInOut(duration: 0.2), value: isHovering)
+        .animation(.easeInOut(duration: 0.2), value: selected)
         .offset(x: xOffset, y: yOffset)
     }
 }

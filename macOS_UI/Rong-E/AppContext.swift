@@ -6,4 +6,25 @@ class AppContext: ObservableObject {
     @Published var shouldAnimate: Bool = false
     @Published var overlayWidth: CGFloat = 300
     @Published var overlayHeight: CGFloat = 160
+    @Published var aiApiKey: String = ""
+
+    // Add this inside AppContext.swift or a separate file
+    struct ModeConfiguration: Identifiable, Codable, Hashable {
+        var id: Int // 1 to 5
+        var name: String
+        var systemPrompt: String
+        var enabledTools: Set<String>
+    }
+
+    // Inside AppContext class
+    @Published var modes: [ModeConfiguration] = [
+        ModeConfiguration(id: 1, name: "General Assistant", systemPrompt: "You are a helpful assistant.", enabledTools: ["web_search", "search_knowledge_base"]),
+        ModeConfiguration(id: 2, name: "Coder", systemPrompt: "You are an expert Swift developer.", enabledTools: ["record_job_application", "email"]),
+        ModeConfiguration(id: 3, name: "Researcher", systemPrompt: "Deep dive into topics using academic sources.", enabledTools: ["web_search", "calendar"]),
+        ModeConfiguration(id: 4, name: "Writer", systemPrompt: "Creative writing mode.", enabledTools: []),
+        ModeConfiguration(id: 5, name: "Data Analyst", systemPrompt: "Analyze data structures.", enabledTools: ["search_knowledge_base", "record_job_application"])
+    ]
+
+    // List of all available tools in your system
+    let availableTools = Constants.Tools.availableTools
 }
