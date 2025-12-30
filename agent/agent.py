@@ -7,7 +7,7 @@ from langchain_core.tools import create_retriever_tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from agent.tools import get_tools, get_tool_map
 from agent.utils.audio import speak # Updated import
-from agent.config.settings import PROMPTS_DIR
+from agent.settings.settings import PROMPTS_DIR
 from agent.services.media import fetch_images
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
