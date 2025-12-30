@@ -2,7 +2,7 @@ import os
 import subprocess
 import shutil
 import threading
-from backend.config.settings import TTS_DIR
+from agent.config.settings import TTS_DIR
 
 def speak(text):
     """Stream audio directly from Piper to Speakers (No WAV file saved)"""

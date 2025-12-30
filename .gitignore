@@ -4,7 +4,7 @@ __pycache__/
 tts/
 # Secrets
 .env
-backend/config/*credentials*.json
-backend/config/token.json
-backend/config/config.json
-.DS_Store
+agent/config/*credentials*.json
+agent/config/token.json
+agent/config/config.json
+*.DS_Store

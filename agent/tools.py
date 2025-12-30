@@ -3,14 +3,14 @@ import os
 import platform
 from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchRun
-from backend.utils.file_utils import display_directory_tree, read_file_data, collect_file_paths, separate_files_by_type
-from backend.services.google_service import gmail_tools, tracker, calendar_tools
-from backend.services.rag import rag
+from agent.utils.file_utils import display_directory_tree, read_file_data, collect_file_paths, separate_files_by_type
+from agent.services.google_service import gmail_tools, tracker, calendar_tools
+from agent.services.rag import rag
 import datetime
 import os
 import subprocess
 from typing import List
-from backend.models.model import (
+from agent.models.model import (
     JobApplicationSchema, 
     WebSearchSchema, 
     ListDirectorySchema, 
@@ -110,6 +110,23 @@ def kb_search(query: str):
     output = rag.search_knowledge_base(query)
     return output
 
+@tool
+def open_chrome_tab(url: str):
+    """Opens a specific URL in the user's visible Google Chrome browser."""
+    apple_script = f'''
+    tell application "Google Chrome"
+        activate
+        if (count every window) = 0 then
+            make new window
+        end if
+        tell window 1
+            make new tab with properties {{URL: "{url}"}}
+        end tell
+    end tell
+    '''
+    subprocess.run(["osascript", "-e", apple_script])
+    return f"Opened {url} in Chrome."
+
 def get_tools():
     existing_tools = [get_current_date_time, web_search, record_job_application, pwd, open_application, kb_search]
     tools = existing_tools + gmail_tools + calendar_tools
@@ -131,3 +148,26 @@ def get_tool_map():
         tool_map[tool.name] = tool
 
     return tool_map
+
+if __name__ == "__main__":
+
+    url = "https://www.google.com/search?q=alex+o+connor"
+
+    apple_script = f'''
+    tell application "Google Chrome"
+        activate
+
+        -- Create a new window
+        set newWindow to make new window
+
+        -- Set window size and position (x, y, width, height)
+        set bounds of newWindow to {{200, 200, 900, 700}}
+
+        -- Load URL in the active tab
+        tell active tab of newWindow
+            set URL to "{url}"
+        end tell
+    end tell
+    '''
+
+    subprocess.run(["osascript", "-e", apple_script])

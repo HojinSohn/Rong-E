@@ -1,0 +1,2 @@
+Instruction: Select one relevant image based on the conversation and output a single, short image search query. Output only the query.
+MUST NOT generate any other text.

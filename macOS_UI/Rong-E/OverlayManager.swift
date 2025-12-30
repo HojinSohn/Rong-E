@@ -51,7 +51,7 @@ class WindowCoordinator: ObservableObject {
         controllers["main"]?.window?.orderFrontRegardless()
     }
     
-    func openDynamicWindow(id: String, view: AnyView) {
+    func openDynamicWindow(id: String, view: AnyView, size: CGSize, location: CGPoint? = nil) {
         if controllers[id] == nil {
             let controller = DynamicWindowController(
                 id: id,
@@ -59,7 +59,31 @@ class WindowCoordinator: ObservableObject {
                 view: view,
                 context: appContext,
                 theme: themeManager,
-                size: CGSize(width: 400, height: 300) // Example size; adjust as needed
+                size: size,
+                location: location
+            )
+            controllers[id] = controller
+        }
+        controllers[id]?.showWindow(nil)
+    }
+
+    func openWebWindow(url: URL, size: CGSize) {
+        let id = "web_\(url.absoluteString)"
+        print("Opening web window with ID: \(id)")
+        if controllers[id] == nil {
+            var body = WebWindowView(url: url, windowID: id, size: size)
+                .environmentObject(self)
+                .environmentObject(appContext)
+                .environmentObject(themeManager)
+            let anyView = AnyView(body)
+            print("opening the webview through controller")
+            let controller = DynamicWindowController(
+                id: id,
+                coordinator: self,
+                view: anyView,
+                context: appContext,
+                theme: themeManager,
+                size: size
             )
             controllers[id] = controller
         }
@@ -174,7 +198,9 @@ class DynamicWindowController: BaseOverlayController<AnyView> {
          view: AnyView, 
          context: AppContext, 
          theme: ThemeManager,
-         size: CGSize) { // <--- Pass size here
+         size: CGSize,
+         location: CGPoint? = nil
+         ) { 
         
         self.id = id
         
@@ -189,8 +215,8 @@ class DynamicWindowController: BaseOverlayController<AnyView> {
         // 2. Calculate Position (Center Screen)
         let screen = NSScreen.main?.frame ?? .zero
         let frame = NSRect(
-            x: screen.midX - (size.width / 2),
-            y: screen.midY - (size.height / 2),
+            x: location?.x ?? (screen.midX - (size.width / 2)),
+            y: location?.y ?? (screen.midY - (size.height / 2)),
             width: size.width,
             height: size.height
         )

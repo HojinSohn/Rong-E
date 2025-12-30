@@ -1,12 +1,14 @@
+import json
 import os
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_anthropic import ChatAnthropic
 from langchain_chroma import Chroma
 from langchain_core.tools import create_retriever_tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from backend.tools import get_tools, get_tool_map
-from backend.utils.audio import speak # Updated import
-from backend.config.settings import PROMPTS_DIR
+from agent.tools import get_tools, get_tool_map
+from agent.utils.audio import speak # Updated import
+from agent.config.settings import PROMPTS_DIR
+from agent.services.media import fetch_images
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 import google.genai as genai
@@ -36,6 +38,11 @@ class EchoAgent:
             temperature=0
         )
 
+        self.image_llm = ChatAnthropic(
+            model="claude-3-5-haiku-latest",
+            temperature=0
+        )
+
         # self.llm = ChatGoogleGenerativeAI(
         #     model="gemini-2.5-flash-lite",
         #     temperature=0
@@ -59,6 +66,23 @@ class EchoAgent:
 
         self.messages = [SystemMessage(content=self.system_prompt)]
         self.tool_map = get_tool_map()
+
+    def get_images(self, user_query, agent_response, count=3):
+        image_prompt = None
+
+        with open(os.path.join(PROMPTS_DIR, "image_prompt.txt"), "r") as f:
+            image_prompt = f.read()
+
+        image_msg = self.image_llm.invoke([
+            SystemMessage(content=image_prompt),
+            HumanMessage(content=f"Generate an image search query based on the following information:\n\nUser Query: {user_query}\n\nAgent Response: {agent_response}")
+        ])
+
+        print(f"Image Query: {image_msg.content}")
+
+        images = fetch_images(image_msg.content, count=count)
+
+        return images
 
     def get_plan(self, user_query, mode):
         plan_prompt = None
@@ -142,4 +166,27 @@ class EchoAgent:
                         print(f"   > Error: Tool {tool_name} not found.")
             else:
                 print(f"Output: {ai_msg.content}")
-                return ai_msg.content
+
+                images = []
+
+                # # Fetch images
+                # images = self.get_images(user_query, ai_msg.content)
+                
+                # # Structure the response as JSON
+                # response = {
+                #     "text": ai_msg.content,
+                #     "images": images if images else []
+                # }
+                
+                # print(f"Images: {json.dumps(images, indent=2)}")
+                
+                # For final response with images
+                response = {
+                    "type": "final",
+                    "content": {
+                        "text": ai_msg.content,
+                        "images": images if images else []
+                    }
+                }
+                
+                return response

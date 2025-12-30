@@ -76,9 +76,10 @@ struct ContentView: View {
                         activeTool: $activeTool,
                         shouldAnimate: $shouldAnimateResponse,
                         currentMode: $currentMode,
+                        fullTextViewMode: $fullTextViewMode,
                         toggleListening: toggleListening,
                         submitQuery: submitQuery,
-                        fullTextViewMode: $fullTextViewMode
+                        socketClient: client
                     )
                     .environmentObject(context)
                     .environmentObject(themeManager)
@@ -117,6 +118,23 @@ struct ContentView: View {
         
         client.onReceiveResponse = { responseText in
             finishProcessing(response: responseText)
+        }
+
+        client.onReceiveImages = { imageDatas in
+            for imageData in imageDatas {
+                let randomX = CGFloat.random(in: 100...800)
+                let randomY = CGFloat.random(in: 100...500)
+                coordinator.openDynamicWindow(id: imageData.url, view: AnyView(
+                    ImageView(imageData: imageData, windowID: imageData.url) // For simplicity, show first image
+                    .environmentObject(themeManager)
+                    .environmentObject(coordinator)
+                    .frame(width: 600, height: 400)
+                    .padding()
+                    .background(themeManager.current.background)
+                    .cornerRadius(12)
+                    .shadow(radius: 10)
+                ), size: CGSize(width: 600, height: 400), location: CGPoint(x: randomX, y: randomY))
+            }
         }
         
         client.onDisconnect = { errorText in
@@ -247,46 +265,64 @@ struct EnergyCore: View {
     @Binding var isListening: Bool
     @Binding var isProcessing: Bool
     let toggleListening: () -> Void
+    let socketClient: SocketClient
+    var clientConnectionStatus: Bool {
+        socketClient.isConnected
+    }
 
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var themeManager: ThemeManager
     private let darkRed = Color(red: 0.35, green: 0.02, blue: 0.02)
 
     private var currentStyle: CoreStyle {
-        if isListening {
+        if !clientConnectionStatus {
+            // DISCONNECTED — Dull, lifeless
             return CoreStyle(
-                speed: 1.5,
-                pulseColor: .blue.opacity(0.75),
-                spinColor: .cyan.opacity(0.6),
-                coreColor: .blue,
-                glowColors: [.white, .blue.opacity(0.85)],
-                textColor: themeManager.current.text.opacity(0.85),
+                speed: 0.3,
+                pulseColor: .gray.opacity(0.4),
+                spinColor: .gray.opacity(0.5),
+                coreColor: .gray.opacity(0.2),
+                glowColors: [.black.opacity(0.4), .gray.opacity(0.3)],
+                textColor: themeManager.current.text.opacity(0.5),
                 textShadow: .clear
             )
-
-        } else if isProcessing {
-            return CoreStyle(
-                speed: 2.0, // Slightly faster to feel "busy"
-                pulseColor: darkRed.opacity(0.9), // More opaque
-                spinColor: darkRed.opacity(0.8),
-                coreColor: darkRed,
-                glowColors: [Color.black.opacity(0.6), darkRed.opacity(0.9)],
-                textColor: .white.opacity(0.9),
-                textShadow: .red.opacity(0.5)
-            )
-
         } else {
-            // IDLE — Alive, breathing presence
-            return CoreStyle(
-                speed: 0.6,
-                pulseColor: .blue.opacity(0.6),
-                spinColor: .blue.opacity(0.7),
-                coreColor: .gray.opacity(0.3),
-                glowColors: [.gray.opacity(0.5), .black.opacity(0.3)],
-                textColor: themeManager.current.text.opacity(0.75),
-                textShadow: .clear
-            )
+            if isListening {
+                return CoreStyle(
+                    speed: 1.5,
+                    pulseColor: .blue.opacity(0.75),
+                    spinColor: .cyan.opacity(0.6),
+                    coreColor: .blue,
+                    glowColors: [.white, .blue.opacity(0.85)],
+                    textColor: themeManager.current.text.opacity(0.85),
+                    textShadow: .clear
+                )
+
+            } else if isProcessing {
+                return CoreStyle(
+                    speed: 2.0, // Slightly faster to feel "busy"
+                    pulseColor: darkRed.opacity(0.9), // More opaque
+                    spinColor: darkRed.opacity(0.8),
+                    coreColor: darkRed,
+                    glowColors: [Color.black.opacity(0.6), darkRed.opacity(0.9)],
+                    textColor: .white.opacity(0.9),
+                    textShadow: .red.opacity(0.5)
+                )
+
+            } else {
+                // IDLE — Alive, breathing presence
+                return CoreStyle(
+                    speed: 0.6,
+                    pulseColor: .blue.opacity(0.6),
+                    spinColor: .blue.opacity(0.7),
+                    coreColor: .gray.opacity(0.3),
+                    glowColors: [.gray.opacity(0.5), .black.opacity(0.3)],
+                    textColor: themeManager.current.text.opacity(0.75),
+                    textShadow: .clear
+                )
+            }
         }
+        
     }
 
     private var animationKey: String {
@@ -368,6 +404,7 @@ struct EnergyCore: View {
             .buttonStyle(.plain)
             .contentShape(Circle())
             .accessibilityLabel(isListening ? "Stop Listening" : "Start Listening")
+            .disabled(!clientConnectionStatus)
         }
         .frame(width: 130, height: 130)
         .padding(.leading, 20)
@@ -394,19 +431,26 @@ struct FullDashboardView: View {
     @Binding var activeTool: String?
     @Binding var shouldAnimate: Bool
     @Binding var currentMode: String
-    
+    @Binding var fullTextViewMode: Bool
+
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var coordinator: WindowCoordinator
     
     var toggleListening: () -> Void
     var submitQuery: () -> Void
-
-    @Binding var fullTextViewMode: Bool
-
+    var socketClient: SocketClient
 
     func openSettings() {
         coordinator.openSettings()
+    }
+
+    func openWebWindow(query: String) {
+        let escapedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let urlString = "https://www.google.com/search?q=\(escapedQuery)"
+        if let url = URL(string: urlString) {
+            coordinator.openWebWindow(url: url, size: CGSize(width: 800, height: 600))
+        }
     }
 
     private func calculateWindowSize() -> CGSize {
@@ -440,7 +484,8 @@ struct FullDashboardView: View {
                     EnergyCore(
                         isListening: $isListening,
                         isProcessing: $isProcessing,
-                        toggleListening: toggleListening
+                        toggleListening: toggleListening,
+                        socketClient: socketClient
                     )
                     .zIndex(1)
                     .environmentObject(context)
@@ -483,8 +528,11 @@ struct FullDashboardView: View {
                             inputMode.toggle()
                         }
                     }
-                    MenuLinkButton(title: "DEBUG") {
-                        print("Debug clicked") 
+                    MenuLinkButton(title: socketClient.isConnected ? "Workflow" : "Connect") {
+                        print("Reconnect clicked") 
+                        if !socketClient.isConnected {
+                            socketClient.connect()
+                        }
                     }
                 }
                 .padding(.trailing, 15)
@@ -517,7 +565,7 @@ struct FullDashboardView: View {
                         .frame(width: 4, height: 4)
                         .opacity(0.8)
                 }
-                .padding(.top, 4)
+                .padding(.vertical, 4)
                 
                 // The Main Text Input
                 TextView (
