@@ -32,6 +32,6 @@ enum Constants {
     }
 
     enum Tools {
-        static let availableTools = ["web_search", "search_knowledge_base", "record_job_application", "email", "calendar"]
+        static let availableTools = ["web_search", "search_knowledge_base", "email", "calendar"]
     }
 }

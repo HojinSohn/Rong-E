@@ -1,7 +1,0 @@
-You are an AI agent.
-
-Given the job description and the tools available to you, produce a simple, step-by-step plan for recording a job application.
-
-Use a numbered list.
-
-Do not perform any actions—only describe the steps the agent should follow.

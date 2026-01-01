@@ -1,4 +1,3 @@
-import json
 import os
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_anthropic import ChatAnthropic
@@ -28,30 +27,34 @@ class EchoAgent:
         #     temperature=0,
         # )
         
-        self.llm = ChatAnthropic(
-            model="claude-3-5-haiku-latest",
-            temperature=0
-        )
-
-        self.plan_llm = ChatAnthropic(
-            model="claude-3-5-haiku-latest",
-            temperature=0
-        )
-
-        self.image_llm = ChatAnthropic(
-            model="claude-3-5-haiku-latest",
-            temperature=0
-        )
-
-        # self.llm = ChatGoogleGenerativeAI(
-        #     model="gemini-2.5-flash-lite",
+        # self.llm = ChatAnthropic(
+        #     model="claude-3-5-haiku-latest",
         #     temperature=0
         # )
 
-        # self.plan_llm = ChatGoogleGenerativeAI(
-        #     model="gemini-2.5-flash-lite",
+        # self.plan_llm = ChatAnthropic(
+        #     model="claude-3-5-haiku-latest",
         #     temperature=0
         # )
+
+        # self.image_llm = ChatAnthropic(
+        #     model="claude-3-5-haiku-latest",
+        #     temperature=0
+        # )
+
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            temperature=0
+        )
+
+        self.plan_llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            temperature=0
+        )
+        self.image_llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            temperature=0
+        )
 
         # 2. Load Existing Tools
         self.tools = get_tools()

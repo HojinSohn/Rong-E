@@ -4,7 +4,7 @@ import platform
 from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchRun
 from agent.utils.file_utils import display_directory_tree, read_file_data, collect_file_paths, separate_files_by_type
-from agent.services.google_service import gmail_tools, tracker, calendar_tools
+from agent.services.google_service import gmail_tools, calendar_tools, sheets_tools
 from agent.services.rag import rag
 import datetime
 import os
@@ -27,23 +27,6 @@ search = DuckDuckGoSearchRun()
 def web_search(query: str):
     """Useful for searching the internet for current events or facts."""
     return search.run(query)
-
-@tool("record_job_application", description="Logs a job application to the Google Sheet.", args_schema=JobApplicationSchema)
-def record_job_application(company: str, position: str, url: str) -> str:
-    """
-    Logs an action or data point to the Google Sheet.
-    Useful for saving research results, tracking tasks, or keeping a history.
-    
-    Args:
-        company (str): The name of the company.
-        position (str): The job position applied for.
-        url (str): The URL of the job posting.
-    """
-    success = tracker.find_and_update_empty_row(company, position, url)
-    if success:
-        return f"Logged application for {position} at {company}."
-    else:
-        return "Failed to log the job application."
 
 @tool("get_current_date_time", description="Returns the current local date and time.")
 def get_current_date_time():
@@ -128,15 +111,26 @@ def open_chrome_tab(url: str):
     return f"Opened {url} in Chrome."
 
 def get_tools():
-    existing_tools = [get_current_date_time, web_search, record_job_application, pwd, open_application, kb_search]
+    """Get tools for LLM binding.
+    
+    Filters out complex Sheets tools that cause schema validation errors with Gemini.
+    Sheets operations are better handled through the multi-agent system.
+    """
+    existing_tools = [get_current_date_time, web_search, pwd, open_application, kb_search]
+    
     tools = existing_tools + gmail_tools + calendar_tools
+    
     return tools
 
 def get_tool_map():
+    """Get mapping of tool names to tool objects.
+    
+    Note: Sheets tools are excluded from direct tool map as they're better
+    handled through the multi-agent system due to complex schema requirements.
+    """
     tool_map = {
         "get_current_date_time": get_current_date_time, 
         "web_search": web_search,
-        "record_job_application": record_job_application,
         "open_application": open_application,
         "search_knowledge_base": kb_search,
     }
@@ -146,28 +140,5 @@ def get_tool_map():
 
     for tool in calendar_tools:
         tool_map[tool.name] = tool
-
+    
     return tool_map
-
-if __name__ == "__main__":
-
-    url = "https://www.google.com/search?q=alex+o+connor"
-
-    apple_script = f'''
-    tell application "Google Chrome"
-        activate
-
-        -- Create a new window
-        set newWindow to make new window
-
-        -- Set window size and position (x, y, width, height)
-        set bounds of newWindow to {{200, 200, 900, 700}}
-
-        -- Load URL in the active tab
-        tell active tab of newWindow
-            set URL to "{url}"
-        end tell
-    end tell
-    '''
-
-    subprocess.run(["osascript", "-e", apple_script])

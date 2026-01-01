@@ -19,10 +19,10 @@ class AppContext: ObservableObject {
     // Inside AppContext class
     @Published var modes: [ModeConfiguration] = [
         ModeConfiguration(id: 1, name: "General Assistant", systemPrompt: "You are a helpful assistant.", enabledTools: ["web_search", "search_knowledge_base"]),
-        ModeConfiguration(id: 2, name: "Coder", systemPrompt: "You are an expert Swift developer.", enabledTools: ["record_job_application", "email"]),
+        ModeConfiguration(id: 2, name: "Coder", systemPrompt: "You are an expert Swift developer.", enabledTools: ["email"]),
         ModeConfiguration(id: 3, name: "Researcher", systemPrompt: "Deep dive into topics using academic sources.", enabledTools: ["web_search", "calendar"]),
         ModeConfiguration(id: 4, name: "Writer", systemPrompt: "Creative writing mode.", enabledTools: []),
-        ModeConfiguration(id: 5, name: "Data Analyst", systemPrompt: "Analyze data structures.", enabledTools: ["search_knowledge_base", "record_job_application"])
+        ModeConfiguration(id: 5, name: "Data Analyst", systemPrompt: "Analyze data structures.", enabledTools: ["search_knowledge_base"])
     ]
 
     // List of all available tools in your system
