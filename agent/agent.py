@@ -11,6 +11,8 @@ from agent.services.media import fetch_images
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 import google.genai as genai
+from agent.services.google_service import AuthManager
+
 
 from pathlib import Path
 
@@ -22,26 +24,6 @@ load_dotenv()
 class EchoAgent:
     def __init__(self):
         # # 1. Initialize LLM
-        # self.llm = ChatOllama(
-        #     model="qwen2.5:1.5b-instruct",
-        #     temperature=0,
-        # )
-        
-        # self.llm = ChatAnthropic(
-        #     model="claude-3-5-haiku-latest",
-        #     temperature=0
-        # )
-
-        # self.plan_llm = ChatAnthropic(
-        #     model="claude-3-5-haiku-latest",
-        #     temperature=0
-        # )
-
-        # self.image_llm = ChatAnthropic(
-        #     model="claude-3-5-haiku-latest",
-        #     temperature=0
-        # )
-
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash-lite",
             temperature=0
@@ -56,10 +38,13 @@ class EchoAgent:
             temperature=0
         )
 
-        # 2. Load Existing Tools
+        # 2. Initialize Google Auth Manager
+        self.auth_manager = AuthManager()
+
+        # 3. Load Existing Tools
         self.tools = get_tools()
 
-        # 5. Bind tools to model
+        # 4. Bind tools to model
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         self.plan_llm_with_tools = self.plan_llm.bind_tools(self.tools)
         
@@ -68,6 +53,32 @@ class EchoAgent:
             self.system_prompt = f.read()
 
         self.messages = [SystemMessage(content=self.system_prompt)]
+        self.tool_map = get_tool_map()
+
+    async def authenticate_google(self, token_file: str = None, client_secrets_file: str = None):
+        await self.auth_manager.authenticate(
+            token_file=token_file,
+            client_secrets_file=client_secrets_file
+        )
+        
+        # Refresh tools with authenticated Google tools
+        google_tools = self.auth_manager.get_google_tools()
+        self.tools.extend(google_tools)
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        self.plan_llm_with_tools = self.plan_llm.bind_tools(self.tools)
+        self.tool_map = get_tool_map()
+        # Update tool map with new Google tools
+        for tool in google_tools:
+            self.tool_map[tool.name.lower()] = tool
+
+    def revoke_google_credentials(self):
+        # Clear credentials
+        self.auth_manager.credentials = None
+        
+        # Refresh tools without Google tools
+        self.tools = get_tools()  # Reload base tools
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        self.plan_llm_with_tools = self.plan_llm.bind_tools(self.tools)
         self.tool_map = get_tool_map()
 
     def get_images(self, user_query, agent_response, count=3):

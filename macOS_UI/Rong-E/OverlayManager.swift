@@ -31,9 +31,17 @@ class OverlayWindow: NSPanel {
 }
 
 class WindowCoordinator: ObservableObject {
-    // Shared State
-    let appContext = AppContext()
-    let themeManager = ThemeManager()
+    let appContext: AppContext
+    let client: SocketClient
+    let themeManager: ThemeManager
+    let googleAuthManager: GoogleAuthManager
+    
+    init() {
+        self.appContext = AppContext()
+        self.client = SocketClient()
+        self.themeManager = ThemeManager()
+        self.googleAuthManager = GoogleAuthManager(context: appContext, client: client)
+    }
     
     // Track active controllers to keep them in memory
     private var controllers: [String: NSWindowController] = [:]
@@ -43,7 +51,9 @@ class WindowCoordinator: ObservableObject {
             let controller = MainWindowController(
                 coordinator: self,
                 context: appContext,
-                theme: themeManager
+                theme: themeManager,
+                socketClient: client,
+                googleAuthManager: googleAuthManager
             )
             controllers["main"] = controller
         }
@@ -90,6 +100,46 @@ class WindowCoordinator: ObservableObject {
         controllers[id]?.showWindow(nil)
     }
 
+    func openGoogleService() {
+        let id = "google_service_window"
+        
+        // 1. Check if already open (singleton behavior for Google Service)
+        if let existing = controllers[id] {
+            existing.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        
+        // 2. Configure View
+        let contentView = GoogleServiceView(windowID: id).environmentObject(self)
+                                                        .environmentObject(appContext)
+                                                        .environmentObject(themeManager)
+                                                        .environmentObject(googleAuthManager)
+        
+        // 3. Configure Controller
+        let controller = DynamicWindowController(
+            id: id,
+            coordinator: self,
+            view: AnyView(contentView),
+            context: appContext,
+            theme: themeManager,
+            size: CGSize(width: 500, height: 400),
+            location: nil
+        )
+        
+        // 4. Store and Show
+        controllers[id] = controller
+        controller.showWindow(self)
+        
+        // 5. Cleanup Hook
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, 
+            object: controller.window, 
+            queue: .main
+        ) { [weak self] _ in
+            self?.controllers.removeValue(forKey: id)
+        }
+    }
+
     func openSettings() {
         let id = "settings_window"
         
@@ -109,7 +159,8 @@ class WindowCoordinator: ObservableObject {
             view: AnyView(contentView),
             context: appContext,
             theme: themeManager,
-            size: CGSize(width: 450, height: 350)
+            size: CGSize(width: 450, height: 350),
+            location: nil
         )
         
         // 4. Store and Show
@@ -158,13 +209,15 @@ class BaseOverlayController<RootView: View>: NSWindowController {
 // 1. Change the generic type from <ContentView> to <AnyView>
 class MainWindowController: BaseOverlayController<AnyView> {
     
-    init(coordinator: WindowCoordinator, context: AppContext, theme: ThemeManager) {
+    init(coordinator: WindowCoordinator, context: AppContext, theme: ThemeManager, socketClient: SocketClient, googleAuthManager: GoogleAuthManager) {
         
         // 2. Create your view with all its modifiers
         let view = ContentView()
             .environmentObject(context)
             .environmentObject(theme)
             .environmentObject(coordinator)
+            .environmentObject(googleAuthManager)
+            .environmentObject(socketClient)
         
         // ... (Your frame calculation logic) ...
         let width: CGFloat = Constants.UI.windowWidth

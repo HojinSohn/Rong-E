@@ -1,10 +1,10 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect # <--- Added Imports
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from agent.agent import EchoAgent
 import uvicorn
 import json
-from agent.utils.audio import speak  # Assuming you have a speak function defined in a separate file
+from agent.utils.audio import speak 
     
 app = FastAPI()
 
@@ -44,6 +44,51 @@ async def websocket_endpoint(websocket: WebSocket):
             #  ["mode": mode, "message": text]
             data = await websocket.receive_text()
             data = json.loads(data)
+            print(f"📥 Received Data: {data}")
+
+            # Check if data is credentials
+            # check if data_type key exists
+            if "data_type" in data:
+                if data["data_type"] == "credentials":
+                    credentials_dir_path = data["content"]
+                    # Here, you would process and store the credentials securely
+                    # For demonstration, we just print and acknowledge
+                    credentials_file_path = credentials_dir_path + "/credentials.json"
+                    token_file_path = credentials_dir_path + "/token.json"
+                    print("🔐 Received Credentials")
+                    print(f"Credentials Path: {credentials_file_path}")
+                    print(f"Token Path: {token_file_path}")
+                    try:
+                        await agent.authenticate_google(token_file=token_file_path, client_secrets_file=credentials_file_path)
+                    except Exception as e:
+                        await websocket.send_text(json.dumps({
+                            "type": "credentials_error",
+                            "text": f"❌ Error during authentication: {str(e)}"
+                        }))
+                        print(f"❌ Error during authentication: {str(e)}")
+                        continue  # Skip the rest of the loop
+                    await websocket.send_text(json.dumps({
+                        "type": "credentials_success",
+                        "text": "✅ Credentials received and stored successfully."
+                    }))
+                    continue  # Skip the rest of the loop
+                elif data["data_type"] == "api_key":
+                    api_key_path = data["path"]
+                    print("🔑 Received API Key")
+                    await websocket.send_text(json.dumps({
+                        "type": "credentials_success",
+                        "text": "✅ API Key received and stored successfully."
+                    }))
+                    continue  # Skip the rest of the loop
+                elif data["data_type"] == "revoke_credentials":
+                    print("🔓 Received Revoke Credentials")
+                    agent.revoke_google_credentials()
+                    await websocket.send_text(json.dumps({
+                        "type": "credentials_revoked",
+                        "text": "✅ Credentials revoked successfully."
+                    }))
+                    continue  # Skip the rest of the loop
+
             query, mode = data["message"], data["mode"]
             print(f"📥 Received: {query} in mode: {mode}")
             
@@ -57,6 +102,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
                 await websocket.send_text(payload)
                 speak(f"{thought_text}")  # Optional: Log thoughts to console 
+
+            print([tool.name for tool in agent.tools])
+            print(agent.tool_map.keys())
 
             # --- 2. Run Agent with Callback ---
             # We await the agent, passing our new function

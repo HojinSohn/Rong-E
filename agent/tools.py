@@ -4,7 +4,6 @@ import platform
 from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchRun
 from agent.utils.file_utils import display_directory_tree, read_file_data, collect_file_paths, separate_files_by_type
-from agent.services.google_service import gmail_tools, calendar_tools, sheets_tools
 from agent.services.rag import rag
 import datetime
 import os
@@ -118,9 +117,7 @@ def get_tools():
     """
     existing_tools = [get_current_date_time, web_search, pwd, open_application, kb_search]
     
-    tools = existing_tools + gmail_tools + calendar_tools
-    
-    return tools
+    return existing_tools
 
 def get_tool_map():
     """Get mapping of tool names to tool objects.
@@ -135,10 +132,4 @@ def get_tool_map():
         "search_knowledge_base": kb_search,
     }
 
-    for tool in gmail_tools:
-        tool_map[tool.name] = tool
-
-    for tool in calendar_tools:
-        tool_map[tool.name] = tool
-    
     return tool_map

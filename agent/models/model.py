@@ -1,7 +1,14 @@
 
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
+from enum import Enum
 
+class SheetAction(str, Enum):
+    READ = "read"
+    APPEND = "append"
+    UPDATE = "update"
+    CREATE = "create"
+    CLEAR = "clear"
 class JobApplicationSchema(BaseModel):
     company: str
     position: str
@@ -27,3 +34,21 @@ class OpenApplicationSchema(BaseModel):
 
 class KBSearchSchema(BaseModel):
     query: str
+
+class SheetToolInput(BaseModel):
+    action: SheetAction = Field(
+        ..., 
+        description="The operation to perform. Options: 'read', 'append', 'update', 'create', 'clear'."
+    )
+    spreadsheet_id: Optional[str] = Field(
+        None, 
+        description="The ID of the spreadsheet. If creating a new sheet, leave this blank."
+    )
+    range_name: str = Field(
+        ..., 
+        description="The A1 notation range (e.g., 'Sheet1!A1:B5'). For 'create', use this as the title."
+    )
+    values_json: Optional[str] = Field(
+        None, 
+        description="A JSON string representing the data rows. Example: '[[\"Name\", \"Age\"], [\"Alice\", \"30\"]]'. Required for append/update."
+    )

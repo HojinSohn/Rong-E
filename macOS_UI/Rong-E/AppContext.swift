@@ -7,6 +7,12 @@ class AppContext: ObservableObject {
     @Published var overlayWidth: CGFloat = 300
     @Published var overlayHeight: CGFloat = 160
     @Published var aiApiKey: String = ""
+    @Published var isGoogleConnected: Bool = false
+    @Published var credentialsDirectory: URL = {
+        let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+        let appSupportDir = paths[0].appendingPathComponent("Rong-E").appendingPathComponent("Credentials")
+        return appSupportDir
+    }()
 
     // Add this inside AppContext.swift or a separate file
     struct ModeConfiguration: Identifiable, Codable, Hashable {

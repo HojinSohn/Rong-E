@@ -1,4 +1,6 @@
 import Foundation
+import Foundation
+import Combine
 
 // 1. Define the structure of messages coming from Python
 struct AgentMessage: Codable {
@@ -19,8 +21,13 @@ struct ImageData: Codable {
     let alt: String?
     let author: String?
 }
-import Foundation
-import Combine
+
+// enum for data types
+enum CredentialDataType: String {
+    case apiKey = "api_key"
+    case credentials = "credentials"
+    case revoke_credentials = "revoke_credentials"
+}
 
 class SocketClient: ObservableObject {
     private var webSocketTask: URLSessionWebSocketTask?
@@ -31,8 +38,12 @@ class SocketClient: ObservableObject {
     var onReceiveResponse: ((String) -> Void)?
     var onReceiveImages: (([ImageData]) -> Void)?
     var onDisconnect: ((String) -> Void)?
+    var onReceivedCredentialsSuccess: ((String) -> Void)?
     
-    init() { connect() }
+    init() { 
+        connect() 
+        print("Tlqkf");
+    }
 
     deinit {
         disconnect()
@@ -75,9 +86,9 @@ class SocketClient: ObservableObject {
                     }
                     let message = try await task.receive()
                     switch message {
-                    case .string(let text):
-                        self.handleMessage(text)
-                    default: break
+                        case .string(let text):
+                            self.handleMessage(text)
+                        default: break
                     }
                 } catch {
                     print("❌ Socket Error: \(error)")
@@ -109,12 +120,29 @@ class SocketClient: ObservableObject {
                 if !content.images.isEmpty {
                     self.onReceiveImages?(content.images)
                 }
+            } else if parsedMsg.type == "credentials_success", let text = parsedMsg.text {
+                print("✅ Credentials Success Received: \(text)")
+                print("✅ Triggering onReceivedCredentialsSuccess callback")
+                print("🎯 Callback exists: \(self.onReceivedCredentialsSuccess != nil)")
+                self.onReceivedCredentialsSuccess?(text)
             }
         }
     }
 
     func sendMessage(_ text: String, mode: String) {
         let json: [String: String] = ["mode": mode, "message": text]
+        if let jsonData = try? JSONEncoder().encode(json), 
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Send Error: \(error)") }
+            }
+        }
+    }
+
+    func sendCredentials(_ dataType: CredentialDataType, content: String) {
+        print("🔐 Sending credentials of type: \(dataType.rawValue) with content: \(content)")
+        let json: [String: String] = ["data_type": dataType.rawValue, "content": content]
         if let jsonData = try? JSONEncoder().encode(json), 
            let jsonString = String(data: jsonData, encoding: .utf8) {
             let message = URLSessionWebSocketTask.Message.string(jsonString)

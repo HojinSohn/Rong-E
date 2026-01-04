@@ -12,11 +12,11 @@ struct ContentView: View {
     
     @State private var shouldAnimateResponse = true 
     
-    @StateObject private var client = SocketClient()
-    
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var coordinator: WindowCoordinator
+    @EnvironmentObject var googleAuthManager: GoogleAuthManager
+    @EnvironmentObject var client: SocketClient
 
     @State private var isListening = false
     @State private var isProcessing = false
@@ -26,20 +26,6 @@ struct ContentView: View {
     
     var isExpanded: Bool {
         return isHovering || inputMode || isListening || isProcessing
-    }
-
-    private func calculateWindowSize() -> CGSize {
-        if !isExpanded {
-            return CGSize(width: Constants.UI.overlayWindow.compactWidth, height: Constants.UI.overlayWindow.compactHeight)
-        }
-        
-        if !inputMode {
-            return CGSize(width: Constants.UI.overlayWindow.expandedWidth, height: Constants.UI.overlayWindow.expandedHeight)
-        }
-        
-        let height = fullTextViewMode ? Constants.UI.windowHeight : Constants.UI.overlayWindow.inputModeHeight
-        
-        return CGSize(width: Constants.UI.windowWidth, height: height)
     }
 
     var body: some View {
@@ -79,11 +65,13 @@ struct ContentView: View {
                         fullTextViewMode: $fullTextViewMode,
                         toggleListening: toggleListening,
                         submitQuery: submitQuery,
-                        socketClient: client
+                        setUpConnection: setUpConnection
                     )
                     .environmentObject(context)
                     .environmentObject(themeManager)
                     .environmentObject(coordinator)
+                    .environmentObject(googleAuthManager)
+                    .environmentObject(client)
                     .transition(.opacity.combined(with: .scale))
                 } else {
                     CompactStatusView(isProcessing: isProcessing)
@@ -98,7 +86,7 @@ struct ContentView: View {
         }
         .frame(width: Constants.UI.windowWidth, height: Constants.UI.windowHeight, alignment: .top) // Anchor top in outer frame
         .onAppear {
-            setupSocketListeners()
+            setUpConnection()
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isExpanded)
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: inputMode)
@@ -107,7 +95,32 @@ struct ContentView: View {
 
     
     // MARK: - Logic
-    func setupSocketListeners() {
+    private func setUpConnection() {
+        setupSocketListeners()
+        setUpAuthManager()
+    }
+
+    private func calculateWindowSize() -> CGSize {
+        if !isExpanded {
+            return CGSize(width: Constants.UI.overlayWindow.compactWidth, height: Constants.UI.overlayWindow.compactHeight)
+        }
+        
+        if !inputMode {
+            return CGSize(width: Constants.UI.overlayWindow.expandedWidth, height: Constants.UI.overlayWindow.expandedHeight)
+        }
+        
+        let height = fullTextViewMode ? Constants.UI.windowHeight : Constants.UI.overlayWindow.inputModeHeight
+        
+        return CGSize(width: Constants.UI.windowWidth, height: height)
+    }
+
+    private func setUpAuthManager() {
+        googleAuthManager.startupCheck()
+    }
+
+    private func setupSocketListeners() {
+        print("🔌 Setting up Socket Listeners")
+
         client.onReceiveThought = { thoughtText in
             withAnimation {
                 self.isProcessing = true
@@ -265,13 +278,15 @@ struct EnergyCore: View {
     @Binding var isListening: Bool
     @Binding var isProcessing: Bool
     let toggleListening: () -> Void
-    let socketClient: SocketClient
-    var clientConnectionStatus: Bool {
-        socketClient.isConnected
-    }
 
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var socketClient: SocketClient
+
+    private var clientConnectionStatus: Bool {
+        socketClient.isConnected
+    }
+
     private let darkRed = Color(red: 0.35, green: 0.02, blue: 0.02)
 
     private var currentStyle: CoreStyle {
@@ -436,13 +451,19 @@ struct FullDashboardView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var coordinator: WindowCoordinator
+    @EnvironmentObject var googleAuthManager: GoogleAuthManager
+    @EnvironmentObject var socketClient: SocketClient
     
     var toggleListening: () -> Void
     var submitQuery: () -> Void
-    var socketClient: SocketClient
+    var setUpConnection: () -> Void
 
     func openSettings() {
         coordinator.openSettings()
+    }
+
+    func openGoogleService() {
+        coordinator.openGoogleService()
     }
 
     func openWebWindow(query: String) {
@@ -470,7 +491,10 @@ struct FullDashboardView: View {
             HStack(spacing: 0) {
                 // Left Column
                 VStack(alignment: .leading, spacing: 15) {
-                    MenuLinkButton(title: "HISTORY") { print("History clicked") }
+                    MenuLinkButton(title: "Google Service") { 
+                        print("Google Service clicked") 
+                        openGoogleService()
+                    }
                     MenuLinkButton(title: "SETTINGS") {
                         print("Settings clicked") 
                         openSettings()
@@ -484,12 +508,12 @@ struct FullDashboardView: View {
                     EnergyCore(
                         isListening: $isListening,
                         isProcessing: $isProcessing,
-                        toggleListening: toggleListening,
-                        socketClient: socketClient
+                        toggleListening: toggleListening
                     )
                     .zIndex(1)
                     .environmentObject(context)
                     .environmentObject(themeManager)
+                    .environmentObject(socketClient)
 
                     // Show radial menu only when typing or thinking
                     if inputMode {
@@ -532,6 +556,9 @@ struct FullDashboardView: View {
                         print("Reconnect clicked") 
                         if !socketClient.isConnected {
                             socketClient.connect()
+                            setUpConnection()
+                        } else {
+                            print(context.isGoogleConnected ? "Google is connected." : "Google is NOT connected.")
                         }
                     }
                 }
