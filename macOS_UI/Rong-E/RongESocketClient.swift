@@ -29,6 +29,13 @@ enum CredentialDataType: String {
     case revoke_credentials = "revoke_credentials"
 }
 
+// Add a struct for the payload
+struct ChatPayload: Codable {
+    let text: String
+    let mode: String
+    let base64_image: String? // Base64 string (optional)
+}
+
 class SocketClient: ObservableObject {
     private var webSocketTask: URLSessionWebSocketTask?
     private let decoder = JSONDecoder()
@@ -142,7 +149,7 @@ class SocketClient: ObservableObject {
     }
 
     func sendMessage(_ text: String, mode: String) {
-        let json: [String: String] = ["mode": mode, "message": text]
+        let json = ChatPayload(text: text, mode: mode, base64_image: nil)
         if let jsonData = try? JSONEncoder().encode(json), 
            let jsonString = String(data: jsonData, encoding: .utf8) {
             let message = URLSessionWebSocketTask.Message.string(jsonString)
@@ -151,6 +158,21 @@ class SocketClient: ObservableObject {
             }
         }
     }
+
+
+    func sendMessageWithImage(_ text: String, mode: String, base64Image: String? = nil) {
+        let payload = ChatPayload(text: text, mode: mode, base64_image: base64Image)
+        
+        // Encode to JSON
+        if let jsonData = try? JSONEncoder().encode(payload),
+        let jsonString = String(data: jsonData, encoding: .utf8) {
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Send Error: \(error)") }
+            }
+        }
+    }
+
 
     func sendCredentials(_ dataType: CredentialDataType, content: String) {
         print("🔐 Sending credentials of type: \(dataType.rawValue) with content: \(content)")

@@ -137,18 +137,29 @@ class EchoAgent:
 
         return plan_msg
 
-    async def run(self, user_query, mode, callback=None):
+    async def run(self, user_query, mode, base64_image=None, callback=None):
         print(f"\nUser: {user_query}")
 
-        plan_msg = self.get_plan(user_query, mode) # Get plan if needed
 
-        if plan_msg:
-            # Full query
-            message = f"""{user_query}. Here is the plan you can follow: {plan_msg.content}"""
+        if base64_image:
+            if not base64_image.startswith("data:"):
+                image_url = f"data:image/jpeg;base64,{base64_image}"
+            else:
+                image_url = base64_image
+            message_content = [
+                {
+                    "type": "text",
+                    "text": user_query
+                },
+                {
+                    "type": "image_url",
+                    "image_url": image_url  # Standard LangChain format
+                }
+            ]
         else:
-            message = user_query
+            message_content = user_query
 
-        self.messages.append(HumanMessage(content=message))
+        self.messages.append(HumanMessage(content=message_content))
         
         max_iterations = 5
         iteration = 0

@@ -19,11 +19,6 @@ app.add_middleware(
 
 agent = EchoAgent()
 global_websocket = None
-class ChatRequest(BaseModel):
-    message: str
-    page_content: str = None
-    url: str = None
-
 # 👇 UPDATED WEBSOCKET ENDPOINT@app.websocket("/ws")
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -36,7 +31,6 @@ async def websocket_endpoint(websocket: WebSocket):
             #  ["mode": mode, "message": text]
             data = await websocket.receive_text()
             data = json.loads(data)
-            print(f"📥 Received Data: {data}")
 
             # Check if data is credentials
             # check if data_type key exists
@@ -81,9 +75,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     }))
                     continue  # Skip the rest of the loop
 
-            query, mode = data["message"], data["mode"]
-            print(f"📥 Received: {query} in mode: {mode}")
-            
+            # Normal message processing
+            query, mode, base64_image = data["text"], data["mode"], data.get("base64_image")
+            print(f"Processing Query: {query} in Mode: {mode}")
+            print(f"Base64 Image Present: {'Yes' if base64_image else 'No'}")  
             # --- 1. Define the Callback Function ---
             # This function will be passed to the agent.
             # It sends "thoughts" immediately to the client.
@@ -100,7 +95,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # --- 2. Run Agent with Callback ---
             # We await the agent, passing our new function
-            final_response = await agent.run(query, mode, callback=send_thought)
+            final_response = await agent.run(query, mode, base64_image=base64_image, callback=send_thought)
 
             json_response = json.dumps(final_response)
             # --- 3. Send Final Response ---

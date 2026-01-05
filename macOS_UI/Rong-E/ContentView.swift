@@ -156,21 +156,51 @@ struct ContentView: View {
     }
 
     func submitQuery() {
-        guard !inputText.isEmpty else { 
-            return 
-        }
+        guard !inputText.isEmpty else { return }
+        
+        // 1. Capture State
         let query = inputText
         let selectedMode = currentMode.lowercased()
         inputText = ""
         isProcessing = true
-        aiResponse = "" 
-        // update context with query
+        aiResponse = ""
         context.response = ""
-
-        client.sendMessage(query, mode: selectedMode)
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        // 2. Run Async Work
+        Task { @MainActor in
+            var base64Image: String? = nil
+            
+            do {
+                base64Image = try await ScreenshotManager.captureMainScreen()
+                print("✅ Screenshot captured. Size: \(base64Image?.count ?? 0)")
+                
+            } catch {
+                // --- FIX START ---
+                let nsError = error as NSError
+                
+                // Check for the specific "User Declined" error code (-3801)
+                // The domain string is "com.apple.ScreenCaptureKit.SCStreamErrorDomain"
+                if nsError.code == -3801 {
+                    print("⚠️ Permission Denied. Opening Settings...")
+                    openPrivacySettings()
+                } else {
+                    print("❌ Screenshot Error: \(nsError.localizedDescription)")
+                }
+                // --- FIX END ---
+            }
+
+            // 3. Send message (with or without image)
+            client.sendMessageWithImage(query, mode: selectedMode, base64Image: base64Image)
+            
             self.activeTool = "WS_STREAM"
+        }
+    }
+
+    // Helper to open the exact Settings page
+    func openPrivacySettings() {
+        let urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
         }
     }
     
@@ -491,8 +521,8 @@ struct FullDashboardView: View {
             HStack(spacing: 0) {
                 // Left Column
                 VStack(alignment: .leading, spacing: 15) {
-                    MenuLinkButton(title: "Google Service", image: Image(systemName: "globe")) { 
-                        print("Google Service clicked") 
+                    MenuLinkButton(title: "GOOGLE", image: Image(systemName: "globe")) { 
+                        print("Google clicked") 
                         openGoogleService()
                     }
                     MenuLinkButton(title: "SETTINGS", image: Image(systemName: "gearshape")) {
@@ -552,7 +582,7 @@ struct FullDashboardView: View {
                             inputMode.toggle()
                         }
                     }
-                    MenuLinkButton(title: socketClient.isConnected ? "Workflow" : "Connect", image: Image(systemName: "bolt.horizontal")) {
+                    MenuLinkButton(title: socketClient.isConnected ? "WORKFLOW" : "CONNECT", image: Image(systemName: "bolt.horizontal")) {
                         print("Reconnect clicked") 
                         if !socketClient.isConnected {
                             socketClient.connect()
@@ -766,16 +796,14 @@ struct MenuLinkButton: View {
                     .frame(width: 14, height: 14)
                     .foregroundColor(isHovering ? themeManager.current.accent : themeManager.current.text.opacity(0.7))
                 
-                if isHovering {
-                    Text(title)
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(themeManager.current.text)
-                        .fixedSize()
-                        .offset(y: 15) // Float text below without affecting layout
-                        .transition(.opacity)
-                }
+                Text(title)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundColor(isHovering ? themeManager.current.accent : themeManager.current.text.opacity(0.7))
+                    .fixedSize()
+                    .offset(y: 15) // Float text below without affecting layout
+                    .transition(.opacity)
             }
-            .frame(width: 20, height: 20) // Fixed width prevents layout shifts
+            .frame(width: 35, height: 35) // Fixed width prevents layout shifts
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain) // Removes default button background/styling
