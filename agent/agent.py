@@ -2,10 +2,8 @@ import os
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_anthropic import ChatAnthropic
 from langchain_chroma import Chroma
-from langchain_core.tools import create_retriever_tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from agent.tools import get_tools, get_tool_map
-from agent.utils.audio import speak # Updated import
 from agent.settings.settings import PROMPTS_DIR
 from agent.services.media import fetch_images
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -45,8 +43,7 @@ class EchoAgent:
         self.tools = get_tools()
 
         # 4. Bind tools to model
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
-        self.plan_llm_with_tools = self.plan_llm.bind_tools(self.tools)
+        self.bind_tools()
         
         # Load System Prompt
         with open(os.path.join(PROMPTS_DIR, "system_prompt.txt"), "r") as f: # Updated path
@@ -55,7 +52,31 @@ class EchoAgent:
         self.messages = [SystemMessage(content=self.system_prompt)]
         self.tool_map = get_tool_map()
 
+    def bind_tools(self):
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        self.plan_llm_with_tools = self.plan_llm.bind_tools(self.tools)
+
+    def add_tools(self, new_tools):
+        self.tools.extend(new_tools)
+        self.tool_map = get_tool_map()
+        # Update tool map with new tools
+        for tool in new_tools:
+            self.tool_map[tool.name.lower()] = tool
+        
+        # Re-bind tools to model
+        self.bind_tools()
+
+    def reset_tools(self):
+        self.tools = get_tools()  # Reload base tools
+        self.tool_map = get_tool_map()
+        # Re-bind tools to model
+        self.bind_tools()
+
     async def authenticate_google(self, token_file: str = None, client_secrets_file: str = None):
+        if self.auth_manager.check_connected():
+            print("Already authenticated with Google APIs.")
+            return
+        
         await self.auth_manager.authenticate(
             token_file=token_file,
             client_secrets_file=client_secrets_file
@@ -63,23 +84,19 @@ class EchoAgent:
         
         # Refresh tools with authenticated Google tools
         google_tools = self.auth_manager.get_google_tools()
-        self.tools.extend(google_tools)
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
-        self.plan_llm_with_tools = self.plan_llm.bind_tools(self.tools)
-        self.tool_map = get_tool_map()
-        # Update tool map with new Google tools
-        for tool in google_tools:
-            self.tool_map[tool.name.lower()] = tool
+        # Add Google tools to agent
+        self.add_tools(google_tools)
 
     def revoke_google_credentials(self):
+        if not self.auth_manager.check_connected():
+            print("No Google credentials to revoke.")
+            return
+        
         # Clear credentials
         self.auth_manager.credentials = None
         
         # Refresh tools without Google tools
-        self.tools = get_tools()  # Reload base tools
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
-        self.plan_llm_with_tools = self.plan_llm.bind_tools(self.tools)
-        self.tool_map = get_tool_map()
+        self.reset_tools()
 
     def get_images(self, user_query, agent_response, count=3):
         image_prompt = None

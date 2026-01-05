@@ -219,7 +219,6 @@ class MainWindowController: BaseOverlayController<AnyView> {
             .environmentObject(googleAuthManager)
             .environmentObject(socketClient)
         
-        // ... (Your frame calculation logic) ...
         let width: CGFloat = Constants.UI.windowWidth
         let height: CGFloat = Constants.UI.windowHeight
         let screen = NSScreen.main?.frame ?? .zero

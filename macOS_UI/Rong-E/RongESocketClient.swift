@@ -4,9 +4,9 @@ import Combine
 
 // 1. Define the structure of messages coming from Python
 struct AgentMessage: Codable {
-    let type: String    // "thought", "response", or "final"
-    let content: ResponseContent? // For "final" type with text + images
-    let text: String?   // For simple "thought" or "response" types
+    let type: String
+    let content: ResponseContent?
+    let text: String?
 }
 
 // 2. Define the content structure for final responses
@@ -49,7 +49,7 @@ class SocketClient: ObservableObject {
         disconnect()
     }
 
-    func checkConnection() -> Bool {
+    func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
         // Sync our published property just in case
         if isConnected != active {
@@ -64,11 +64,19 @@ class SocketClient: ObservableObject {
         webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
         
+        // start receiving messages
         receiveMessages()
     }
     
     func disconnect() {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
+    }
+
+    private func updateStatus(connected: Bool) {
+        // add buffer time for connection stability
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.isConnected = connected
+        }
     }
 
     private func receiveMessages() {
@@ -78,12 +86,7 @@ class SocketClient: ObservableObject {
             while task.state == .running {
                 do {
                     // update connection status
-                    DispatchQueue.main.async { 
-                        // add buffer time for connection stability
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self.isConnected = true 
-                        }
-                    }
+                    updateStatus(connected: true)
                     let message = try await task.receive()
                     switch message {
                         case .string(let text):
@@ -95,21 +98,21 @@ class SocketClient: ObservableObject {
                     DispatchQueue.main.async {
                         self.onDisconnect?("Connection lost: \(error.localizedDescription)")
                     }
-                    DispatchQueue.main.async {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self.isConnected = false 
-                        }
-                    }
+                    // update connection status
+                    updateStatus(connected: false)
                     return // Exit the loop
                 }
             }
         }
     }
-    
-    private func handleMessage(_ text: String) {
+
+    private func parseTextMessage(_ text: String) -> AgentMessage? {
         guard let data = text.data(using: .utf8),
-              let parsedMsg = try? self.decoder.decode(AgentMessage.self, from: data) else { return }
-        
+              let parsedMsg = try? self.decoder.decode(AgentMessage.self, from: data) else { return nil }
+        return parsedMsg
+    }
+
+    private func respondToParsedMessage(_ parsedMsg: AgentMessage) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
@@ -127,6 +130,15 @@ class SocketClient: ObservableObject {
                 self.onReceivedCredentialsSuccess?(text)
             }
         }
+    }
+    
+    private func handleMessage(_ text: String) {
+        guard let parsedMsg = parseTextMessage(text) else {
+            print("❌ Failed to parse message: \(text)")
+            return
+        }
+
+        respondToParsedMessage(parsedMsg)
     }
 
     func sendMessage(_ text: String, mode: String) {

@@ -491,11 +491,11 @@ struct FullDashboardView: View {
             HStack(spacing: 0) {
                 // Left Column
                 VStack(alignment: .leading, spacing: 15) {
-                    MenuLinkButton(title: "Google Service") { 
+                    MenuLinkButton(title: "Google Service", image: Image(systemName: "globe")) { 
                         print("Google Service clicked") 
                         openGoogleService()
                     }
-                    MenuLinkButton(title: "SETTINGS") {
+                    MenuLinkButton(title: "SETTINGS", image: Image(systemName: "gearshape")) {
                         print("Settings clicked") 
                         openSettings()
                     }
@@ -547,12 +547,12 @@ struct FullDashboardView: View {
 
                 // Right Column
                 VStack(alignment: .trailing, spacing: 15) {
-                    MenuLinkButton(title: "TYPE") {
+                    MenuLinkButton(title: "TYPE", image: Image(systemName: "keyboard")) {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                             inputMode.toggle()
                         }
                     }
-                    MenuLinkButton(title: socketClient.isConnected ? "Workflow" : "Connect") {
+                    MenuLinkButton(title: socketClient.isConnected ? "Workflow" : "Connect", image: Image(systemName: "bolt.horizontal")) {
                         print("Reconnect clicked") 
                         if !socketClient.isConnected {
                             socketClient.connect()
@@ -751,6 +751,7 @@ struct CircularMenuItem: View {
 // MARK: - Custom Hover Button Component
 struct MenuLinkButton: View {
     let title: String
+    let image: Image
     let action: () -> Void
     
     @State private var isHovering = false
@@ -758,18 +759,30 @@ struct MenuLinkButton: View {
     
     var body: some View {
         Button(action: action) {
-            Text(title)
-                // 1. Change weight on hover
-                .font(.system(size: 10, weight: isHovering ? .heavy : .medium, design: .monospaced))
-                .foregroundColor(themeManager.current.text)
-                // 2. Add Underline
-                .underline(isHovering, color: themeManager.current.text.opacity(isHovering ? 1.0 : 0.5))
-                // 4. Fixed frame to prevent layout jumping when font gets bold/wider
-                .frame(height: 15) 
+            ZStack {
+                image
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 14, height: 14)
+                    .foregroundColor(isHovering ? themeManager.current.accent : themeManager.current.text.opacity(0.7))
+                
+                if isHovering {
+                    Text(title)
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(themeManager.current.text)
+                        .fixedSize()
+                        .offset(y: 15) // Float text below without affecting layout
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: 20, height: 20) // Fixed width prevents layout shifts
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain) // Removes default button background/styling
         .onHover { hovering in
-            self.isHovering = hovering
+            withAnimation(.easeInOut(duration: 0.2)) {
+                self.isHovering = hovering
+            }
         }
     }
 }

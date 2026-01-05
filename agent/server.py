@@ -24,14 +24,6 @@ class ChatRequest(BaseModel):
     page_content: str = None
     url: str = None
 
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    try:
-        response = agent.run(request.message, request.page_content, request.url)
-        return {"response": response}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 # 👇 UPDATED WEBSOCKET ENDPOINT@app.websocket("/ws")
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -98,7 +90,7 @@ async def websocket_endpoint(websocket: WebSocket):
             async def send_thought(thought_text: str):
                 payload = json.dumps({
                     "type": "thought",
-                    "content": thought_text
+                    "text": thought_text
                 })
                 await websocket.send_text(payload)
                 speak(f"{thought_text}")  # Optional: Log thoughts to console 
