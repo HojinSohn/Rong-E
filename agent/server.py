@@ -19,7 +19,7 @@ app.add_middleware(
 
 agent = EchoAgent()
 global_websocket = None
-# 👇 UPDATED WEBSOCKET ENDPOINT@app.websocket("/ws")
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()

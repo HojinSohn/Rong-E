@@ -23,9 +23,14 @@ struct ContentView: View {
     @State private var activeTool: String? = nil
     
     @State private var fullTextViewMode = false
+
+    @State private var waitingForPermission = false
+    @State private var pendingQuery: String? = nil
+    @State private var pendingMode: String? = nil
+    @State private var permissionCheckTimer: Timer? = nil
     
     var isExpanded: Bool {
-        return isHovering || inputMode || isListening || isProcessing
+        return isHovering || inputMode || isListening
     }
 
     var body: some View {
@@ -92,7 +97,6 @@ struct ContentView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: inputMode)
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: fullTextViewMode)
     }
-
     
     // MARK: - Logic
     private func setUpConnection() {
@@ -155,18 +159,7 @@ struct ContentView: View {
         }
     }
 
-    func submitQuery() {
-        guard !inputText.isEmpty else { return }
-        
-        // 1. Capture State
-        let query = inputText
-        let selectedMode = currentMode.lowercased()
-        inputText = ""
-        isProcessing = true
-        aiResponse = ""
-        context.response = ""
-        
-        // 2. Run Async Work
+    func captureAndSendWithScreenshot(query: String, selectedMode: String) {
         Task { @MainActor in
             var base64Image: String? = nil
             
@@ -175,33 +168,96 @@ struct ContentView: View {
                 print("✅ Screenshot captured. Size: \(base64Image?.count ?? 0)")
                 
             } catch {
-                // --- FIX START ---
                 let nsError = error as NSError
                 
                 // Check for the specific "User Declined" error code (-3801)
-                // The domain string is "com.apple.ScreenCaptureKit.SCStreamErrorDomain"
                 if nsError.code == -3801 {
                     print("⚠️ Permission Denied. Opening Settings...")
-                    openPrivacySettings()
+                    
+                    // Store the pending request
+                    pendingQuery = query
+                    pendingMode = selectedMode
+                    waitingForPermission = true
+                    
+                    // Show overlay
+                    showPermissionWaitingOverlay()
+                    
+                    return // Don't send message yet
                 } else {
                     print("❌ Screenshot Error: \(nsError.localizedDescription)")
                 }
-                // --- FIX END ---
             }
 
-            // 3. Send message (with or without image)
+            // Send message with screenshot
             client.sendMessageWithImage(query, mode: selectedMode, base64Image: base64Image)
             
             self.activeTool = "WS_STREAM"
         }
     }
 
-    // Helper to open the exact Settings page
-    func openPrivacySettings() {
-        let urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
+    func submitQuery() {
+        guard !inputText.isEmpty else { return }
+        
+        // 1. Capture State
+        let query = inputText
+        let selectedMode = currentMode.lowercased()
+        inputText = ""
+        isProcessing = true
+        inputMode = false 
+        aiResponse = ""
+        context.response = ""
+
+        if context.modes.first(where: { $0.name == context.modes.first(where: { $0.id == Int(currentMode.suffix(1)) })?.name })?.isScreenshotEnabled == true {
+            print("📸 Screenshot tool is enabled for this mode. Capturing screenshot...")
+            captureAndSendWithScreenshot(query: query, selectedMode: selectedMode)
+        } else {
+            print("ℹ️ Screenshot tool is NOT enabled for this mode. Sending query without screenshot.")
+            client.sendMessage(query, mode: selectedMode)
+            self.activeTool = "WS_STREAM"
         }
+    }
+    
+    func showPermissionWaitingOverlay() {
+        // Permission waiting overlay
+        coordinator.openPermissionWaitingOverlay(
+            onRetry: {
+                Task { @MainActor in
+                    do {
+                        let _ = try await ScreenshotManager.captureMainScreen()
+                        
+                        // Success! Permission granted
+                        print("✅ Manual retry successful!")
+                        
+                        if let query = pendingQuery, let mode = pendingMode {
+                            pendingQuery = nil
+                            pendingMode = nil
+                            waitingForPermission = false
+
+                            // close overlay
+                            coordinator.closePermissionWaitingOverlay()
+
+                            captureAndSendWithScreenshot(query: query, selectedMode: mode)
+                        }
+                    } catch {
+                        print("❌ Still no permission on manual retry")
+                    }
+                }
+            },
+            onCancel: {
+                // Send query without screenshot
+                if let query = pendingQuery, let mode = pendingMode {
+                    pendingQuery = nil
+                    pendingMode = nil
+                    waitingForPermission = false
+                    client.sendMessage(query, mode: mode)
+
+                    // close overlay
+                    coordinator.closePermissionWaitingOverlay()
+
+                    activeTool = "WS_STREAM"
+                }
+            }
+        )
     }
     
     func finishProcessing(response: String) {
@@ -211,6 +267,7 @@ struct ContentView: View {
             shouldAnimateResponse = true
             aiResponse = response
             context.response = response
+            inputMode = true
         }
     }
     
@@ -496,6 +553,10 @@ struct FullDashboardView: View {
         coordinator.openGoogleService()
     }
 
+    func openWorkflowSettings() {
+        coordinator.openWorkflowSettings()
+    }
+
     func openWebWindow(query: String) {
         let escapedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let urlString = "https://www.google.com/search?q=\(escapedQuery)"
@@ -589,6 +650,7 @@ struct FullDashboardView: View {
                             setUpConnection()
                         } else {
                             print(context.isGoogleConnected ? "Google is connected." : "Google is NOT connected.")
+                            openWorkflowSettings()
                         }
                     }
                 }
@@ -814,6 +876,8 @@ struct MenuLinkButton: View {
         }
     }
 }
+
+
 //
 //#Preview {
 //    struct CorePreviewWrapper: View {
@@ -872,3 +936,4 @@ struct MenuLinkButton: View {
 //    
 //    return CorePreviewWrapper()
 //}
+

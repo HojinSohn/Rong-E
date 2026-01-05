@@ -35,6 +35,7 @@ class WindowCoordinator: ObservableObject {
     let client: SocketClient
     let themeManager: ThemeManager
     let googleAuthManager: GoogleAuthManager
+    let workflowManager = WorkflowManager()
     
     init() {
         self.appContext = AppContext()
@@ -59,6 +60,31 @@ class WindowCoordinator: ObservableObject {
         }
         controllers["main"]?.showWindow(nil)
         controllers["main"]?.window?.orderFrontRegardless()
+    }
+
+    func openPermissionWaitingOverlay(onRetry: @escaping () -> Void, onCancel: @escaping () -> Void) {
+        print("Opening Permission Waiting Overlay")
+        let id = "permission_waiting_overlay"
+        if controllers[id] == nil {
+            let contentView = PermissionWaitingView(onRetry: onRetry, onCancel: onCancel, windowID: id, size: CGSize(width: 320, height: 200))
+            
+            let controller = DynamicWindowController(
+                id: id,
+                coordinator: self,
+                view: AnyView(contentView),
+                context: appContext,
+                theme: themeManager,
+                size: CGSize(width: 320, height: 200)
+            )
+            controllers[id] = controller
+        }
+        controllers[id]?.showWindow(nil)
+    }
+
+    func closePermissionWaitingOverlay() {
+        let id = "permission_waiting_overlay"
+        controllers[id]?.close()
+        controllers[id] = nil // Release memory
     }
     
     func openDynamicWindow(id: String, view: AnyView, size: CGSize, location: CGPoint? = nil) {
@@ -160,6 +186,43 @@ class WindowCoordinator: ObservableObject {
             context: appContext,
             theme: themeManager,
             size: CGSize(width: 450, height: 350),
+            location: nil
+        )
+        
+        // 4. Store and Show
+        controllers[id] = controller
+        controller.showWindow(nil)
+        
+        // 5. Cleanup Hook
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, 
+            object: controller.window, 
+            queue: .main
+        ) { [weak self] _ in
+            self?.controllers.removeValue(forKey: id)
+        }
+    }
+
+    func openWorkflowSettings() {
+        let id = "workflow_settings_window"
+        
+        // 1. Check if already open (singleton behavior for workflow settings)
+        if let existing = controllers[id] {
+            existing.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        
+        // 2. Configure View
+        let contentView = WorkflowSettingsView(windowID: id).environmentObject(self)
+        
+        // 3. Configure Controller
+        let controller = DynamicWindowController(
+            id: id,
+            coordinator: self,
+            view: AnyView(contentView),
+            context: appContext,
+            theme: themeManager,
+            size: CGSize(width: 400, height: 500),
             location: nil
         )
         

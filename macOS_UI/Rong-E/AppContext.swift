@@ -1,5 +1,6 @@
 import SwiftUI
 
+// Have to have function to pull data from local db for settings
 class AppContext: ObservableObject {
     @Published var response: String = ""
     @Published var isLoading: Bool = false
@@ -20,15 +21,16 @@ class AppContext: ObservableObject {
         var name: String
         var systemPrompt: String
         var enabledTools: Set<String>
+        var isScreenshotEnabled: Bool
     }
 
     // Inside AppContext class
     @Published var modes: [ModeConfiguration] = [
-        ModeConfiguration(id: 1, name: "General Assistant", systemPrompt: "You are a helpful assistant.", enabledTools: ["web_search", "search_knowledge_base"]),
-        ModeConfiguration(id: 2, name: "Coder", systemPrompt: "You are an expert Swift developer.", enabledTools: ["email"]),
-        ModeConfiguration(id: 3, name: "Researcher", systemPrompt: "Deep dive into topics using academic sources.", enabledTools: ["web_search", "calendar"]),
-        ModeConfiguration(id: 4, name: "Writer", systemPrompt: "Creative writing mode.", enabledTools: []),
-        ModeConfiguration(id: 5, name: "Data Analyst", systemPrompt: "Analyze data structures.", enabledTools: ["search_knowledge_base"])
+        ModeConfiguration(id: 1, name: "General Assistant", systemPrompt: "You are a helpful assistant.", enabledTools: ["web_search", "search_knowledge_base"], isScreenshotEnabled: false),
+        ModeConfiguration(id: 2, name: "Coder", systemPrompt: "You are an expert Swift developer.", enabledTools: ["email"], isScreenshotEnabled: false),
+        ModeConfiguration(id: 3, name: "Researcher", systemPrompt: "Deep dive into topics using academic sources.", enabledTools: ["web_search", "calendar"], isScreenshotEnabled: false),
+        ModeConfiguration(id: 4, name: "Writer", systemPrompt: "Creative writing mode.", enabledTools: [], isScreenshotEnabled: false),
+        ModeConfiguration(id: 5, name: "Data Analyst", systemPrompt: "Analyze data structures.", enabledTools: ["search_knowledge_base"], isScreenshotEnabled: false)
     ]
 
     // List of all available tools in your system

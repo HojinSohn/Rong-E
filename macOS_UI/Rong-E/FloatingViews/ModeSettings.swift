@@ -66,8 +66,18 @@ struct ModesSettingsView: View {
                                 .background(Color.white.opacity(0.1))
                                 .cornerRadius(6)
                         }
+
+                        // Section 3: Enable screenshot tool
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle(isOn: $context.modes[index].isScreenshotEnabled) {
+                                Text("Enable Screenshot Tool")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .toggleStyle(SwitchToggleStyle(tint: .blue))
+                        }
                         
-                        // Section 3: Tools Selection
+                        // Section 4: Tools Selection
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Allowed Tools")
                                 .font(.caption)
