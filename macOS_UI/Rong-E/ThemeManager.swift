@@ -33,6 +33,10 @@ struct Theme {
 }
 
 class ThemeManager: ObservableObject {
+    static let shared = ThemeManager()
+
+    private init() {}
+
     @Published var current: Theme = .dark
     
     func switchToDark() {

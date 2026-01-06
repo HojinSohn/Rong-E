@@ -5,8 +5,25 @@ class GoogleAuthManager: ObservableObject {
     // Dependencies
     let context: AppContext
     let client: SocketClient
-    
     private let fileManager = FileManager.default
+
+    // Singleton instance
+    static let shared = GoogleAuthManager()
+
+    private init() {
+        self.context = AppContext.shared
+        self.client = SocketClient.shared
+        
+        // Listen for success from Python
+        self.client.onReceivedCredentialsSuccess = { [weak self] successText in
+            print("✅ Global Auth Manager received success: \(successText)")
+            DispatchQueue.main.async {
+                withAnimation {
+                    self?.context.isGoogleConnected = true
+                }
+            }
+        }
+    }
     
     // Computed Path
     var destinationURL: URL {
@@ -19,22 +36,6 @@ class GoogleAuthManager: ObservableObject {
     
     var credentialsFileExists: Bool {
         fileManager.fileExists(atPath: destinationURL.path)
-    }
-
-    // Init
-    init(context: AppContext, client: SocketClient) {
-        self.context = context
-        self.client = client
-        
-        // Listen for success from Python
-        self.client.onReceivedCredentialsSuccess = { [weak self] successText in
-            print("✅ Global Auth Manager received success: \(successText)")
-            DispatchQueue.main.async {
-                withAnimation {
-                    self?.context.isGoogleConnected = true
-                }
-            }
-        }
     }
 
     // MARK: - Lifecycle Methods

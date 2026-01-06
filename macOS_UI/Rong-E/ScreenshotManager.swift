@@ -2,6 +2,10 @@ import Cocoa
 import ScreenCaptureKit // 1. Import the new framework
 
 class ScreenshotManager {
+    // Singleton instance
+    static let shared = ScreenshotManager()
+
+    private init() {}
     
     /// Async function to capture the main screen
     /// Returns: Base64 JPEG String

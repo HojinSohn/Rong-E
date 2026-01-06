@@ -35,27 +35,24 @@ class WindowCoordinator: ObservableObject {
     let client: SocketClient
     let themeManager: ThemeManager
     let googleAuthManager: GoogleAuthManager
-    let workflowManager = WorkflowManager()
+    let workflowManager: WorkflowManager
     
-    init() {
-        self.appContext = AppContext()
-        self.client = SocketClient()
-        self.themeManager = ThemeManager()
-        self.googleAuthManager = GoogleAuthManager(context: appContext, client: client)
+    static let shared = WindowCoordinator()
+
+    private init() {
+        self.appContext = AppContext.shared
+        self.client = SocketClient.shared
+        self.themeManager = ThemeManager.shared
+        self.googleAuthManager = GoogleAuthManager.shared
+        self.workflowManager = WorkflowManager.shared
     }
-    
+
     // Track active controllers to keep them in memory
     private var controllers: [String: NSWindowController] = [:]
     
     func showMainOverlay() {
         if controllers["main"] == nil {
-            let controller = MainWindowController(
-                coordinator: self,
-                context: appContext,
-                theme: themeManager,
-                socketClient: client,
-                googleAuthManager: googleAuthManager
-            )
+            let controller = MainWindowController()
             controllers["main"] = controller
         }
         controllers["main"]?.showWindow(nil)
@@ -70,10 +67,7 @@ class WindowCoordinator: ObservableObject {
             
             let controller = DynamicWindowController(
                 id: id,
-                coordinator: self,
                 view: AnyView(contentView),
-                context: appContext,
-                theme: themeManager,
                 size: CGSize(width: 320, height: 200)
             )
             controllers[id] = controller
@@ -91,10 +85,7 @@ class WindowCoordinator: ObservableObject {
         if controllers[id] == nil {
             let controller = DynamicWindowController(
                 id: id,
-                coordinator: self,
                 view: view,
-                context: appContext,
-                theme: themeManager,
                 size: size,
                 location: location
             )
@@ -107,18 +98,12 @@ class WindowCoordinator: ObservableObject {
         let id = "web_\(url.absoluteString)"
         print("Opening web window with ID: \(id)")
         if controllers[id] == nil {
-            var body = WebWindowView(url: url, windowID: id, size: size)
-                .environmentObject(self)
-                .environmentObject(appContext)
-                .environmentObject(themeManager)
+            let body = WebWindowView(url: url, windowID: id, size: size)
             let anyView = AnyView(body)
             print("opening the webview through controller")
             let controller = DynamicWindowController(
                 id: id,
-                coordinator: self,
                 view: anyView,
-                context: appContext,
-                theme: themeManager,
                 size: size
             )
             controllers[id] = controller
@@ -136,18 +121,12 @@ class WindowCoordinator: ObservableObject {
         }
         
         // 2. Configure View
-        let contentView = GoogleServiceView(windowID: id).environmentObject(self)
-                                                        .environmentObject(appContext)
-                                                        .environmentObject(themeManager)
-                                                        .environmentObject(googleAuthManager)
+        let contentView = GoogleServiceView(windowID: id)
         
         // 3. Configure Controller
         let controller = DynamicWindowController(
             id: id,
-            coordinator: self,
             view: AnyView(contentView),
-            context: appContext,
-            theme: themeManager,
             size: CGSize(width: 500, height: 400),
             location: nil
         )
@@ -181,10 +160,7 @@ class WindowCoordinator: ObservableObject {
         // 3. Configure Controller
         let controller = DynamicWindowController(
             id: id,
-            coordinator: self,
             view: AnyView(contentView),
-            context: appContext,
-            theme: themeManager,
             size: CGSize(width: 450, height: 350),
             location: nil
         )
@@ -213,15 +189,12 @@ class WindowCoordinator: ObservableObject {
         }
         
         // 2. Configure View
-        let contentView = WorkflowSettingsView(windowID: id).environmentObject(self)
+        let contentView = WorkflowSettingsView(windowID: id)
         
         // 3. Configure Controller
         let controller = DynamicWindowController(
             id: id,
-            coordinator: self,
             view: AnyView(contentView),
-            context: appContext,
-            theme: themeManager,
             size: CGSize(width: 400, height: 500),
             location: nil
         )
@@ -247,11 +220,7 @@ class WindowCoordinator: ObservableObject {
 }
 
 class BaseOverlayController<RootView: View>: NSWindowController {
-    var coordinator: WindowCoordinator
-    
-    init(coordinator: WindowCoordinator, rootView: RootView, rect: NSRect) {
-        self.coordinator = coordinator
-        
+    init(rootView: RootView, rect: NSRect) {        
         // 1. Create the Window (Using your existing OverlayWindow class)
         let overlayWindow = OverlayWindow(
             contentRect: rect,
@@ -272,15 +241,15 @@ class BaseOverlayController<RootView: View>: NSWindowController {
 // 1. Change the generic type from <ContentView> to <AnyView>
 class MainWindowController: BaseOverlayController<AnyView> {
     
-    init(coordinator: WindowCoordinator, context: AppContext, theme: ThemeManager, socketClient: SocketClient, googleAuthManager: GoogleAuthManager) {
-        
-        // 2. Create your view with all its modifiers
+    init() {
+        // 2. Create your view with all its modifiers and inject environment objects
+        let coordinator = WindowCoordinator.shared
         let view = ContentView()
-            .environmentObject(context)
-            .environmentObject(theme)
+            .environmentObject(coordinator.appContext)
+            .environmentObject(coordinator.client)
+            .environmentObject(coordinator.themeManager)
+            .environmentObject(coordinator.googleAuthManager)
             .environmentObject(coordinator)
-            .environmentObject(googleAuthManager)
-            .environmentObject(socketClient)
         
         let width: CGFloat = Constants.UI.windowWidth
         let height: CGFloat = Constants.UI.windowHeight
@@ -293,7 +262,7 @@ class MainWindowController: BaseOverlayController<AnyView> {
         )
         
         // 3. Wrap the view in AnyView() when passing it to super
-        super.init(coordinator: coordinator, rootView: AnyView(view), rect: frame)
+        super.init(rootView: AnyView(view), rect: frame)
         
         self.window?.isMovableByWindowBackground = false
     }
@@ -309,23 +278,21 @@ class DynamicWindowController: BaseOverlayController<AnyView> {
     
     // Added 'size' parameter so you aren't stuck with 300x200
     init(id: String, 
-         coordinator: WindowCoordinator, 
          view: AnyView, 
-         context: AppContext, 
-         theme: ThemeManager,
          size: CGSize,
          location: CGPoint? = nil
          ) { 
         
         self.id = id
         
-        // 1. Inject Environment Objects
-        // Even though 'view' is AnyView, we can still apply modifiers.
-        // This ensures the dynamic window has access to shared state.
+        // 1. Inject Environment Objects from shared coordinator
+        let coordinator = WindowCoordinator.shared
         let wiredView = view
+            .environmentObject(coordinator.appContext)
+            .environmentObject(coordinator.client)
+            .environmentObject(coordinator.themeManager)
+            .environmentObject(coordinator.googleAuthManager)
             .environmentObject(coordinator)
-            .environmentObject(context)
-            .environmentObject(theme)
         
         // 2. Calculate Position (Center Screen)
         let screen = NSScreen.main?.frame ?? .zero
@@ -337,7 +304,7 @@ class DynamicWindowController: BaseOverlayController<AnyView> {
         )
         
         // 3. Pass the WIRED view (wrapped in AnyView again) to super
-        super.init(coordinator: coordinator, rootView: AnyView(wiredView), rect: frame)
+        super.init(rootView: AnyView(wiredView), rect: frame)
         
         // 4. Window Behavior
         self.window?.isMovableByWindowBackground = true

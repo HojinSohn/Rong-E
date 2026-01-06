@@ -9,13 +9,17 @@ struct WorkflowTask: Identifiable, Codable, Hashable {
 }
 
 class WorkflowManager: ObservableObject {
+    // Singleton instance
+    static let shared = WorkflowManager()
+    
+    // Private initializer to enforce singleton
+    private init() {
+        loadTasks()
+    }
+
     @Published var tasks: [WorkflowTask] = []
     
     private let key = "StartupWorkflowTasks"
-    
-    init() {
-        loadTasks()
-    }
     
     // --- CRUD Operations ---
     

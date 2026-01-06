@@ -37,6 +37,17 @@ struct ChatPayload: Codable {
 }
 
 class SocketClient: ObservableObject {
+    // Singleton instance
+    static let shared = SocketClient()
+
+    private init() {
+        connect()
+    }
+
+    deinit {
+        disconnect()
+    }
+
     private var webSocketTask: URLSessionWebSocketTask?
     private let decoder = JSONDecoder()
     @Published var isConnected: Bool = false
@@ -46,15 +57,6 @@ class SocketClient: ObservableObject {
     var onReceiveImages: (([ImageData]) -> Void)?
     var onDisconnect: ((String) -> Void)?
     var onReceivedCredentialsSuccess: ((String) -> Void)?
-    
-    init() { 
-        connect() 
-        print("Tlqkf");
-    }
-
-    deinit {
-        disconnect()
-    }
 
     func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
