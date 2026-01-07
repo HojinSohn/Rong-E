@@ -11,8 +11,8 @@ enum Constants {
     
     // You can also nest them for better organization
     enum UI {
-        static let windowWidth: CGFloat = 500
-        static let windowHeight: CGFloat = 500
+        static let windowWidth: CGFloat = 800
+        static let windowHeight: CGFloat = 600
         static let cornerRadius: CGFloat = 12.0
         enum overlayWindow {
             static let compactWidth: CGFloat = 140.0

@@ -59,6 +59,37 @@ class WindowCoordinator: ObservableObject {
         controllers["main"]?.window?.orderFrontRegardless()
     }
 
+    func minimizeMainOverlay() {
+        if controllers["main"] == nil {
+            let controller = MainWindowController()
+            controllers["main"] = controller
+        }
+        // move the window to bottom center of the screen
+        let screen = NSScreen.main?.frame ?? .zero
+        let width: CGFloat = Constants.UI.windowWidth
+        let height: CGFloat = Constants.UI.windowHeight
+        let newOrigin = NSPoint(
+            x: screen.midX - (width / 2),
+            y: 100 // 100 points from bottom
+        )
+        controllers["main"]?.window?.setFrameOrigin(newOrigin)
+        // disable window dragging when minimized
+        controllers["main"]?.window?.isMovableByWindowBackground = false
+        controllers["main"]?.showWindow(nil)
+        controllers["main"]?.window?.orderFrontRegardless()
+    }
+
+    func expandMainOverlay() {
+        if controllers["main"] == nil {
+            let controller = MainWindowController()
+            controllers["main"] = controller
+        }
+        // enable window dragging when expanded
+        controllers["main"]?.window?.isMovableByWindowBackground = true
+        controllers["main"]?.showWindow(nil)
+        controllers["main"]?.window?.orderFrontRegardless()
+    }
+
     func openPermissionWaitingOverlay(onRetry: @escaping () -> Void, onCancel: @escaping () -> Void) {
         print("Opening Permission Waiting Overlay")
         let id = "permission_waiting_overlay"
@@ -244,7 +275,7 @@ class MainWindowController: BaseOverlayController<AnyView> {
     init() {
         // 2. Create your view with all its modifiers and inject environment objects
         let coordinator = WindowCoordinator.shared
-        let view = ContentView()
+        let view = MainView()
             .environmentObject(coordinator.appContext)
             .environmentObject(coordinator.client)
             .environmentObject(coordinator.themeManager)
@@ -264,7 +295,40 @@ class MainWindowController: BaseOverlayController<AnyView> {
         // 3. Wrap the view in AnyView() when passing it to super
         super.init(rootView: AnyView(view), rect: frame)
         
-        self.window?.isMovableByWindowBackground = false
+        self.window?.isMovableByWindowBackground = true
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+
+class CompactWindowController: BaseOverlayController<AnyView> {
+    init() {
+        // 2. Create your view with all its modifiers and inject environment objects
+        let coordinator = WindowCoordinator.shared
+        let view = ContentView()
+            .environmentObject(coordinator.appContext)
+            .environmentObject(coordinator.client)
+            .environmentObject(coordinator.themeManager)
+            .environmentObject(coordinator.googleAuthManager)
+            .environmentObject(coordinator)
+        
+        let width: CGFloat = Constants.UI.overlayWindow.compactWidth
+        let height: CGFloat = Constants.UI.overlayWindow.compactHeight
+        let screen = NSScreen.main?.frame ?? .zero
+        let frame = NSRect(
+            x: screen.midX - (width/2),
+            y: screen.maxY - height,
+            width: width,
+            height: height
+        )
+        
+        // 3. Wrap the view in AnyView() when passing it to super
+        super.init(rootView: AnyView(view), rect: frame)
+        
+        self.window?.isMovableByWindowBackground = true
     }
     
     required init?(coder: NSCoder) {
