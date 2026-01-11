@@ -6,6 +6,9 @@ struct MainView: View {
     @State private var showColumns = false // New state to stagger the inside content
     @State private var showGreeting = false
     @State private var minimizedMode = true
+    @State private var showMinimizedButtons = false
+    @State private var fullChatViewMode = false
+    @State private var showMinimizedMessageView = false
 
     // 2. Opacity State
     @State private var opacity: Double = 0.7
@@ -26,7 +29,6 @@ struct MainView: View {
     @State private var isListening = false
     @State private var isProcessing = false
     @State private var activeTool: String? = nil
-    @State private var fullChatViewMode = false
 
     // 6. Environment Objects
     @EnvironmentObject var appContext: AppContext
@@ -79,6 +81,10 @@ struct MainView: View {
                 showColumns = true
                 showWaveform = true
             }
+
+            // Ensure minimized message view is hidden
+            setShowMinimizedMessageView(false)
+            setShowMinimizedButtons(false)
         }
         print("New minimizedMode: \(minimizedMode)")
     }
@@ -89,6 +95,17 @@ struct MainView: View {
         }
     }
 
+    func setShowMinimizedMessageView(_ val: Bool) {
+        withAnimation(.easeInOut(duration: 0.4)) {
+            showMinimizedMessageView = val
+        }
+    }
+
+    func setShowMinimizedButtons(_ val: Bool) {
+        withAnimation(.easeInOut(duration: 0.4)) {
+            showMinimizedButtons = val
+        }
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) { // Align bottom to help with positioning
@@ -117,6 +134,18 @@ struct MainView: View {
             .opacity(fullChatViewMode ? 0 : 1)
             .animation(.easeInOut(duration: 0.3), value: fullChatViewMode)
             .allowsHitTesting(false)
+
+            // Keep the HUD visible when minimized without laying out the large content
+            if showMinimizedButtons {
+                MinimizedControlsView(
+                    isListening: isListening,
+                    minimizedMode: minimizedMode,
+                    toggleMinimized: toggleMinimized,
+                    toggleListening: toggleListening,
+                    toggleMessages: { setShowMinimizedMessageView(!showMinimizedMessageView) },
+                    onHoverChange: setShowMinimizedButtons
+                )
+            }
 
             // --- MAIN GLASS CONTAINER ---
             ZStack(alignment: .bottom) {
@@ -150,7 +179,6 @@ struct MainView: View {
                     }
                     .transition(.opacity)
                 } else {
-                    // Keep the HUD visible when minimized without laying out the large content
                     JarvisHUDView()
                         .blur(radius: 0)
                         .allowsHitTesting(false)
@@ -166,16 +194,29 @@ struct MainView: View {
             .backgroundColor(Color.black.opacity(0.1))
             // Corner radius becomes 40 (half of 80) to make a perfect circle
             .cornerRadius(40)
-            .overlay(
-                RoundedRectangle(cornerRadius: 40)
-                    .stroke(LinearGradient(colors: [.white.opacity(0.7), .white.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-            )
             .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 15)
             
             // Restore on Tap
             .onTapGesture {
                 if minimizedMode {
                     toggleMinimized()
+                }
+            }
+            // Hover Effect on minimized mode
+            .onHover { hovering in
+                if minimizedMode {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        opacity = hovering ? 1.0 : 0.7
+                        setShowMinimizedButtons(hovering)
+                    }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if showMinimizedMessageView {
+                    MinimizedMessageView(inputText: $inputText, showMinimizedMessageView: $showMinimizedMessageView, onSubmit: submitQuery)
+                        .environmentObject(appContext)
+                        .offset(y: -110)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
@@ -360,6 +401,119 @@ extension View {
     }
 }
 
+import SwiftUI
+
+import SwiftUI
+
+struct MinimizedControlsView: View {
+    let isListening: Bool
+    let minimizedMode: Bool
+    let toggleMinimized: () -> Void
+    let toggleListening: () -> Void
+    let toggleMessages: () -> Void
+    let onHoverChange: (Bool) -> Void
+    
+    // Configuration
+    private let radius: CGFloat = 70 
+    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+    
+    var body: some View {
+        ZStack {
+            // Left: Messages (-45°)
+            OrbiterButton(
+                icon: "message.fill",
+                action: toggleMessages,
+                angle: -45,
+                radius: radius,
+                hudCyan: hudCyan
+            )
+
+            // Center: Mic (0°)
+            OrbiterButton(
+                icon: isListening ? "mic.fill" : "mic.slash.fill",
+                action: toggleListening,
+                isActive: isListening,
+                angle: 0,
+                radius: radius,
+                hudCyan: hudCyan
+            )
+
+            // Right: Minimize (+45°)
+            OrbiterButton(
+                icon: minimizedMode ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left",
+                action: toggleMinimized,
+                angle: 45,
+                radius: radius,
+                hudCyan: hudCyan
+            )
+        }
+        .frame(height: 100)
+        .onHover { hovering in onHoverChange(hovering) }
+    }
+}
+
+struct OrbiterButton: View {
+    var icon: String
+    var action: () -> Void
+    var isActive: Bool = false
+    var angle: Double
+    var radius: CGFloat
+    var hudCyan: Color
+
+    // Track Hover State locally
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                // 1. EXPANDED HIT AREA (Invisible)
+                // This circle is invisible but captures clicks 
+                // in a larger radius (60pt) than the visual button (40pt).
+                Circle()
+                    .fill(Color.white.opacity(0.001)) 
+                    .frame(width: 60, height: 60)
+                
+                // 2. VISUAL BUTTON
+                ZStack {
+                    // Background
+                    Circle()
+                        .fill(Color.black.opacity(0.8))
+                    
+                    // Stroke (Reacts to Hover)
+                    Circle()
+                        .stroke(
+                            isActive || isHovering ? hudCyan : Color.white.opacity(0.2),
+                            lineWidth: isHovering ? 2 : 1
+                        )
+                    
+                    // Icon
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(isActive || isHovering ? hudCyan : .white)
+                }
+                .frame(width: 40, height: 40)
+                // 3. HOVER EFFECTS
+                .shadow(
+                    color: (isActive || isHovering) ? hudCyan.opacity(0.8) : .clear,
+                    radius: isHovering ? 15 : 8
+                )
+                .scaleEffect(isHovering ? 1.2 : 1.0)
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hover in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                isHovering = hover
+            }
+        }
+        // Positioning Math
+        .offset(
+            x: radius * CGFloat(sin(angle * .pi / 180)),
+            y: -radius * CGFloat(cos(angle * .pi / 180))
+        )
+    }
+}
+
 // MARK: - Left Column (Widgets)
 struct LeftColumnView: View {
     var body: some View {
@@ -485,50 +639,107 @@ struct MainColumnView: View {
             Spacer()
             
             // 4. Input Field (Bottom)
-            HStack(spacing: 12) {
-                HStack {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.5))
-                    
-                    TextField("Enter command...", text: $inputText)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundStyle(.white)
-                        .accentColor(.cyan)
-                        .onSubmit {
-                            onSubmit()
-                        }
-                }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 16)
-                .background(Color.black.opacity(0.3))
-                .cornerRadius(20)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                )
-                
-                // Submit / Mic Button
-                Button(action: onSubmit) {
-                    Circle()
-                        .fill(inputText.isEmpty ? Color.white.opacity(0.1) : Color.cyan)
-                        .frame(width: 44, height: 44)
-                        .overlay(
-                            Image(systemName: inputText.isEmpty ? "mic.fill" : "arrow.up")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundStyle(inputText.isEmpty ? .white : .black)
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.bottom, 10)
+            InputAreaView(inputText: $inputText, onSubmit: onSubmit)
+                .padding(.bottom, 10)
         }
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeOut(duration: 0.35), value: fullChatViewMode)
     }
 }
+
+import SwiftUI
+
+struct InputAreaView: View {
+    @Binding var inputText: String
+    var onSubmit: () -> Void
+    
+    // Aesthetic Constants
+    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+    private let hudDark = Color.black.opacity(0.8)
+
+    var body: some View {
+        HStack(spacing: 16) {
+            
+            // MARK: - Text Field Container
+            HStack(spacing: 10) {
+                // Tech decor: Blinking cursor prompt or static icon
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(hudCyan)
+                    .shadow(color: hudCyan, radius: 4)
+                
+                TextField("COMMAND...", text: $inputText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .medium, design: .monospaced)) // Tech font
+                    .foregroundStyle(.white)
+                    .accentColor(hudCyan)
+                    .submitLabel(.send)
+                    .onSubmit {
+                        onSubmit()
+                    }
+            }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 20)
+            .background(
+                ZStack {
+                    // 1. Dark Glass Background
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.1)
+                    
+                    // 2. Dark Fill
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.black.opacity(0.6))
+                    
+                    // 3. Glowing Border
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [hudCyan.opacity(0.6), hudCyan.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                        .shadow(color: hudCyan.opacity(0.5), radius: 8, x: 0, y: 0)
+                }
+            )
+            
+            // MARK: - Action Button (Reactor Core Style)
+            Button(action: onSubmit) {
+                ZStack {
+                    // Outer Ring
+                    Circle()
+                        .stroke(hudCyan.opacity(0.3), lineWidth: 2)
+                        .frame(width: 50, height: 50)
+                    
+                    // Rotating/Active Ring (Visual flair)
+                    Circle()
+                        .trim(from: 0, to: 0.7)
+                        .stroke(hudCyan, style: StrokeStyle(lineWidth: 2, lineCap: .butt))
+                        .frame(width: 50, height: 50)
+                        .rotationEffect(.degrees(inputText.isEmpty ? 0 : 360))
+                        .animation(inputText.isEmpty ? .default : .linear(duration: 2).repeatForever(autoreverses: false), value: inputText.isEmpty)
+                    
+                    // Inner Core
+                    Circle()
+                        .fill(inputText.isEmpty ? Color.clear : hudCyan.opacity(0.2))
+                        .frame(width: 40, height: 40)
+                    
+                    // Icon
+                    Image(systemName: inputText.isEmpty ? "mic.fill" : "arrow.up")
+                        .font(.system(size: 18, weight: .bold, design: .monospaced))
+                        .foregroundStyle(hudCyan)
+                        .shadow(color: hudCyan, radius: inputText.isEmpty ? 0 : 10)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .padding()
+    }
+}
+
 
 struct JarvisHUDView: View {
     @State private var isAnimating = false
@@ -649,31 +860,95 @@ struct ChatView: View {
     @EnvironmentObject var appContext: AppContext
     @Binding var fullChatViewMode: Bool
     
+    // Theme Colors
+    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             
-            // MARK: Header
+            // MARK: - Tech Header
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(LinearGradient(colors: [Color.blue, Color.cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .strokeBorder(hudCyan.opacity(0.3), lineWidth: 1)
+                        .background(Color.clear) // Clear center
                         .frame(width: 36, height: 36)
-                        .shadow(color: Color.cyan.opacity(0.5), radius: 6, x: 0, y: 2)
                     
-                    // Jarvis-style icon
-                    Image(systemName: "bolt.fill") // you can replace with custom SF Symbol or asset
-                        .font(.headline.bold())
-                        .foregroundStyle(.white)
+                    Circle()
+                        .trim(from: 0, to: 0.7)
+                        .stroke(hudCyan, lineWidth: 1.5)
+                        .rotationEffect(.degrees(-45))
+                        .frame(width: 36, height: 36)
+                    
+                    Image(systemName: "cpu") 
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(hudCyan)
+                        .shadow(color: hudCyan, radius: 4)
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Runtime Logs")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                    Text("Session ID: #A9-2044")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.6))
+                    Text("SYSTEM LOGS")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(hudCyan)
+                        .shadow(color: hudCyan.opacity(0.5), radius: 5)
+                    
+                    HStack(spacing: 4) {
+                        Text("SESSION ID:")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.5))
+                        
+                        Text("#A9-2044")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(hudCyan.opacity(0.8))
+                    }
                 }
+
+                Spacer()
+                
+                // MARK: - Mode & Vision Controls
+                HStack {
+                    Text("MODE: \(appContext.currentMode.name.uppercased())")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            appContext.toggleCurrentModeVision()
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            ZStack {
+                                Rectangle()
+                                    .stroke(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3), lineWidth: 1)
+                                    .frame(width: 12, height: 12)
+                                
+                                if appContext.currentMode.isScreenshotEnabled {
+                                    Rectangle()
+                                        .fill(hudCyan)
+                                        .frame(width: 6, height: 6)
+                                        .shadow(color: hudCyan, radius: 4)
+                                }
+                            }
+                            
+                            Text(appContext.currentMode.isScreenshotEnabled ? "VISION: ON" : "VISION: OFF")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.5))
+                            
+                            Image(systemName: "viewfinder")
+                                .font(.system(size: 10))
+                                .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3))
+                        }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(appContext.currentMode.isScreenshotEnabled ? hudCyan.opacity(0.1) : Color.clear)
+                        .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 4)
                 
                 Spacer()
                 
@@ -682,66 +957,57 @@ struct ChatView: View {
                         fullChatViewMode.toggle()
                     }
                 }) {
-                    Image(systemName: fullChatViewMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                        .font(.caption2.bold())
-                        .foregroundColor(.white.opacity(0.7))
-                        .padding(6)
-                        .background(Color.black.opacity(0.3), in: Circle())
-                        .shadow(color: Color.white.opacity(0.1), radius: 4, x: 0, y: 1)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(hudCyan.opacity(0.5), lineWidth: 1)
+                            .background(Color.black.opacity(0.1))
+                            .frame(width: 32, height: 32)
+                        
+                        Image(systemName: fullChatViewMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(hudCyan)
+                    }
                 }
-                .buttonStyle(PlainButtonStyle())
+                .buttonStyle(.plain)
             }
             
-            // MARK: Divider
+            // MARK: - Laser Divider
             Rectangle()
-                .fill(LinearGradient(colors: [Color.white.opacity(0.3), Color.clear], startPoint: .leading, endPoint: .trailing))
+                .fill(
+                    LinearGradient(
+                        colors: [.clear, hudCyan.opacity(0.4), .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
                 .frame(height: 1)
-                .shadow(color: Color.blue.opacity(0.2), radius: 2, x: 0, y: 0)
             
-            // MARK: Logs
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
-                        
-                        // Static System Logs
-                        Group {
-                            LogLine(text: "> System Initialized.")
-                            LogLine(text: "> Connecting to Backend...")
-                            LogLine(text: "> Connection Established.")
-                            LogLine(text: "> Active Model: Gemini 2.5 Flash Lite")
-                        }
-                        
-                        // Dynamic Chat Logs
-                        ForEach(appContext.currentSessionChatMessages) { message in
-                            MessageLogRow(message: message)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                                .animation(.easeOut(duration: 0.25), value: appContext.currentSessionChatMessages.count)
-                        }
-                        
-                        // Invisible view for auto-scroll
-                        Color.clear
-                            .frame(height: 1)
-                            .id("bottom")
-                    }
-                    .padding(.top, 6)
-                }
-                .frame(maxHeight: fullChatViewMode ? 420 : 220)
-                .onChange(of: appContext.currentSessionChatMessages.count) { _ in
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        proxy.scrollTo("bottom", anchor: .bottom)
-                    }
-                }
-            }
+            // MARK: - Logs / Content
+            MessageView(fullChatViewMode: $fullChatViewMode)
+                .environmentObject(appContext)
+                .background(Color.clear) // Completely clear background for messages
+                .cornerRadius(8)
             
         }
         .padding(20)
-        .background(Color.black.opacity(0.5)) // solid dark background for HUD feel
-        .cornerRadius(24)
-        .overlay(
-            RoundedRectangle(cornerRadius: 24)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        .background(
+            ZStack {
+                // 1. Tint Only (No Material/Blur)
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color.black.opacity(0.2)) // Adjust this: 0.0 is invisible, 0.9 is opaque black
+                
+                // 2. Glowing Gradient Border
+                RoundedRectangle(cornerRadius: 24)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [hudCyan.opacity(0.5), hudCyan.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
         )
-        .shadow(color: Color.blue.opacity(0.25), radius: 12, x: 0, y: 4)
         .scaleEffect(fullChatViewMode ? 1.0 : 0.98)
         .opacity(fullChatViewMode ? 1.0 : 0.95)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: fullChatViewMode)
@@ -749,6 +1015,178 @@ struct ChatView: View {
     }
 }
 
+struct MinimizedMessageView: View {
+    @Binding var inputText: String
+    @Binding var showMinimizedMessageView: Bool
+    var onSubmit: () -> Void
+
+    @EnvironmentObject var appContext: AppContext
+    
+    // Theme Colors
+    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+    
+    var body: some View {
+        VStack(spacing: 0) { 
+            
+            // MARK: - Header
+            HStack {
+                Rectangle()
+                    .fill(hudCyan)
+                    .frame(width: 4, height: 14)
+                
+                Text("RONG-E CHAT") 
+                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .foregroundStyle(hudCyan)
+                    .shadow(color: hudCyan.opacity(0.5), radius: 5)
+                
+                Spacer()
+                
+                Button(action: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showMinimizedMessageView = false
+                    }
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(hudCyan)
+                        .padding(8)
+                        .background(Color.black.opacity(0.01)) // Almost invisible tap area
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(hudCyan.opacity(0.5), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, 12)
+
+            // MARK: - Message Area
+            MessageView(fullChatViewMode: .constant(true))
+                .environmentObject(appContext)
+                .frame(width: 300, height: 200)
+                // VERY TRANSPARENT inner box
+                .background(Color.black.opacity(0.1)) 
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
+                )
+            
+            // MARK: - Mode & Vision Controls
+            HStack {
+                Text("MODE: \(appContext.currentMode.name.uppercased())")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.white.opacity(0.5))
+                
+                Spacer()
+                
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        appContext.toggleCurrentModeVision()
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        ZStack {
+                            Rectangle()
+                                .stroke(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3), lineWidth: 1)
+                                .frame(width: 12, height: 12)
+                            
+                            if appContext.currentMode.isScreenshotEnabled {
+                                Rectangle()
+                                    .fill(hudCyan)
+                                    .frame(width: 6, height: 6)
+                                    .shadow(color: hudCyan, radius: 4)
+                            }
+                        }
+                        
+                        Text(appContext.currentMode.isScreenshotEnabled ? "VISION: ON" : "VISION: OFF")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.5))
+                        
+                        Image(systemName: "viewfinder")
+                            .font(.system(size: 10))
+                            .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3))
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .background(appContext.currentMode.isScreenshotEnabled ? hudCyan.opacity(0.1) : Color.clear)
+                    .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            
+            // MARK: - Input Area
+            InputAreaView(inputText: $inputText, onSubmit: onSubmit)
+        }
+        .padding(16)
+        .background(
+            ZStack {
+                // REMOVED: .ultraThinMaterial (It causes blur which blocks the view)
+                
+                // 1. Base Tint (Very Low Opacity for "See-Through")
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color.black.opacity(0.2)) 
+                
+                // 2. High-Tech Border (Keeps layout defined without solid background)
+                RoundedRectangle(cornerRadius: 24)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                appContext.currentMode.isScreenshotEnabled ? hudCyan.opacity(0.8) : hudCyan.opacity(0.4),
+                                hudCyan.opacity(0.05)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        // Removed heavy shadow to feel lighter/transparent
+        .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 5)
+    }
+}
+
+struct MessageView: View {
+    @EnvironmentObject var appContext: AppContext
+    @Binding var fullChatViewMode: Bool
+    
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    
+                    // Static System Logs
+                    Group {
+                        LogLine(text: "> System Initialized.")
+                        LogLine(text: "> Connecting to Backend...")
+                        LogLine(text: "> Connection Established.")
+                        LogLine(text: "> Active Model: Gemini 2.5 Flash Lite")
+                    }
+                    
+                    // Dynamic Chat Logs
+                    ForEach(appContext.currentSessionChatMessages) { message in
+                        MessageLogRow(message: message)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .animation(.easeOut(duration: 0.25), value: appContext.currentSessionChatMessages.count)
+                    }
+                    
+                    // Invisible view for auto-scroll
+                    Color.clear
+                        .frame(height: 1)
+                        .id("bottom")
+                }
+                .padding(.top, 6)
+            }
+            .frame(maxHeight: fullChatViewMode ? 420 : 220)
+            .onChange(of: appContext.currentSessionChatMessages.count) { _ in
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo("bottom", anchor: .top)
+                }
+            }
+        }
+    }
+}
 
 // MARK: - Helper View for efficient rendering
 struct MessageLogRow: View {

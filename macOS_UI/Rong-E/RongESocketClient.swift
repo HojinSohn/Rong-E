@@ -217,12 +217,22 @@ class SocketClient: ObservableObject {
             case "tool_call":
                 if case .toolCall(let content) = parsedMsg.content {
                     print("🔧 Tool Call: \(content.toolName)")
-                    // Use description to print AnyCodable args cleanly
-                    self.onReceiveResponse?("Tool Call: \(content.toolName) with args \(content.toolArgs)")
+                    
+                    // Format tool call into a structured message
+                    let cleanArgs = ToolFormatter.parseArgs(content.toolArgs)
+                    var logMessage = "⚡️ SYSTEM EXECUTION: [\(content.toolName.uppercased())]\n"
+                    logMessage += "═══════════════════════════════════════\n"
+                    for (key, val) in cleanArgs {
+                        logMessage += "  • \(key.padding(toLength: 20, withPad: " ", startingAt: 0)) : \(val)\n"
+                    }
+                    
+                    self.onReceiveResponse?(logMessage)
                 }
             case "tool_result":
                 if case .toolResult(let content) = parsedMsg.content {
                     print("🔧 Tool Result: \(content.toolName)")
+                    let resultMsg = "✅ [\(content.toolName.uppercased())] COMPLETED\n\(content.result)"
+                    self.onReceiveResponse?(resultMsg)
                 }
             case "credentials_success":
                 if case .response(let content) = parsedMsg.content {

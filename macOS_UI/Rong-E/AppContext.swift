@@ -9,9 +9,22 @@ struct ChatMessage: Identifiable, Codable, Hashable {
 
 class AppContext: ObservableObject {
     static let shared = AppContext()
-    
     // FIX 2: We can define simple defaults inline to satisfy the compiler immediately.
-    // This removes the need to set them in init() and fixes the "self used before init" error.
+    // This removes the need to set them in init() and fixes the "self used before init" error.@Published var currentModeId: Int = 1 
+
+    // Helper to get the actual object
+    var currentMode: ModeConfiguration {
+        modes.first { $0.id == currentModeId } ?? (modes.first ?? ModeConfiguration(id: 0, name: "Fallback", systemPrompt: "", enabledTools: [], isScreenshotEnabled: false))
+    }
+
+    // Helper to toggle the setting for the ACTIVE mode
+    func toggleCurrentModeVision() {
+        if let index = modes.firstIndex(where: { $0.id == currentModeId }) {
+            modes[index].isScreenshotEnabled.toggle()
+            saveSettings() // Persist the change
+        }
+    }
+    @Published var currentModeId: Int = 1
     @Published var response: String = ""
     @Published var isLoading: Bool = false
     @Published var shouldAnimate: Bool = false
