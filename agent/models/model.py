@@ -52,3 +52,21 @@ class SheetToolInput(BaseModel):
         None, 
         description="A JSON string representing the data rows. Example: '[[\"Name\", \"Age\"], [\"Alice\", \"30\"]]'. Required for append/update."
     )
+
+
+# Schema for web socket responses
+# CamelCase for consistency with frontend
+class ToolCallSchema(BaseModel):
+    toolName: str
+    toolArgs: dict
+
+class ToolResultSchema(BaseModel):
+    toolName: str
+    result: str
+
+class ResponseContentSchema(BaseModel):
+    text: str
+    images: Optional[List[str]] = None
+
+class ThoughtContentSchema(BaseModel):
+    text: str

@@ -19,7 +19,6 @@ struct MainView: View {
     // 4. Input & Response State
     @State private var inputMode = false
     @State private var inputText = ""
-    @State private var aiResponse = "System Idle."
     @State private var currentMode = "mode1"
     @State private var shouldAnimateResponse = true
 
@@ -27,7 +26,7 @@ struct MainView: View {
     @State private var isListening = false
     @State private var isProcessing = false
     @State private var activeTool: String? = nil
-    @State private var fullTextViewMode = false
+    @State private var fullChatViewMode = false
 
     // 6. Environment Objects
     @EnvironmentObject var appContext: AppContext
@@ -51,8 +50,10 @@ struct MainView: View {
             }
 
             // Phase B: Container morph
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.85)) {
-                minimizedMode = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                withAnimation(.spring(response: 0.7, dampingFraction: 0.85)) {
+                    minimizedMode = true
+                }
             }
 
             // Phase C: Window system sync
@@ -69,17 +70,23 @@ struct MainView: View {
             }
 
             // Phase A (reverse): Content re-enters
-            withAnimation(.easeOut(duration: 0.35).delay(0.25)) {
+            withAnimation(.easeOut(duration: 0.4).delay(0.25)) {
                 showGreeting = true
             }
 
             // Phase A (reverse): Content re-enters
-            withAnimation(.easeOut(duration: 0.35).delay(0.5)) {
+            withAnimation(.easeOut(duration: 0.4).delay(0.5)) {
                 showColumns = true
                 showWaveform = true
             }
         }
         print("New minimizedMode: \(minimizedMode)")
+    }
+
+    func toggleFullChatView() {
+        withAnimation(.easeInOut(duration: 0.4)) {
+            fullChatViewMode.toggle()
+        }
     }
 
 
@@ -88,22 +95,17 @@ struct MainView: View {
             // --- CLOCK LAYER ---
             // Fades out when minimized
             VStack(spacing: 0) { // 1. Remove spacing between Time and Greeting
-                // 2. Reduce top clearance (was 100, now 50)
                 Spacer().frame(height: 50)
                 
                 // Time Display (Dynamic)
                 Text(Date(), style: .time)
-                    // 3. Shrink Clock Font (was 60, now 42)
                     .font(.system(size: 42, weight: .semibold, design: .default))
                     .foregroundStyle(.white)
                     .shadow(color: .white, radius: 10)
 
                 Text("Good \(getGreeting()), Hojin!") // Good Morning/Afternoon/Evening Greeting
-                    // 4. Shrink Greeting Font (was 20, now 15)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
-                    // Animation logic
-                    .opacity((isProcessing || isListening || !inputText.isEmpty) ? 0 : 1)
                 
                 Spacer()
             }
@@ -111,10 +113,9 @@ struct MainView: View {
             .zIndex(1)
             .opacity(minimizedMode ? 0 : 1)
             // Adjust offset to keep it visually balanced with the new smaller size
-            .offset(y: !(isProcessing || isListening || !inputText.isEmpty) ? 40 : 0) 
-            .animation(.easeInOut(duration: 0.3), value: isProcessing)
-            .animation(.easeInOut(duration: 0.3), value: isListening)
-            .animation(.easeInOut(duration: 0.3), value: inputText.isEmpty)
+            .offset(y: fullChatViewMode ? 0 : 40) 
+            .opacity(fullChatViewMode ? 0 : 1)
+            .animation(.easeInOut(duration: 0.3), value: fullChatViewMode)
             .allowsHitTesting(false)
 
             // --- MAIN GLASS CONTAINER ---
@@ -134,11 +135,10 @@ struct MainView: View {
                             
                             MainColumnView(
                                 inputText: $inputText,
-                                aiResponse: $aiResponse,
-                                isProcessing: $isProcessing,
+                                fullChatViewMode: $fullChatViewMode,
                                 onSubmit: submitQuery // This links to your existing submitQuery function
                             )
-                            .offset(x: showColumns ? 0 : 40)
+                            .offset(x: showColumns ? 0 : 100)
                             .opacity(showColumns ? 1 : 0)
                         }
                         .padding(24)
@@ -211,7 +211,6 @@ struct MainView: View {
         socketClient.onReceiveThought = { thoughtText in
             withAnimation {
                 self.isProcessing = true
-                self.aiResponse = ""
                 self.activeTool = thoughtText.uppercased()
             }
         }
@@ -306,9 +305,10 @@ struct MainView: View {
             isProcessing = false
             activeTool = nil
             shouldAnimateResponse = true
-            aiResponse = response
+            appContext.currentSessionChatMessages.append(ChatMessage(role: "assistant", content: response))
             appContext.response = response
-            inputMode = true
+            inputMode = false // Check this
+            fullChatViewMode = true
         }
     }
 
@@ -320,8 +320,10 @@ struct MainView: View {
         inputText = ""
         isProcessing = true
         inputMode = false
-        aiResponse = ""
         appContext.response = ""
+
+        // append user message to chat history
+        appContext.currentSessionChatMessages.append(ChatMessage(role: "user", content: query))
 
         if appContext.modes.first(where: { $0.name == appContext.modes.first(where: { $0.id == Int(currentMode.suffix(1)) })?.name })?.isScreenshotEnabled == true {
             print("📸 Screenshot tool is enabled for this mode. Capturing screenshot...")
@@ -338,7 +340,6 @@ struct MainView: View {
             if isListening {
                 isListening = false
                 isProcessing = true
-                aiResponse = ""
                 appContext.response = ""
                 socketClient.sendMessage("Hello (Voice Input)", mode: currentMode.lowercased())
             } else {
@@ -346,7 +347,6 @@ struct MainView: View {
                 isProcessing = false
                 inputMode = false
                 shouldAnimateResponse = true
-                aiResponse = "Listening..."
                 appContext.response = "Listening..."
             }
         }
@@ -466,19 +466,22 @@ struct LeftColumnView: View {
 struct MainColumnView: View {
     // Pass state from MainView
     @Binding var inputText: String
-    @Binding var aiResponse: String
-    @Binding var isProcessing: Bool
+    @Binding var fullChatViewMode: Bool
+
+    @EnvironmentObject var appContext: AppContext
     var onSubmit: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             
-            // 1. Top Spacer (Clearance for greeting/clock)
-            Spacer().frame(height: 140)
-            
-            // 2. AI Response Area (The "Screen")
-            ChatView(aiResponse: aiResponse)
-            
+            Spacer()
+                .frame(height: fullChatViewMode ? 10 : 140)
+
+            ChatView(fullChatViewMode: $fullChatViewMode)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .opacity
+                ))
             Spacer()
             
             // 4. Input Field (Bottom)
@@ -523,6 +526,7 @@ struct MainColumnView: View {
         }
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeOut(duration: 0.35), value: fullChatViewMode)
     }
 }
 
@@ -641,76 +645,143 @@ struct JarvisHUDView: View {
     }
 }
 
-// MARK: - Control View (The Darker Bottom Box)
 struct ChatView: View {
-    let aiResponse: String
+    @EnvironmentObject var appContext: AppContext
+    @Binding var fullChatViewMode: Bool
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            // Header
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            
+            // MARK: Header
+            HStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(Color.blue.opacity(0.8))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: "terminal.fill")
-                        .font(.caption.bold())
+                    Circle()
+                        .fill(LinearGradient(colors: [Color.blue, Color.cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 36, height: 36)
+                        .shadow(color: Color.cyan.opacity(0.5), radius: 6, x: 0, y: 2)
+                    
+                    // Jarvis-style icon
+                    Image(systemName: "bolt.fill") // you can replace with custom SF Symbol or asset
+                        .font(.headline.bold())
                         .foregroundStyle(.white)
                 }
                 
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Runtime Logs")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundColor(.white)
                     Text("Session ID: #A9-2044")
                         .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundColor(.white.opacity(0.6))
                 }
+                
                 Spacer()
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.3))
+                
+                Button(action: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        fullChatViewMode.toggle()
+                    }
+                }) {
+                    Image(systemName: fullChatViewMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.caption2.bold())
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(6)
+                        .background(Color.black.opacity(0.3), in: Circle())
+                        .shadow(color: Color.white.opacity(0.1), radius: 4, x: 0, y: 1)
+                }
+                .buttonStyle(PlainButtonStyle())
             }
             
-            // Divider
+            // MARK: Divider
             Rectangle()
-                .fill(LinearGradient(colors: [.white.opacity(0.3), .clear], startPoint: .leading, endPoint: .trailing))
+                .fill(LinearGradient(colors: [Color.white.opacity(0.3), Color.clear], startPoint: .leading, endPoint: .trailing))
                 .frame(height: 1)
+                .shadow(color: Color.blue.opacity(0.2), radius: 2, x: 0, y: 0)
             
-            // Logs
-            ScrollView {
-                // Add response text as log lines
-                VStack(alignment: .leading, spacing: 8) {
-                    // Logs
-                    LogLine(text: "> System Initialized.")
-                    LogLine(text: "> Connecting to Backend...")
-                    LogLine(text: "> Connection Established.")
-                    LogLine(text: "> Listening for Commands...")
-                    LogLine(text: "> User Command Received.")
-                    LogLine(text: "> Processing with Gemini 2.5 Flash Lite.")
-                    LogLine(text: "> Active Tool: WS_STREAM")
-                    LogLine(text: "> Generating Response...")
-                    LogLine(text: "> AI Response: \(aiResponse)")
+            // MARK: Logs
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        
+                        // Static System Logs
+                        Group {
+                            LogLine(text: "> System Initialized.")
+                            LogLine(text: "> Connecting to Backend...")
+                            LogLine(text: "> Connection Established.")
+                            LogLine(text: "> Active Model: Gemini 2.5 Flash Lite")
+                        }
+                        
+                        // Dynamic Chat Logs
+                        ForEach(appContext.currentSessionChatMessages) { message in
+                            MessageLogRow(message: message)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                                .animation(.easeOut(duration: 0.25), value: appContext.currentSessionChatMessages.count)
+                        }
+                        
+                        // Invisible view for auto-scroll
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom")
+                    }
+                    .padding(.top, 6)
+                }
+                .frame(maxHeight: fullChatViewMode ? 420 : 220)
+                .onChange(of: appContext.currentSessionChatMessages.count) { _ in
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
                 }
             }
-            .frame(maxHeight: 150)
-            .padding(.top, 5)
+            
         }
         .padding(20)
-        .background(Color.black.opacity(0.5)) // Darker than main glass
+        .background(Color.black.opacity(0.5)) // solid dark background for HUD feel
         .cornerRadius(24)
         .overlay(
             RoundedRectangle(cornerRadius: 24)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
+        .shadow(color: Color.blue.opacity(0.25), radius: 12, x: 0, y: 4)
+        .scaleEffect(fullChatViewMode ? 1.0 : 0.98)
+        .opacity(fullChatViewMode ? 1.0 : 0.95)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: fullChatViewMode)
+        .transition(.scale.combined(with: .opacity))
+    }
+}
+
+
+// MARK: - Helper View for efficient rendering
+struct MessageLogRow: View {
+    let message: ChatMessage
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if message.role == "user" {
+                // Corrected parameter name from 'user' to 'isUser'
+                LogLine(text: "> User: \(message.content)", isUser: true)
+            } else {
+                // Assistant messages
+                ForEach(message.content.components(separatedBy: "\n"), id: \.self) { line in
+                    if !line.isEmpty { 
+                        LogLine(text: "> \(line)") 
+                    }
+                }
+            }
+        }
     }
 }
 
 struct LogLine: View {
     let text: String
+    var isUser: Bool = false
+    
     var body: some View {
         Text(text)
             .font(.system(size: 11, weight: .regular, design: .monospaced))
-            .foregroundStyle(.cyan.opacity(0.8)) // Terminal cyan style
-            .lineLimit(1)
+            .foregroundStyle(isUser ? Color.green : Color.cyan)
+            .multilineTextAlignment(.leading) // 1. Align wrapped lines to the left
+            .frame(maxWidth: .infinity, alignment: .leading) // 2. Force it to fill width but not exceed it
+            .fixedSize(horizontal: false, vertical: true) // 3. Grow vertically, respect horizontal constraints
     }
 }
 
@@ -724,6 +795,10 @@ struct HeaderView: View {
     @EnvironmentObject var themeManager: ThemeManager
 
     let toggleMinimized: () -> Void
+    
+    @State private var googleHovering = false
+    @State private var settingsHovering = false
+    @State private var shrinkHovering = false
 
     var body: some View {
         HStack {
@@ -740,23 +815,94 @@ struct HeaderView: View {
                 .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
             
             Spacer()
+
+            // Google Service Button
+            Button(action: {
+                windowCoordinator.openGoogleService()
+            }) {
+                ZStack {
+                    Color.white.opacity(googleHovering ? 0.25 : 0.15)
+                        .cornerRadius(8)
+                    
+                    Image(systemName: "cloud.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 32, height: 32)
+                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .scaleEffect(googleHovering ? 1.1 : 1.0)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    googleHovering = hovering
+                }
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .contentShape(Rectangle())
+            .zIndex(10)
+
+            // Settings Button
+            Button(action: {
+                windowCoordinator.openSettings()
+            }) {
+                ZStack {
+                    Color.white.opacity(settingsHovering ? 0.25 : 0.15)
+                        .cornerRadius(8)
+                    
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 32, height: 32)
+                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .scaleEffect(settingsHovering ? 1.1 : 1.0)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    settingsHovering = hovering
+                }
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .contentShape(Rectangle())
+            .zIndex(10)
             
             // Shrink Button
             Button(action: {
                 toggleMinimized()
             }) {
                 ZStack {
-                    Color.white
+                    Color.white.opacity(shrinkHovering ? 0.9 : 1.0)
                         .cornerRadius(8)
                     
                     Image(systemName: "minus")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(shrinkHovering ? .black : .black)
                 }
                 .frame(width: 32, height: 32)
                 .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .scaleEffect(shrinkHovering ? 1.1 : 1.0)
             }
             .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    shrinkHovering = hovering
+                }
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
             .contentShape(Rectangle())
             .zIndex(10)
         }
@@ -828,19 +974,5 @@ extension NSTextField {
     open override var focusRingType: NSFocusRingType {
         get { .none }
         set { }
-    }
-}
-
-// Preview
-struct MainView_Previews: PreviewProvider {
-    static var previews: some View {
-        MainView()
-            .environmentObject(AppContext.shared)
-            .environmentObject(WindowCoordinator.shared)
-            .environmentObject(WorkflowManager.shared)
-            .environmentObject(GoogleAuthManager.shared)
-            .environmentObject(SocketClient.shared)
-            .environmentObject(ThemeManager.shared)
-            .preferredColorScheme(.dark)
     }
 }

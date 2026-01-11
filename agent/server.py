@@ -49,13 +49,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     except Exception as e:
                         await websocket.send_text(json.dumps({
                             "type": "credentials_error",
-                            "text": f"❌ Error during authentication: {str(e)}"
+                            "content": f"❌ Error during authentication: {str(e)}"
                         }))
                         print(f"❌ Error during authentication: {str(e)}")
                         continue  # Skip the rest of the loop
                     await websocket.send_text(json.dumps({
                         "type": "credentials_success",
-                        "text": "✅ Credentials received and stored successfully."
+                        "content": "✅ Credentials received and stored successfully."
                     }))
                     continue  # Skip the rest of the loop
                 elif data["data_type"] == "api_key":
@@ -63,7 +63,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     print("🔑 Received API Key")
                     await websocket.send_text(json.dumps({
                         "type": "credentials_success",
-                        "text": "✅ API Key received and stored successfully."
+                        "content": "✅ API Key received and stored successfully."
                     }))
                     continue  # Skip the rest of the loop
                 elif data["data_type"] == "revoke_credentials":
@@ -71,7 +71,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     agent.revoke_google_credentials()
                     await websocket.send_text(json.dumps({
                         "type": "credentials_revoked",
-                        "text": "✅ Credentials revoked successfully."
+                        "content": "✅ Credentials revoked successfully."
                     }))
                     continue  # Skip the rest of the loop
 
@@ -79,28 +79,42 @@ async def websocket_endpoint(websocket: WebSocket):
             query, mode, base64_image = data["text"], data["mode"], data.get("base64_image")
             print(f"Processing Query: {query} in Mode: {mode}")
             print(f"Base64 Image Present: {'Yes' if base64_image else 'No'}")  
-            # --- 1. Define the Callback Function ---
-            # This function will be passed to the agent.
-            # It sends "thoughts" immediately to the client.
-            async def send_thought(thought_text: str):
-                payload = json.dumps({
-                    "type": "thought",
-                    "text": thought_text
-                })
-                await websocket.send_text(payload)
-                speak(f"{thought_text}")  # Optional: Log thoughts to console 
+            
+            # Callback function to stream responses
+            async def agent_callback(type: str, content: str):
+                payload = None
+                if type == "thought":
+                    payload = json.dumps({
+                        "type": "thought",
+                        "content": content
+                    })
+                elif type == "tool_call":
+                    payload = json.dumps({
+                        "type": "tool_call",
+                        "content": content
+                    })
+                elif type == "tool_result":
+                    payload = json.dumps({
+                        "type": "tool_result",
+                        "content": content
+                    })
+                elif type == "response": # Final response
+                    payload = json.dumps({
+                        "type": "response",
+                        "content": content
+                    })
+                if payload:
+                    await websocket.send_text(payload)
 
             print([tool.name for tool in agent.tools])
             print(agent.tool_map.keys())
 
             # --- 2. Run Agent with Callback ---
             # We await the agent, passing our new function
-            final_response = await agent.run(query, mode, base64_image=base64_image, callback=send_thought)
+            final_response = await agent.run(query, mode, base64_image=base64_image, callback=agent_callback)
 
-            json_response = json.dumps(final_response)
-            # --- 3. Send Final Response ---
-            await websocket.send_text(json_response)
-            print(f"📤 Sent Final: {final_response}")
+            # Print final response
+            print(f"Final Response: {final_response}")
 
     except WebSocketDisconnect:
         print("⚠️ Client disconnected")

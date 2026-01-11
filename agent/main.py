@@ -1,6 +1,7 @@
-from agent import EchoAgent
+import asyncio
+from agent.agent import EchoAgent
 
-if __name__ == "__main__":
+async def main():
     agent = EchoAgent()
     print("Echo is ready. Type 'quit' to exit.")
     
@@ -9,4 +10,7 @@ if __name__ == "__main__":
         if user_input.lower() in ["quit", "exit"]:
             break
         
-        agent.run(user_input)
+        await agent.run(user_input)
+
+if __name__ == "__main__":
+    asyncio.run(main())
