@@ -137,6 +137,8 @@ class SocketClient: ObservableObject {
     
     var onReceiveThought: ((String) -> Void)?
     var onReceiveResponse: ((String) -> Void)?
+    var onReceiveToolCall: ((ToolCallContent) -> Void)?
+    var onReceiveToolOutput: ((ToolResultContent) -> Void)?
     var onReceiveImages: (([ImageData]) -> Void)?
     var onDisconnect: ((String) -> Void)?
     var onReceivedCredentialsSuccess: ((String) -> Void)?
@@ -217,22 +219,12 @@ class SocketClient: ObservableObject {
             case "tool_call":
                 if case .toolCall(let content) = parsedMsg.content {
                     print("🔧 Tool Call: \(content.toolName)")
-                    
-                    // Format tool call into a structured message
-                    let cleanArgs = ToolFormatter.parseArgs(content.toolArgs)
-                    var logMessage = "⚡️ SYSTEM EXECUTION: [\(content.toolName.uppercased())]\n"
-                    logMessage += "═══════════════════════════════════════\n"
-                    for (key, val) in cleanArgs {
-                        logMessage += "  • \(key.padding(toLength: 20, withPad: " ", startingAt: 0)) : \(val)\n"
-                    }
-                    
-                    self.onReceiveResponse?(logMessage)
+                    self.onReceiveToolCall?(content)
                 }
             case "tool_result":
                 if case .toolResult(let content) = parsedMsg.content {
-                    print("🔧 Tool Result: \(content.toolName)")
-                    let resultMsg = "✅ [\(content.toolName.uppercased())] COMPLETED\n\(content.result)"
-                    self.onReceiveResponse?(resultMsg)
+                    print("🛠 Tool Result: \(content.toolName)")
+                    self.onReceiveToolOutput?(content)
                 }
             case "credentials_success":
                 if case .response(let content) = parsedMsg.content {

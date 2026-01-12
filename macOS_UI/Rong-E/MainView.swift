@@ -9,9 +9,7 @@ struct MainView: View {
     @State private var showMinimizedButtons = false
     @State private var fullChatViewMode = false
     @State private var showMinimizedMessageView = false
-
-    // 2. Opacity State
-    @State private var opacity: Double = 0.7
+    @State private var onCoreHover = false
 
     // 3. Permission & Screenshot State
     @State private var waitingForPermission = false
@@ -172,14 +170,14 @@ struct MainView: View {
                         }
                         .padding(24)
                         .background(
-                            JarvisHUDView()
+                            JarvisHUDView(isHovering: false)
                                 .blur(radius: 10)
                                 .allowsHitTesting(false)
                         )
                     }
                     .transition(.opacity)
                 } else {
-                    JarvisHUDView()
+                    JarvisHUDView(isHovering: onCoreHover)
                         .blur(radius: 0)
                         .allowsHitTesting(false)
                         .scaleEffect(0.2)
@@ -190,11 +188,36 @@ struct MainView: View {
                 width: minimizedMode ? 80 : 800,
                 height: minimizedMode ? 80 : 520
             )
-            .background(minimizedMode ? Color.black.opacity(0.6) : Color.clear) // Add dark tint when minimized
-            .backgroundColor(Color.black.opacity(0.1))
+            .background(
+                ZStack {
+                    if !minimizedMode {
+                        // 1. Base Tint (Very Low Opacity for "See-Through")
+                        RoundedRectangle(cornerRadius: 40)
+                            .fill(Color.black.opacity(0.6))
+
+                        // 2. High-Tech Border (Keeps layout defined without solid background)
+                        RoundedRectangle(cornerRadius: 40)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        appContext.currentMode.isScreenshotEnabled ? Color.cyan.opacity(0.8) : Color.cyan.opacity(0.4),
+                                        Color.cyan.opacity(0.05)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    } else {
+                        // Minimized Mode Background
+                        RoundedRectangle(cornerRadius: 40) // Half of 80 to make a perfect circle
+                            .fill(Color.black.opacity(0.6))
+                            .shadow(color: Color.cyan.opacity(0.4), radius: 10)
+                    }
+                }
+            )
             // Corner radius becomes 40 (half of 80) to make a perfect circle
             .cornerRadius(40)
-            .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 15)
             
             // Restore on Tap
             .onTapGesture {
@@ -205,8 +228,8 @@ struct MainView: View {
             // Hover Effect on minimized mode
             .onHover { hovering in
                 if minimizedMode {
+                    onCoreHover = hovering
                     withAnimation(.easeInOut(duration: 0.3)) {
-                        opacity = hovering ? 1.0 : 0.7
                         setShowMinimizedButtons(hovering)
                     }
                 }
@@ -253,6 +276,23 @@ struct MainView: View {
             withAnimation {
                 self.isProcessing = true
                 self.activeTool = thoughtText.uppercased()
+
+                self.appContext.reasoningSteps.append(
+                    ReasoningStep(description: thoughtText, status: .active)
+                )
+            }
+        }
+
+        socketClient.onReceiveToolCall = { toolCallContent in
+            appContext.reasoningSteps.append(
+                ReasoningStep(description: toolCallContent.toolName, status: .active)
+            )
+        }
+
+        socketClient.onReceiveToolOutput = { toolResultContent in
+            // Mark the last reasoning step as completed
+            if let lastIndex = appContext.reasoningSteps.lastIndex(where: { $0.status == .active }) {
+                appContext.reasoningSteps[lastIndex].status = .completed
             }
         }
         
@@ -401,10 +441,6 @@ extension View {
     }
 }
 
-import SwiftUI
-
-import SwiftUI
-
 struct MinimizedControlsView: View {
     let isListening: Bool
     let minimizedMode: Bool
@@ -514,105 +550,139 @@ struct OrbiterButton: View {
     }
 }
 
-// MARK: - Left Column (Widgets)
+// MARK: - Left Column (Agentic Dashboard)
 struct LeftColumnView: View {
+    // Inject the context
+    @EnvironmentObject var appContext: AppContext
+
     var body: some View {
         VStack(spacing: 12) {
             
-            // 1. Connection Status Widget (Large)
-            VStack(alignment: .leading) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Image(systemName: "server.rack")
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.white)
-                            .font(.system(size: 24))
-                        Text("Backend")
-                            .font(.caption2.bold())
-                            .foregroundStyle(.white.opacity(0.6))
-                    }
+            // 1. System Vitals (Dynamic)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("Orbita Core", systemImage: "cpu.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.cyan)
                     Spacer()
+                    // Blinking Status Light
                     Circle()
-                        .fill(Color.cyan)
-                        .frame(width: 8, height: 8)
-                        .shadow(color: .cyan, radius: 4)
+                        .fill(appContext.currentActivity == .idle ? Color.gray : Color.green)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: .green, radius: 4)
                 }
-                Spacer()
-                Text("Python Core")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text("Port: 8080 • Active")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.8))
+                
+                // CPU Usage Bar
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("CPU Load")
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.6))
+                        Spacer()
+                        Text("\(Int(appContext.cpuUsage * 100))%")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.cyan)
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.1))
+                            Capsule().fill(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: geo.size.width * appContext.cpuUsage)
+                                .animation(.easeOut, value: appContext.cpuUsage)
+                        }
+                    }
+                    .frame(height: 4)
+                }
+                
+                // Memory Usage Bar
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Memory")
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.6))
+                        Spacer()
+                        Text(appContext.memoryUsage)
+                            .font(.caption2.bold())
+                            .foregroundStyle(.purple)
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.1))
+                            Capsule().fill(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: geo.size.width * 0.6) // Mock value for now
+                        }
+                    }
+                    .frame(height: 4)
+                }
             }
             .padding(16)
             .frame(height: 130)
             .frame(maxWidth: .infinity)
-            .background(
-                LinearGradient(colors: [Color(red: 0.2, green: 0.2, blue: 0.3).opacity(0.7), Color.black.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing)
-            )
+            .background(LinearGradient(colors: [Color(red: 0.1, green: 0.1, blue: 0.2), Color.black.opacity(0.4)], startPoint: .top, endPoint: .bottom))
             .cornerRadius(24)
-            .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.1), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.08), lineWidth: 1))
 
-            // 2. Model Info Widget (Medium)
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Active Model")
-                        .font(.caption2)
-                        .foregroundStyle(.gray)
-                    Text("Gemini 2.5 Flash Lite")
-                        .font(.title3.bold())
-                        .foregroundStyle(.cyan)
-                }
-                Spacer()
-                Image(systemName: "bolt.fill")
-                    .foregroundStyle(.white.opacity(0.6))
-            }
-            .padding(16)
-            .frame(height: 70)
-            .frame(maxWidth: .infinity)
-            .background(Color.black.opacity(0.2))
-            .cornerRadius(24)
-
-            // 3. Next Task (Tall)
-            VStack(alignment: .leading) {
+            // 2. Reasoning Trace (Dynamic List)
+            VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("Up Next")
+                    Text("Reasoning Trace")
                         .font(.caption.bold())
                         .foregroundStyle(.white.opacity(0.7))
                     Spacer()
-                    Image(systemName: "calendar.badge.clock")
+                    Image(systemName: "brain.head.profile")
                         .font(.caption2)
-                        .foregroundStyle(.gray)
+                        .foregroundStyle(.cyan.opacity(0.8))
+                }
+                
+                // Dynamic List of Steps
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(appContext.reasoningSteps) { step in
+                            HStack(alignment: .top, spacing: 8) {
+                                // Status Icon
+                                statusIcon(for: step.status)
+                                    .padding(.top, 2)
+                                
+                                // Description
+                                Text(step.description)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.white.opacity(0.9))
+                                
+                                Spacer()
+                            }
+                        }
+                    }
                 }
                 
                 Spacer()
-                
-                // 3D Shape
-                Image(systemName: "graduationcap.fill")
-                    .font(.system(size: 40))
-                    .foregroundStyle(LinearGradient(colors: [.orange, .pink], startPoint: .top, endPoint: .bottom))
-                    .shadow(color: .orange.opacity(0.5), radius: 10)
-                
-                Spacer()
-                
-                HStack {
-                    Text("CS536 Lab")
-                        .font(.caption2)
-                        .foregroundStyle(.gray)
-                    Spacer()
-                    Text("13:30")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.white)
-                }
             }
             .padding(16)
-            .frame(maxHeight: .infinity)
+            .frame(height: 140)
             .frame(maxWidth: .infinity)
-            .background(Color.black.opacity(0.2))
+            .background(Color.black.opacity(0.3))
             .cornerRadius(24)
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.05), lineWidth: 1))
+            
+            // 3. Smart Handoff Widget (Connected to AppContext)
+            SmartHandoffWidget()
         }
-        .frame(width: 190)
+        .frame(width: 200)
+    }
+    
+    // Helper View for status icons
+    @ViewBuilder
+    func statusIcon(for status: ReasoningStep.StepStatus) -> some View {
+        switch status {
+        case .completed:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.caption)
+        case .active:
+            ZStack {
+                Circle().stroke(Color.cyan, lineWidth: 2).frame(width: 10, height: 10)
+                Circle().fill(Color.cyan).frame(width: 4, height: 4)
+            }
+        case .pending:
+            Circle().stroke(Color.white.opacity(0.2), lineWidth: 1).frame(width: 10, height: 10)
+        }
     }
 }
 
@@ -743,70 +813,58 @@ struct InputAreaView: View {
 
 struct JarvisHUDView: View {
     @State private var isAnimating = false
+    var isHovering: Bool = false // Passed from parent
     
-    // Color Palette (Yellow removed)
     let neonBlue = Color(red: 0.2, green: 0.8, blue: 1.0)
     let deepBlue = Color(red: 0.05, green: 0.1, blue: 0.3)
-    // Removed electricGold definition
     
     var body: some View {
         ZStack {
-            // Background Glow (Ambient) - removed solid black background
-            RadialGradient(gradient: Gradient(colors: [deepBlue.opacity(0.3), Color.clear]), center: .center, startRadius: 10, endRadius: 350)
-                .scaleEffect(1.5)
+            // Background Glow expands on hover
+            RadialGradient(gradient: Gradient(colors: [deepBlue.opacity(isHovering ? 0.6 : 0.3), Color.clear]), center: .center, startRadius: 10, endRadius: 400)
+                .scaleEffect(isHovering ? 2.0 : 1.5)
+                .animation(.spring(), value: isHovering)
             
             ZStack {
-                // MARK: - Layer 1: Outer Metallic Shell (Static/Slow)
+                // MARK: - Layer 1: Outer Metallic Shell
                 Group {
-                    Circle()
-                        .trim(from: 0.1, to: 0.4)
-                        .stroke(
-                            LinearGradient(gradient: Gradient(colors: [Color.gray, neonBlue, Color.gray]), startPoint: .topLeading, endPoint: .bottomTrailing),
-                            style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                        )
-                        .rotationEffect(.degrees(180))
-                    
-                    Circle()
-                        .trim(from: 0.1, to: 0.4)
-                        .stroke(
-                            LinearGradient(gradient: Gradient(colors: [Color.gray, neonBlue, Color.gray]), startPoint: .topLeading, endPoint: .bottomTrailing),
-                            style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                        )
+                    Circle().trim(from: 0.1, to: 0.4).stroke(LinearGradient(gradient: Gradient(colors: [Color.gray, neonBlue, Color.gray]), startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: 10, lineCap: .round)).rotationEffect(.degrees(180))
+                    Circle().trim(from: 0.1, to: 0.4).stroke(LinearGradient(gradient: Gradient(colors: [Color.gray, neonBlue, Color.gray]), startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: 10, lineCap: .round))
                 }
                 .frame(width: 350, height: 350)
-                .rotationEffect(.degrees(isAnimating ? 360 : 0))
-                .animation(.linear(duration: 60).repeatForever(autoreverses: false), value: isAnimating)
+                // If hovering, we lock it at 45 degrees, otherwise it spins forever
+                .rotationEffect(.degrees(isHovering ? 45 : (isAnimating ? 360 : 0)))
+                .animation(isHovering ? .spring() : .linear(duration: 60).repeatForever(autoreverses: false), value: isAnimating)
+                .animation(isHovering ? .spring() : .linear(duration: 60).repeatForever(autoreverses: false), value: isHovering)
                 
-                // MARK: - Layer 3: Dashed Data Rings (Blue)
+                // MARK: - Layer 3: Dashed Data Rings
                 Group {
                     Circle()
                         .stroke(neonBlue.opacity(0.5), style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: [5, 10]))
                         .frame(width: 300, height: 300)
-                        .rotationEffect(.degrees(isAnimating ? -360 : 0))
-                        .animation(.linear(duration: 20).repeatForever(autoreverses: false), value: isAnimating)
+                        .rotationEffect(.degrees(isHovering ? -20 : (isAnimating ? -360 : 0)))
+                        .animation(isHovering ? .spring() : .linear(duration: 20).repeatForever(autoreverses: false), value: isHovering)
                     
                     Circle()
                         .trim(from: 0, to: 0.8)
                         .stroke(neonBlue, style: StrokeStyle(lineWidth: 4, lineCap: .butt, dash: [2, 15]))
                         .frame(width: 260, height: 260)
-                        .rotationEffect(.degrees(isAnimating ? 360 : 0))
-                        .animation(.linear(duration: 15).repeatForever(autoreverses: false), value: isAnimating)
+                        .rotationEffect(.degrees(isHovering ? 90 : (isAnimating ? 360 : 0)))
+                        .animation(isHovering ? .interpolatingSpring(stiffness: 50, damping: 5) : .linear(duration: 15).repeatForever(autoreverses: false), value: isHovering)
                 }
                 
-                // MARK: - Layer 4: Inner Accents (Formerly Gold, now White/Blue)
+                // MARK: - Layer 4: Inner Accents
                 Group {
-                    // Formerly gold solid ring -> Now White for contrast
                     Circle()
-                        .stroke(Color.white.opacity(0.8), lineWidth: 1)
+                        .stroke(Color.white.opacity(isHovering ? 1.0 : 0.8), lineWidth: isHovering ? 2 : 1)
                         .frame(width: 220, height: 220)
                     
-                    // Formerly gold trimming -> Now Neon Blue
                     Circle()
                         .trim(from: 0, to: 0.6)
                         .stroke(neonBlue, style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [20, 20]))
                         .frame(width: 210, height: 210)
-                        .rotationEffect(.degrees(isAnimating ? -360 : 0))
-                        .animation(.linear(duration: 8).repeatForever(autoreverses: false), value: isAnimating)
+                        .rotationEffect(.degrees(isHovering ? 0 : (isAnimating ? -360 : 0)))
+                        .animation(isHovering ? .spring() : .linear(duration: 8).repeatForever(autoreverses: false), value: isHovering)
                 }
 
                 // MARK: - Layer 5: Inner Tech Complexity
@@ -819,36 +877,33 @@ struct JarvisHUDView: View {
                         .trim(from: 0.4, to: 0.9)
                         .stroke(neonBlue, style: StrokeStyle(lineWidth: 8, lineCap: .butt))
                         .frame(width: 120, height: 120)
-                        .rotationEffect(.degrees(isAnimating ? 360 : 0))
-                        .animation(.easeInOut(duration: 4).repeatForever(autoreverses: true), value: isAnimating)
+                        .scaleEffect(isHovering ? 1.1 : 1.0)
+                        .rotationEffect(.degrees(isHovering ? 0 : (isAnimating ? -360 : 0)))
+                        .animation(isHovering ? .spring() : .linear(duration: 8).repeatForever(autoreverses: false), value: isHovering)
                 }
                 
-                // MARK: - Layer 6: The Core (Glowing Center)
+                // MARK: - Layer 6: The Core
                 ZStack {
                     Circle()
                         .fill(Color.white)
-                        .frame(width: 20, height: 20)
-                        .blur(radius: 3)
-                        .shadow(color: .white, radius: 10, x: 0, y: 0)
+                        .frame(width: isHovering ? 25 : 20, height: isHovering ? 25 : 20)
+                        .blur(radius: isHovering ? 5 : 3)
+                        .shadow(color: .white, radius: isHovering ? 15 : 10)
                     
-                    // Ring around core (Formerly gold -> Now White)
                     Circle()
                         .stroke(Color.white, lineWidth: 2)
                         .frame(width: 40, height: 40)
                     
-                    Rectangle()
-                        .fill(neonBlue)
-                        .frame(width: 100, height: 1)
-                    Rectangle()
-                        .fill(neonBlue)
-                        .frame(width: 1, height: 100)
+                    // Crosshairs expand on hover
+                    Rectangle().fill(neonBlue).frame(width: isHovering ? 150 : 100, height: 1)
+                    Rectangle().fill(neonBlue).frame(width: 1, height: isHovering ? 150 : 100)
                 }
                 .opacity(0.9)
-                .scaleEffect(isAnimating ? 1.05 : 0.95)
-                .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: isAnimating)
-
+                .animation(.spring(), value: isHovering)
             }
-            .shadow(color: neonBlue.opacity(0.6), radius: 20, x: 0, y: 0)
+            .scaleEffect(isHovering ? 1.05 : 1.0) // Overall subtle zoom
+            .shadow(color: neonBlue.opacity(isHovering ? 0.8 : 0.6), radius: isHovering ? 30 : 20)
+            .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isHovering)
         }
         .onAppear {
             isAnimating = true
@@ -949,7 +1004,7 @@ struct ChatView: View {
                 }
                 .padding(.vertical, 8)
                 .padding(.horizontal, 4)
-                
+
                 Spacer()
                 
                 Button(action: {
@@ -1062,8 +1117,7 @@ struct MinimizedMessageView: View {
             MessageView(fullChatViewMode: .constant(true))
                 .environmentObject(appContext)
                 .frame(width: 300, height: 200)
-                // VERY TRANSPARENT inner box
-                .background(Color.black.opacity(0.1)) 
+                .background(Color.clear) // Clear background for messages
                 .cornerRadius(12)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
@@ -1121,11 +1175,8 @@ struct MinimizedMessageView: View {
         .padding(16)
         .background(
             ZStack {
-                // REMOVED: .ultraThinMaterial (It causes blur which blocks the view)
-                
-                // 1. Base Tint (Very Low Opacity for "See-Through")
                 RoundedRectangle(cornerRadius: 24)
-                    .fill(Color.black.opacity(0.2)) 
+                    .fill(Color.black.opacity(0.6)) // Adjust opacity for desired transparency
                 
                 // 2. High-Tech Border (Keeps layout defined without solid background)
                 RoundedRectangle(cornerRadius: 24)

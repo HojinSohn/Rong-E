@@ -1,10 +1,26 @@
 import SwiftUI
+import Combine
 
-// FIX 1: Change 'let' to 'var' so Codable can overwrite the UUID when loading from JSON
 struct ChatMessage: Identifiable, Codable, Hashable {
     var id = UUID() 
     let role: String
     let content: String
+}
+
+enum AgentActivityType: Equatable {
+    case idle
+    case coding(filename: String)
+    case browsing(url: String)
+}
+
+struct ReasoningStep: Identifiable {
+    let id = UUID()
+    let description: String
+    var status: StepStatus
+    
+    enum StepStatus {
+        case completed, active, pending
+    }
 }
 
 class AppContext: ObservableObject {
@@ -40,6 +56,62 @@ class AppContext: ObservableObject {
     @Published var aiApiKey: String = ""
     @Published var credentialsDirectory: URL = FileManager.default.temporaryDirectory // Placeholder
 
+    // --- Agent State ---
+    // 1. System Vitals
+    @Published var cpuUsage: Double = 0.1
+    @Published var memoryUsage: String = "1.2 GB"
+    
+    // 2. Reasoning / Brain
+    @Published var reasoningSteps: [ReasoningStep] = [
+        ReasoningStep(description: "Await input", status: .active)
+    ]
+    
+    // 3. Agent Activity / Hands (Drives the Handoff Widget)
+    @Published var currentActivity: AgentActivityType = .idle
+    
+    // Timer for simulating system vitals (Remove this in real app)
+    private var timer: AnyCancellable?
+    
+    // --- Simulation Logic (For Demo Purposes) ---
+    func startSimulation() {
+        // Update CPU randomly every second to look "alive"
+        timer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect().sink { _ in
+            withAnimation {
+                self.cpuUsage = Double.random(in: 0.1...0.8)
+            }
+        }
+    }
+    
+    // Call this when your LLM Agent starts working
+    func startCodingTask() {
+        withAnimation {
+            self.currentActivity = .coding(filename: "controller.py")
+            self.reasoningSteps = [
+                ReasoningStep(description: "Analyze User Request", status: .completed),
+                ReasoningStep(description: "Generate Controller Logic", status: .active),
+                ReasoningStep(description: "Write Unit Tests", status: .pending)
+            ]
+        }
+    }
+    
+    func startResearchTask() {
+        withAnimation {
+            self.currentActivity = .browsing(url: "https://apple.com/documentation")
+            self.reasoningSteps = [
+                ReasoningStep(description: "Parse Query", status: .completed),
+                ReasoningStep(description: "Search Documentation", status: .active),
+                ReasoningStep(description: "Summarize Findings", status: .pending)
+            ]
+        }
+    }
+    
+    func setIdle() {
+        withAnimation {
+            self.currentActivity = .idle
+            self.reasoningSteps = [ReasoningStep(description: "Ready", status: .active)]
+            self.cpuUsage = 0.05
+        }
+    }
     struct ModeConfiguration: Identifiable, Codable, Hashable {
         var id: Int
         var name: String
@@ -74,6 +146,7 @@ class AppContext: ObservableObject {
         // We can safely call methods that might use 'self' or overwrite values.
         loadSettings()
         setupAppTerminationObserver()
+        startSimulation()
     }
     
     private func setupAppTerminationObserver() {
