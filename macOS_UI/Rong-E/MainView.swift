@@ -110,7 +110,7 @@ struct MainView: View {
             // --- CLOCK LAYER ---
             // Fades out when minimized
             VStack(spacing: 0) { // 1. Remove spacing between Time and Greeting
-                Spacer().frame(height: 50)
+                Spacer().frame(height: 40) // Top Spacer for better vertical alignment
                 
                 // Time Display (Dynamic)
                 Text(Date(), style: .time)
@@ -130,7 +130,7 @@ struct MainView: View {
             // Adjust offset to keep it visually balanced with the new smaller size
             .offset(y: fullChatViewMode ? 0 : 40) 
             .opacity(fullChatViewMode ? 0 : 1)
-            .animation(.easeInOut(duration: 0.3), value: fullChatViewMode)
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: fullChatViewMode)
             .allowsHitTesting(false)
 
             // Keep the HUD visible when minimized without laying out the large content
@@ -326,9 +326,21 @@ struct MainView: View {
         googleAuthManager.startupCheck()
     }
 
+    private func onBeforeCaptureScreenshot() {
+        // Decrease main window opacity to avoid capturing UI elements
+        windowCoordinator.setMainWindowOpacity(opacity: 0.1)
+    }
+
+    private func onAfterCaptureScreenshot() {
+        // Restore main window opacity
+        windowCoordinator.setMainWindowOpacity(opacity: 1.0)
+    }
+
     private func captureAndSendWithScreenshot(query: String, selectedMode: String) {
         Task { @MainActor in
             var base64Image: String? = nil
+
+            onBeforeCaptureScreenshot()
             
             do {
                 base64Image = try await ScreenshotManager.captureMainScreen()
@@ -346,6 +358,8 @@ struct MainView: View {
                     
                     showPermissionWaitingOverlay()
                     
+                    onAfterCaptureScreenshot()
+
                     return
                 } else {
                     print("❌ Screenshot Error: \(nsError.localizedDescription)")
@@ -355,6 +369,8 @@ struct MainView: View {
             socketClient.sendMessageWithImage(query, mode: selectedMode, base64Image: base64Image)
             
             self.activeTool = "WS_STREAM"
+
+            onAfterCaptureScreenshot()
         }
     }
 
@@ -699,14 +715,16 @@ struct MainColumnView: View {
         VStack(alignment: .leading, spacing: 0) {
             
             Spacer()
-                .frame(height: fullChatViewMode ? 10 : 140)
+                .frame(height: fullChatViewMode ? 10 : 80)
 
             ChatView(fullChatViewMode: $fullChatViewMode)
                 .transition(.asymmetric(
                     insertion: .move(edge: .bottom).combined(with: .opacity),
                     removal: .opacity
                 ))
+
             Spacer()
+                .frame(height: 5)
             
             // 4. Input Field (Bottom)
             InputAreaView(inputText: $inputText, onSubmit: onSubmit)
@@ -717,8 +735,6 @@ struct MainColumnView: View {
         .animation(.easeOut(duration: 0.35), value: fullChatViewMode)
     }
 }
-
-import SwiftUI
 
 struct InputAreaView: View {
     @Binding var inputText: String
@@ -806,109 +822,98 @@ struct InputAreaView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding()
+        .padding(.horizontal)
+        .padding(.bottom, 10)
     }
 }
 
 
 struct JarvisHUDView: View {
-    @State private var isAnimating = false
-    var isHovering: Bool = false // Passed from parent
-    
-    let neonBlue = Color(red: 0.2, green: 0.8, blue: 1.0)
-    let deepBlue = Color(red: 0.05, green: 0.1, blue: 0.3)
-    
-    var body: some View {
+  var isHovering: Bool = false
+  
+  let neonBlue = Color(red: 0.2, green: 0.8, blue: 1.0)
+  let deepBlue = Color(red: 0.05, green: 0.1, blue: 0.3)
+  
+  var body: some View {
+    ZStack {
+      // Simplified background - single gradient instead of expanding on hover
+      RadialGradient(
+        gradient: Gradient(colors: [
+          deepBlue.opacity(isHovering ? 0.6 : 0.3),
+          Color.clear
+        ]),
+        center: .center,
+        startRadius: 10,
+        endRadius: isHovering ? 400 : 300
+      )
+      .animation(.easeInOut(duration: 0.3), value: isHovering)
+      
+      ZStack {
+        // Combined outer rings - reduced from 2 to 1 with dual effect
+        Circle()
+          .trim(from: 0.1, to: 0.4)
+          .stroke(
+            LinearGradient(
+              gradient: Gradient(colors: [.gray, neonBlue, .gray]),
+              startPoint: .topLeading,
+              endPoint: .bottomTrailing
+            ),
+            style: StrokeStyle(lineWidth: 10, lineCap: .round)
+          )
+          .frame(width: 350, height: 350)
+          .rotationEffect(.degrees(isHovering ? 45 : 360))
+          .animation(
+            isHovering ? .spring() : .linear(duration: 40).repeatForever(autoreverses: false),
+            value: isHovering
+          )
+        
+        // Middle data ring
+        Circle()
+          .stroke(neonBlue.opacity(0.5), style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: [5, 10]))
+          .frame(width: 300, height: 300)
+          .rotationEffect(.degrees(isHovering ? -20 : 360))
+          .animation(
+            isHovering ? .spring() : .linear(duration: 20).repeatForever(autoreverses: false),
+            value: isHovering
+          )
+        
+        // Inner accent rings - combined into single layer
+        Circle()
+          .trim(from: 0, to: 0.8)
+          .stroke(neonBlue, style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [20, 20]))
+          .frame(width: 210, height: 210)
+          .rotationEffect(.degrees(isHovering ? 0 : 360))
+          .animation(
+            isHovering ? .spring() : .linear(duration: 15).repeatForever(autoreverses: false),
+            value: isHovering
+          )
+        
+        // Core element - simplified and combined
         ZStack {
-            // Background Glow expands on hover
-            RadialGradient(gradient: Gradient(colors: [deepBlue.opacity(isHovering ? 0.6 : 0.3), Color.clear]), center: .center, startRadius: 10, endRadius: 400)
-                .scaleEffect(isHovering ? 2.0 : 1.5)
-                .animation(.spring(), value: isHovering)
-            
-            ZStack {
-                // MARK: - Layer 1: Outer Metallic Shell
-                Group {
-                    Circle().trim(from: 0.1, to: 0.4).stroke(LinearGradient(gradient: Gradient(colors: [Color.gray, neonBlue, Color.gray]), startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: 10, lineCap: .round)).rotationEffect(.degrees(180))
-                    Circle().trim(from: 0.1, to: 0.4).stroke(LinearGradient(gradient: Gradient(colors: [Color.gray, neonBlue, Color.gray]), startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                }
-                .frame(width: 350, height: 350)
-                // If hovering, we lock it at 45 degrees, otherwise it spins forever
-                .rotationEffect(.degrees(isHovering ? 45 : (isAnimating ? 360 : 0)))
-                .animation(isHovering ? .spring() : .linear(duration: 60).repeatForever(autoreverses: false), value: isAnimating)
-                .animation(isHovering ? .spring() : .linear(duration: 60).repeatForever(autoreverses: false), value: isHovering)
-                
-                // MARK: - Layer 3: Dashed Data Rings
-                Group {
-                    Circle()
-                        .stroke(neonBlue.opacity(0.5), style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: [5, 10]))
-                        .frame(width: 300, height: 300)
-                        .rotationEffect(.degrees(isHovering ? -20 : (isAnimating ? -360 : 0)))
-                        .animation(isHovering ? .spring() : .linear(duration: 20).repeatForever(autoreverses: false), value: isHovering)
-                    
-                    Circle()
-                        .trim(from: 0, to: 0.8)
-                        .stroke(neonBlue, style: StrokeStyle(lineWidth: 4, lineCap: .butt, dash: [2, 15]))
-                        .frame(width: 260, height: 260)
-                        .rotationEffect(.degrees(isHovering ? 90 : (isAnimating ? 360 : 0)))
-                        .animation(isHovering ? .interpolatingSpring(stiffness: 50, damping: 5) : .linear(duration: 15).repeatForever(autoreverses: false), value: isHovering)
-                }
-                
-                // MARK: - Layer 4: Inner Accents
-                Group {
-                    Circle()
-                        .stroke(Color.white.opacity(isHovering ? 1.0 : 0.8), lineWidth: isHovering ? 2 : 1)
-                        .frame(width: 220, height: 220)
-                    
-                    Circle()
-                        .trim(from: 0, to: 0.6)
-                        .stroke(neonBlue, style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [20, 20]))
-                        .frame(width: 210, height: 210)
-                        .rotationEffect(.degrees(isHovering ? 0 : (isAnimating ? -360 : 0)))
-                        .animation(isHovering ? .spring() : .linear(duration: 8).repeatForever(autoreverses: false), value: isHovering)
-                }
-
-                // MARK: - Layer 5: Inner Tech Complexity
-                Group {
-                    Circle()
-                        .stroke(Color.white.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [1, 2]))
-                        .frame(width: 150, height: 150)
-                    
-                    Circle()
-                        .trim(from: 0.4, to: 0.9)
-                        .stroke(neonBlue, style: StrokeStyle(lineWidth: 8, lineCap: .butt))
-                        .frame(width: 120, height: 120)
-                        .scaleEffect(isHovering ? 1.1 : 1.0)
-                        .rotationEffect(.degrees(isHovering ? 0 : (isAnimating ? -360 : 0)))
-                        .animation(isHovering ? .spring() : .linear(duration: 8).repeatForever(autoreverses: false), value: isHovering)
-                }
-                
-                // MARK: - Layer 6: The Core
-                ZStack {
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: isHovering ? 25 : 20, height: isHovering ? 25 : 20)
-                        .blur(radius: isHovering ? 5 : 3)
-                        .shadow(color: .white, radius: isHovering ? 15 : 10)
-                    
-                    Circle()
-                        .stroke(Color.white, lineWidth: 2)
-                        .frame(width: 40, height: 40)
-                    
-                    // Crosshairs expand on hover
-                    Rectangle().fill(neonBlue).frame(width: isHovering ? 150 : 100, height: 1)
-                    Rectangle().fill(neonBlue).frame(width: 1, height: isHovering ? 150 : 100)
-                }
-                .opacity(0.9)
-                .animation(.spring(), value: isHovering)
-            }
-            .scaleEffect(isHovering ? 1.05 : 1.0) // Overall subtle zoom
-            .shadow(color: neonBlue.opacity(isHovering ? 0.8 : 0.6), radius: isHovering ? 30 : 20)
-            .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isHovering)
+          Circle()
+            .fill(Color.white)
+            .frame(width: isHovering ? 25 : 20, height: isHovering ? 25 : 20)
+            .blur(radius: isHovering ? 5 : 3)
+            .shadow(color: .white, radius: isHovering ? 15 : 10)
+          
+          Circle()
+            .stroke(Color.white, lineWidth: 2)
+            .frame(width: 40, height: 40)
+          
+          // Single combined crosshair rectangle group
+          Group {
+            Rectangle().fill(neonBlue).frame(width: isHovering ? 150 : 100, height: 1)
+            Rectangle().fill(neonBlue).frame(width: 1, height: isHovering ? 150 : 100)
+          }
+          .animation(.spring(), value: isHovering)
         }
-        .onAppear {
-            isAnimating = true
-        }
+        .opacity(0.9)
+      }
+      .scaleEffect(isHovering ? 1.05 : 1.0)
+      .shadow(color: neonBlue.opacity(isHovering ? 0.8 : 0.6), radius: isHovering ? 30 : 20)
+      .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isHovering)
     }
+  }
 }
 
 struct ChatView: View {
@@ -919,41 +924,41 @@ struct ChatView: View {
     private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 6) {
             
             // MARK: - Tech Header
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 ZStack {
                     Circle()
-                        .strokeBorder(hudCyan.opacity(0.3), lineWidth: 1)
-                        .background(Color.clear) // Clear center
-                        .frame(width: 36, height: 36)
+                        .strokeBorder(hudCyan.opacity(0.3), lineWidth: 0.8)
+                        .background(Color.clear)
+                        .frame(width: 28, height: 28)
                     
                     Circle()
                         .trim(from: 0, to: 0.7)
-                        .stroke(hudCyan, lineWidth: 1.5)
+                        .stroke(hudCyan, lineWidth: 1.2)
                         .rotationEffect(.degrees(-45))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 28, height: 28)
                     
                     Image(systemName: "cpu") 
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(hudCyan)
-                        .shadow(color: hudCyan, radius: 4)
+                        .shadow(color: hudCyan, radius: 3)
                 }
                 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1.5) {
                     Text("SYSTEM LOGS")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .foregroundStyle(hudCyan)
-                        .shadow(color: hudCyan.opacity(0.5), radius: 5)
+                        .shadow(color: hudCyan.opacity(0.5), radius: 4)
                     
-                    HStack(spacing: 4) {
+                    HStack(spacing: 3) {
                         Text("SESSION ID:")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(.system(size: 7, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.white.opacity(0.5))
                         
                         Text("#A9-2044")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(.system(size: 7, weight: .bold, design: .monospaced))
                             .foregroundStyle(hudCyan.opacity(0.8))
                     }
                 }
@@ -961,49 +966,47 @@ struct ChatView: View {
                 Spacer()
                 
                 // MARK: - Mode & Vision Controls
-                HStack {
+                HStack(spacing: 6) {
                     Text("MODE: \(appContext.currentMode.name.uppercased())")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
                         .foregroundStyle(Color.white.opacity(0.5))
-                    
-                    Spacer()
                     
                     Button(action: {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             appContext.toggleCurrentModeVision()
                         }
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 4) {
                             ZStack {
                                 Rectangle()
-                                    .stroke(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3), lineWidth: 1)
-                                    .frame(width: 12, height: 12)
+                                    .stroke(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3), lineWidth: 0.8)
+                                    .frame(width: 10, height: 10)
                                 
                                 if appContext.currentMode.isScreenshotEnabled {
                                     Rectangle()
                                         .fill(hudCyan)
-                                        .frame(width: 6, height: 6)
-                                        .shadow(color: hudCyan, radius: 4)
+                                        .frame(width: 5, height: 5)
+                                        .shadow(color: hudCyan, radius: 3)
                                 }
                             }
                             
                             Text(appContext.currentMode.isScreenshotEnabled ? "VISION: ON" : "VISION: OFF")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
                                 .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.5))
                             
                             Image(systemName: "viewfinder")
-                                .font(.system(size: 10))
+                                .font(.system(size: 8))
                                 .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3))
                         }
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .padding(.horizontal, 6)
                         .background(appContext.currentMode.isScreenshotEnabled ? hudCyan.opacity(0.1) : Color.clear)
-                        .cornerRadius(4)
+                        .cornerRadius(3)
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 4)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 3)
 
                 Spacer()
                 
@@ -1013,13 +1016,13 @@ struct ChatView: View {
                     }
                 }) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(hudCyan.opacity(0.5), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(hudCyan.opacity(0.5), lineWidth: 0.8)
                             .background(Color.black.opacity(0.1))
-                            .frame(width: 32, height: 32)
+                            .frame(width: 26, height: 26)
                         
                         Image(systemName: fullChatViewMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(hudCyan)
                     }
                 }
@@ -1044,7 +1047,8 @@ struct ChatView: View {
                 .cornerRadius(8)
             
         }
-        .padding(20)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 5)
         .background(
             ZStack {
                 // 1. Tint Only (No Material/Blur)
@@ -1229,7 +1233,7 @@ struct MessageView: View {
                 }
                 .padding(.top, 6)
             }
-            .frame(maxHeight: fullChatViewMode ? 420 : 220)
+            .frame(maxHeight: fullChatViewMode ? 420 : 280)
             .onChange(of: appContext.currentSessionChatMessages.count) { _ in
                 withAnimation(.easeOut(duration: 0.25)) {
                     proxy.scrollTo("bottom", anchor: .top)
