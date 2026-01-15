@@ -16,13 +16,81 @@ from enum import Enum
 from typing import Optional, Any
 from pydantic import BaseModel, Field
 from langchain.tools import tool
-from googleapiclient.discovery import build
 from agent.models.model import SheetAction, SheetToolInput
+
+# Move this OUTSIDE the class
+@tool(args_schema=SheetToolInput)
+def manage_spreadsheet(
+    action: SheetAction, 
+    range_name: str, 
+    spreadsheet_id: str = None, 
+    values_json: str = None
+) -> str:
+    """
+    The Master Tool for Google Sheets.
+    Can read data, append rows, update cells, or create new sheets.
+    Always provide valid JSON for 'values_json' when writing data.
+    """
+    service = build_sheets_service(credentials=AuthManager._current_credentials)
+    values = []
+    if values_json:
+        try:
+            values = json.loads(values_json)
+        except json.JSONDecodeError:
+            return f"❌ Error: The data provided in 'values_json' was not valid JSON. You sent: {values_json}"
+
+    try:
+        if "!" in range_name:
+            sheet_part, cell_part = range_name.split("!", 1)
+            if " " in sheet_part and not sheet_part.startswith("'"):
+                range_name = f"'{sheet_part}'!{cell_part}"
+        elif " " in range_name and not range_name.startswith("'"):
+            range_name = f"'{range_name}'"
+
+        if action == SheetAction.READ:
+            if not spreadsheet_id: return "❌ Error: spreadsheet_id is required for reading."
+            result = service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id, range=range_name
+            ).execute()
+            rows = result.get('values', [])
+            return f"✅ Read {len(rows)} rows from {range_name}. Data: {json.dumps(rows)}"
+
+        elif action == SheetAction.APPEND:
+            if not spreadsheet_id or not values: return "❌ Error: spreadsheet_id and values_json are required."
+            body = {'values': values}
+            result = service.spreadsheets().values().append(
+                spreadsheetId=spreadsheet_id, range=range_name,
+                valueInputOption="USER_ENTERED", body=body
+            ).execute()
+            return f"✅ Appended {result.get('updates').get('updatedRows')} rows."
+
+        elif action == SheetAction.UPDATE:
+            if not spreadsheet_id or not values: return "❌ Error: spreadsheet_id and values_json are required."
+            body = {'values': values}
+            result = service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id, range=range_name,
+                valueInputOption="USER_ENTERED", body=body
+            ).execute()
+            return f"✅ Updated {result.get('updatedCells')} cells."
+
+        elif action == SheetAction.CREATE:
+            spreadsheet = {'properties': {'title': range_name}}
+            spreadsheet = service.spreadsheets().create(body=spreadsheet, fields='spreadsheetId').execute()
+            new_id = spreadsheet.get('spreadsheetId')
+            return f"✅ Created new spreadsheet. Title: '{range_name}'. ID: {new_id}"
+
+    except Exception as e:
+        return f"❌ API Error: {str(e)}"
+
+    return "❌ Action not recognized."
+
 
 class AuthManager():
     """
     Manages Google API authentication and provides toolkits for Gmail, Calendar, and Sheets.
     """
+    _current_credentials = None  # Class variable to store credentials for the tool
+    
     def __init__(self):
         self.credentials = None
         self.gmail_toolkit = None
@@ -84,91 +152,13 @@ class AuthManager():
             access_tools.append(tool)
         return access_tools
 
-    # ==== Master Tool for Google Sheets ====
-
-    @tool(args_schema=SheetToolInput)
-    def manage_spreadsheet(
-        self,
-        action: SheetAction, 
-        range_name: str, 
-        spreadsheet_id: str = None, 
-        values_json: str = None
-    ) -> str:
-        """
-        The Master Tool for Google Sheets.
-        Can read data, append rows, update cells, or create new sheets.
-        Always provide valid JSON for 'values_json' when writing data.
-        """
-        service = build_sheets_service(credentials=self.credentials)
-        values = []
-        if values_json:
-            try:
-                values = json.loads(values_json)
-            except json.JSONDecodeError:
-                return f"❌ Error: The data provided in 'values_json' was not valid JSON. You sent: {values_json}"
-
-        try:
-            # Handle sheet names with spaces by quoting them
-            if "!" in range_name:
-                sheet_part, cell_part = range_name.split("!", 1)
-                # If there is a space and no single quotes, add them
-                if " " in sheet_part and not sheet_part.startswith("'"):
-                    range_name = f"'{sheet_part}'!{cell_part}"
-            elif " " in range_name and not range_name.startswith("'"):
-                # If it's just a sheet name (common for 'append'), quote it too
-                range_name = f"'{range_name}'"
-
-            # --- Action 1: READ Data ---
-            if action == SheetAction.READ:
-                if not spreadsheet_id: return "❌ Error: spreadsheet_id is required for reading."
-                
-                result = service.spreadsheets().values().get(
-                    spreadsheetId=spreadsheet_id, range=range_name
-                ).execute()
-                rows = result.get('values', [])
-                return f"✅ Read {len(rows)} rows from {range_name}. Data: {json.dumps(rows)}"
-
-            # --- Action 2: APPEND Rows ---
-            elif action == SheetAction.APPEND:
-                if not spreadsheet_id or not values: return "❌ Error: spreadsheet_id and values_json are required."
-                
-                body = {'values': values}
-                result = service.spreadsheets().values().append(
-                    spreadsheetId=spreadsheet_id, range=range_name,
-                    valueInputOption="USER_ENTERED", body=body
-                ).execute()
-                return f"✅ Appended {result.get('updates').get('updatedRows')} rows."
-
-            # --- Action 3: UPDATE Cells (Overwrite) ---
-            elif action == SheetAction.UPDATE:
-                if not spreadsheet_id or not values: return "❌ Error: spreadsheet_id and values_json are required."
-                
-                body = {'values': values}
-                result = service.spreadsheets().values().update(
-                    spreadsheetId=spreadsheet_id, range=range_name,
-                    valueInputOption="USER_ENTERED", body=body
-                ).execute()
-                return f"✅ Updated {result.get('updatedCells')} cells."
-
-            # --- Action 4: CREATE New Spreadsheet ---
-            elif action == SheetAction.CREATE:
-                # For creation, 'range_name' acts as the Title
-                spreadsheet = {'properties': {'title': range_name}}
-                spreadsheet = service.spreadsheets().create(body=spreadsheet, fields='spreadsheetId').execute()
-                new_id = spreadsheet.get('spreadsheetId')
-                return f"✅ Created new spreadsheet. Title: '{range_name}'. ID: {new_id}"
-
-        except Exception as e:
-            return f"❌ API Error: {str(e)}"
-
-        return "❌ Action not recognized."
-    
     def get_google_tools(self):
         """
         Returns the combined list of Google tools: Gmail (read-only), Calendar, and Sheets.
         """
+        AuthManager._current_credentials = self.credentials  # Update credentials for the tool
         all_tools = []
         all_tools.extend(self.get_access_gmail_tools())
         all_tools.extend(self.get_calendar_tools())
-        all_tools.append(self.manage_spreadsheet)
+        all_tools.append(manage_spreadsheet)  # Use the standalone function
         return all_tools
