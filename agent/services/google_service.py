@@ -17,6 +17,7 @@ from typing import Optional, Any
 from pydantic import BaseModel, Field
 from langchain.tools import tool
 from agent.models.model import SheetAction, SheetToolInput
+from google.auth.transport.requests import Request
 
 # Move this OUTSIDE the class
 @tool(args_schema=SheetToolInput)
@@ -113,6 +114,39 @@ class AuthManager():
             scopes=["https://www.googleapis.com/auth/calendar", "https://mail.google.com/", "https://www.googleapis.com/auth/spreadsheets"], 
             client_secrets_file=client_secrets_file
         )
+
+        # check if credentials exist and are valid
+        if self.credentials and not self.credentials.valid:
+            if self.credentials.expired and self.credentials.refresh_token:
+                print("Token expired, refreshing...")
+                try:
+                    self.credentials.refresh(Request())
+                    
+                    if token_file:
+                        with open(token_file, 'w') as token:
+                            token.write(self.credentials.to_json())
+                            print("Refreshed credentials saved to disk.")
+                            
+                except Exception as e:
+                    print(f"Error refreshing token: {e}")
+                    # Trigger full login flow here: TODO
+            else:
+                print("Credentials invalid and cannot be refreshed.")
+                # Trigger full login flow here: TODO
+        """
+        Authenticates with Google APIs and initializes toolkits.
+        """
+        self.credentials = get_google_credentials(
+            token_file=token_file,
+            scopes=["https://www.googleapis.com/auth/calendar", "https://mail.google.com/", "https://www.googleapis.com/auth/spreadsheets"], 
+            client_secrets_file=client_secrets_file
+        )
+
+        print(f"Check {self.credentials}")
+        
+        # Refresh credentials if expired
+        if self.credentials and self.credentials.expired and self.credentials.refresh_token:
+            self.credentials.refresh(Request())
 
     def get_gmail_toolkit(self):
         """

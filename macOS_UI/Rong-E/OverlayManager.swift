@@ -254,7 +254,7 @@ class WindowCoordinator: ObservableObject {
         let controller = DynamicWindowController(
             id: id,
             view: AnyView(contentView),
-            size: CGSize(width: 450, height: 350),
+            size: CGSize(width: 500, height: 500),
             location: nil
         )
         

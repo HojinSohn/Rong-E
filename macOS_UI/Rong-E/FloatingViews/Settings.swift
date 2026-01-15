@@ -1,93 +1,265 @@
 import SwiftUI
 
+// MARK: - Jarvis Design System
+
+extension Color {
+    static let jarvisBlue = Color(red: 0/255, green: 240/255, blue: 255/255) // Electric Cyan
+    static let jarvisDark = Color(red: 10/255, green: 20/255, blue: 30/255)  // Deep Navy/Black
+    static let jarvisDim = Color.gray.opacity(0.3)
+}
+
+struct JarvisPanel: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding()
+            .background(Color.black.opacity(0.4))
+            .cornerRadius(4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1)
+            )
+    }
+}
+
+struct JarvisGlow: ViewModifier {
+    var active: Bool
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: active ? .jarvisBlue : .clear, radius: 8, x: 0, y: 0)
+    }
+}
+
+// A technical background grid pattern
+struct TechGridBackground: View {
+    var body: some View {
+        GeometryReader { geometry in
+            Path { path in
+                let width = geometry.size.width
+                let height = geometry.size.height
+                let spacing: CGFloat = 40
+                
+                for i in 0...Int(width/spacing) {
+                    path.move(to: CGPoint(x: CGFloat(i)*spacing, y: 0))
+                    path.addLine(to: CGPoint(x: CGFloat(i)*spacing, y: height))
+                }
+                for i in 0...Int(height/spacing) {
+                    path.move(to: CGPoint(x: 0, y: CGFloat(i)*spacing))
+                    path.addLine(to: CGPoint(x: width, y: CGFloat(i)*spacing))
+                }
+            }
+            .stroke(Color.jarvisBlue.opacity(0.05), lineWidth: 1)
+        }
+    }
+}
+
+struct VisualEffectBlur: NSViewRepresentable {
+    var material: NSVisualEffectView.Material
+    var blendingMode: NSVisualEffectView.BlendingMode
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
 struct SettingsView: View {
     @EnvironmentObject var coordinator: WindowCoordinator
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var themeManager: ThemeManager
     
-    // Pass the ID so we can close this specific window
     let windowID: String
+    
+    // Custom Tab Selection
+    @State private var selectedTab: Int = 0
     
     var body: some View {
         ZStack {
-            // 1. Unified Background
+            // 1. Deep Background
+            Color.black.ignoresSafeArea()
+            
+            // 2. Tech Grid & Blur
+            TechGridBackground()
             VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
-                .opacity(0.9)
+                .opacity(0.8)
                 .ignoresSafeArea()
             
-            VStack(spacing: 0) {
-                // 2. Custom Title Bar
+            // 3. Decorative HUD Corners
+            VStack {
                 HStack {
-                    Text("Settings")
-                        .font(.headline)
-                        .foregroundColor(.white)
+                    CornerBracket(topLeft: true)
                     Spacer()
+                    CornerBracket(topLeft: false)
+                }
+                Spacer()
+                HStack {
+                    CornerBracket(topLeft: false, rotate: true)
+                    Spacer()
+                    CornerBracket(topLeft: true, rotate: true)
+                }
+            }
+            .padding(10)
+            .allowsHitTesting(false) // Let clicks pass through decoration
+
+            // 4. Content
+            VStack(spacing: 0) {
+                // Custom Header
+                HStack {
+                    Circle()
+                        .fill(Color.jarvisBlue)
+                        .frame(width: 8, height: 8)
+                        .modifier(JarvisGlow(active: true))
+                    
+                    Text("SYSTEM // SETTINGS")
+                        .font(.system(.subheadline, design: .monospaced))
+                        .fontWeight(.bold)
+                        .foregroundColor(.jarvisBlue)
+                        .tracking(2)
+                    
+                    Spacer()
+                    
+                    // Inside SettingsView -> VStack -> HStack (Header)
                     Button(action: {
                         coordinator.closeWindow(id: windowID)
                     }) {
                         Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
                             .foregroundColor(.gray)
+                            .modifier(JarvisGlow(active: false))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BorderlessButtonStyle())
                 }
-                .padding()
-                .background(Color.black.opacity(0.2))
+                .padding(.horizontal, 20)
+                .padding(.vertical, 15)
+                .background(Color.jarvisBlue.opacity(0.05))
+                .overlay(Rectangle().frame(height: 1).foregroundColor(.jarvisBlue.opacity(0.3)), alignment: .bottom)
                 
-                // 3. Tabbed Content
-                TabView {
-                    GeneralSettingsView()
-                        .tabItem {
-                            Label("General", systemImage: "gearshape")
-                        }
-                    
-                    AppearanceSettingsView()
-                        .tabItem {
-                            Label("Appearance", systemImage: "paintbrush")
-                        }
-
-                    ModesSettingsView()
-                        .tabItem {
-                            Label("Modes", systemImage: "slider.horizontal.3")
-                        }
-                    
-                    AboutSettingsView()
-                        .tabItem {
-                            Label("About", systemImage: "info.circle")
-                        }
+                // Custom Tab Bar (Replacing standard TabView for styling control)
+                HStack(spacing: 0) {
+                    JarvisTabButton(icon: "gearshape", title: "SYS", isSelected: selectedTab == 0) { selectedTab = 0 }
+                    JarvisTabButton(icon: "paintbrush", title: "VIS", isSelected: selectedTab == 1) { selectedTab = 1 }
+                    JarvisTabButton(icon: "slider.horizontal.3", title: "MOD", isSelected: selectedTab == 2) { selectedTab = 2 }
+                    JarvisTabButton(icon: "info.circle", title: "DAT", isSelected: selectedTab == 3) { selectedTab = 3 }
                 }
-                .padding()
+                .padding(.vertical, 10)
+                
+                // View Switcher
+                Group {
+                    switch selectedTab {
+                    case 0: GeneralSettingsView()
+                    case 1: AppearanceSettingsView()
+                    case 2: ModesSettingsView() // Placeholder or your actual view
+                    case 3: AboutSettingsView()
+                    default: GeneralSettingsView()
+                    }
+                }
+                .padding(20)
+                .transition(.opacity)
             }
         }
-        .frame(width: 450, height: 350) // Fixed size for settings looks best
-        .colorScheme(.dark) // Forces dark mode for the HUD look
+        .frame(width: 500, height: 500)
+        .preferredColorScheme(.dark)
     }
 }
 
-// MARK: - Sub-Views for Tabs
+// Helper: Decorative Corner Brackets
+struct CornerBracket: View {
+    var topLeft: Bool
+    var rotate: Bool = false
+    
+    var body: some View {
+        Path { path in
+            path.move(to: CGPoint(x: 0, y: 20))
+            path.addLine(to: CGPoint(x: 0, y: 0))
+            path.addLine(to: CGPoint(x: 20, y: 0))
+        }
+        .stroke(Color.jarvisBlue.opacity(0.6), lineWidth: 2)
+        .frame(width: 20, height: 20)
+        .rotationEffect(rotate ? .degrees(180) : .degrees(0))
+        .scaleEffect(x: topLeft ? 1 : -1, y: 1)
+    }
+}
+
+struct JarvisTabButton: View {
+    let icon: String
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                Text(title)
+                    .font(.system(size: 10, design: .monospaced))
+                    .bold()
+            }
+            // Fix 1: Brighter gray for unselected state so it's visible on black
+            .foregroundColor(isSelected ? .jarvisBlue : .white.opacity(0.4))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(isSelected ? Color.jarvisBlue.opacity(0.1) : Color.clear)
+            .overlay(
+                Rectangle()
+                    .frame(height: 2)
+                    .foregroundColor(isSelected ? .jarvisBlue : .clear),
+                alignment: .bottom
+            )
+            // Fix 2: Makes the entire area clickable even if background is clear
+            .contentShape(Rectangle()) 
+        }
+        .buttonStyle(BorderlessButtonStyle())
+    }
+}
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var context: AppContext
     
     var body: some View {
-        Form {
-            Section {
-                // Note: You will need a binding for these, or use @AppStorage for persistence
-                Toggle("Launch at Login", isOn: .constant(true))
-                Toggle("Play Sound Effects", isOn: .constant(false))
-            } header: {
-                Text("System")
-            }
+        VStack(spacing: 20) {
             
-            Section {
-                // ✅ FIX: Use $context to create a binding
-                TextField("AI API Key", text: $context.aiApiKey)
-                    .textFieldStyle(.roundedBorder) // Added style for better visibility
-            } header: {
-                Text("Integrations")
+            // Section 1: System
+            VStack(alignment: .leading, spacing: 10) {
+                Text("CORE CONFIGURATION")
+                    .font(.caption)
+                    .foregroundColor(.jarvisBlue.opacity(0.7))
+                    .tracking(1)
+                
+                JarvisToggle(title: "Launch Sequence (Login)", isOn: .constant(true))
+                JarvisToggle(title: "Audio Feedback", isOn: .constant(false))
             }
+            .modifier(JarvisPanel())
+            
+            // Section 2: Integrations
+            VStack(alignment: .leading, spacing: 10) {
+                Text("EXTERNAL LINKS")
+                    .font(.caption)
+                    .foregroundColor(.jarvisBlue.opacity(0.7))
+                    .tracking(1)
+                
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("OPENAI API KEY")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.gray)
+                    
+                    TextField("", text: $context.aiApiKey)
+                        .textFieldStyle(.plain)
+                        .padding(8)
+                        .font(.system(.body, design: .monospaced))
+                        .background(Color.black.opacity(0.5))
+                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
+                        .foregroundColor(.white)
+                }
+            }
+            .modifier(JarvisPanel())
+            
+            Spacer()
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden) // Makes form transparent to see blur
     }
 }
 
@@ -96,103 +268,152 @@ struct AppearanceSettingsView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Select Theme:")
-                .font(.headline)
+            Text("INTERFACE PROTOCOL")
+                .font(.caption)
+                .foregroundColor(.jarvisBlue.opacity(0.7))
+                .tracking(1)
             
             HStack(spacing: 15) {
-                // Theme Button: Dark
-                ThemeButton(
-                    title: "Dark",
-                    isSelected: themeManager.current.name == "Dark", 
-                    action: { themeManager.switchToDark() }
-                )
-                
-                // Theme Button: Light
-                ThemeButton(
-                    title: "Light",
-                    isSelected: themeManager.current.name == "Light",
-                    action: { themeManager.switchToLight() }
-                )
-                
-                // Theme Button: Cyberpunk
-                ThemeButton(
-                    title: "Cyberpunk",
-                    isSelected: themeManager.current.name == "Cyberpunk",
-                    action: { themeManager.switchToCyberpunk() }
-                )
+                ThemeButton(title: "DARK", isSelected: themeManager.current.name == "Dark") { themeManager.switchToDark() }
+                ThemeButton(title: "LIGHT", isSelected: themeManager.current.name == "Light") { themeManager.switchToLight() }
+                ThemeButton(title: "CYBER", isSelected: themeManager.current.name == "Cyberpunk") { themeManager.switchToCyberpunk() }
             }
+            
             Spacer()
+            
+            // Decorative Data Visualization
+            HStack {
+                ForEach(0..<15) { i in
+                    Rectangle()
+                        .fill(Color.jarvisBlue.opacity(Double.random(in: 0.1...0.8)))
+                        .frame(width: 4, height: CGFloat.random(in: 10...30))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .modifier(JarvisPanel())
+    }
+}
+
+struct AboutSettingsView: View {
+    @State private var rotation: Double = 0
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                // Arc Reactor / Core Animation
+                Circle()
+                    .stroke(lineWidth: 3)
+                    .foregroundColor(.jarvisBlue.opacity(0.3))
+                    .frame(width: 80, height: 80)
+                
+                Circle()
+                    .trim(from: 0, to: 0.8)
+                    .stroke(style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .foregroundColor(.jarvisBlue)
+                    .frame(width: 80, height: 80)
+                    .rotationEffect(.degrees(rotation))
+                    .onAppear {
+                        withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
+                            rotation = 360
+                        }
+                    }
+                
+                Image(systemName: "cpu")
+                    .font(.largeTitle)
+                    .foregroundColor(.white)
+            }
+            .padding(.bottom, 20)
+            
+            Text("PROJECT: RONG-E")
+                .font(.system(.title2, design: .monospaced))
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .tracking(2)
+            
+            Text("BUILD: V.1.0.0-BETA")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.jarvisBlue)
+                .padding(.top, 2)
+            
+            Spacer()
+            
+            Text("CREATED BY HOJIN SOHN")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.gray)
+                .padding(.bottom, 5)
+                
+            Text("INTELLIGENT AGENT SYSTEM ONLINE")
+                .font(.system(size: 8, design: .monospaced))
+                .foregroundColor(.jarvisBlue.opacity(0.6))
         }
         .padding()
     }
 }
 
-// Helper view to clean up the Appearance code
+// A Custom Toggle that looks like a technical switch
+struct JarvisToggle: View {
+    let title: String
+    @Binding var isOn: Bool
+    
+    var body: some View {
+        // Wrap in a button to make the text clickable too
+        Button(action: { withAnimation(.easeInOut(duration: 0.2)) { isOn.toggle() } }) {
+            HStack {
+                Text(title.uppercased())
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.9))
+                Spacer()
+                
+                // Visual Switch
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isOn ? Color.jarvisBlue.opacity(0.2) : Color.black)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(isOn ? Color.jarvisBlue : Color.gray, lineWidth: 1)
+                        )
+                        .frame(width: 40, height: 20)
+                    
+                    Circle()
+                        .fill(isOn ? Color.jarvisBlue : Color.gray)
+                        .frame(width: 14, height: 14)
+                        .offset(x: isOn ? 10 : -10)
+                        .modifier(JarvisGlow(active: isOn))
+                }
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle()) // Makes the spacer area clickable
+        }
+        .buttonStyle(.plain) // Removes standard button click flash
+    }
+}
+
+// Updated Theme Button
 struct ThemeButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
     
     var body: some View {
-        Button(title) {
-            action()
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, design: .monospaced))
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                // Fix 1: Give unselected buttons a very faint background
+                .background(isSelected ? Color.jarvisBlue.opacity(0.2) : Color.white.opacity(0.05))
+                .foregroundColor(isSelected ? .jarvisBlue : .gray)
+                .overlay(
+                    Rectangle()
+                        // Fix 2: Ensure unselected buttons have a faint border too
+                        .stroke(isSelected ? Color.jarvisBlue : Color.white.opacity(0.1), lineWidth: 1)
+                )
+                .modifier(JarvisGlow(active: isSelected))
+                // Fix 3: Critical for clicking custom shapes
+                .contentShape(Rectangle())
         }
-        .padding()
-        .background(isSelected ? Color.blue.opacity(0.7) : Color.gray.opacity(0.3))
-        .foregroundColor(.white)
-        .cornerRadius(8)
-        .buttonStyle(.plain) // Important for custom background buttons
-    }
-}
-
-struct AboutSettingsView: View {
-    @EnvironmentObject var themeManager: ThemeManager
-    @EnvironmentObject var context: AppContext
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "app.dashed")
-                .resizable()
-                .frame(width: 60, height: 60)
-                .foregroundColor(.white)
-            
-            Text("RongE App")
-                .font(.title2.bold())
-            
-            Text("Version 1.0.0 (Beta)")
-                .foregroundColor(.gray)
-            
-            Spacer()
-            
-            Text("© 2025 Hojin Sohn")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            Text("RongE is an AI-powered macOS application designed to enhance your productivity and creativity.")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.top, 5)
-        }
-        .padding()
-    }
-}
-
-// Helper for Blur Background (macOS Standard)
-struct VisualEffectBlur: NSViewRepresentable {
-    var material: NSVisualEffectView.Material
-    var blendingMode: NSVisualEffectView.BlendingMode
-    
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let visualEffectView = NSVisualEffectView()
-        visualEffectView.material = material
-        visualEffectView.blendingMode = blendingMode
-        visualEffectView.state = .active
-        return visualEffectView
-    }
-    
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
+        .buttonStyle(.plain)
     }
 }

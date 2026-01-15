@@ -1205,18 +1205,28 @@ struct MinimizedMessageView: View {
 struct MessageView: View {
     @EnvironmentObject var appContext: AppContext
     @Binding var fullChatViewMode: Bool
+    @State private var systemLogs: [String] = []
+    @State private var hasBootAnimated = false
+    private let bootLogs: [String] = [
+        "> System Initialized.",
+        "> Loading Workflow: Intake Pipeline",
+        "> Loading Workflow: Retrieval Core",
+        "> Loading Workflow: Multi-Modal Vision",
+        "> Loading Workflow: Task Planner",
+        "> Loading Workflow: Action Orchestrator",
+        "> Loading Workflow: Knowledge Tools",
+        "> Connecting to Backend...",
+        "> Connection Established.",
+        "> Active Model: Gemini 2.5 Flash Lite",
+        "> Initiating Briefing Services...",
+    ]
     
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    
-                    // Static System Logs
-                    Group {
-                        LogLine(text: "> System Initialized.")
-                        LogLine(text: "> Connecting to Backend...")
-                        LogLine(text: "> Connection Established.")
-                        LogLine(text: "> Active Model: Gemini 2.5 Flash Lite")
+                    ForEach(systemLogs, id: \.self) { log in
+                        LogLine(text: log)
                     }
                     
                     // Dynamic Chat Logs
@@ -1235,10 +1245,39 @@ struct MessageView: View {
             }
             .frame(maxHeight: fullChatViewMode ? 420 : 280)
             .onChange(of: appContext.currentSessionChatMessages.count) { _ in
-                withAnimation(.easeOut(duration: 0.25)) {
-                    proxy.scrollTo("bottom", anchor: .top)
-                }
+                scrollToBottom(proxy)
             }
+            .onChange(of: systemLogs.count) { _ in
+                scrollToBottom(proxy)
+            }
+            .task {
+                await animateBootLogs(proxy: proxy)
+            }
+        }
+    }
+
+    @MainActor
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        withAnimation(.easeOut(duration: 0.25)) {
+            proxy.scrollTo("bottom", anchor: .top)
+        }
+    }
+
+    @MainActor
+    private func animateBootLogs(proxy: ScrollViewProxy) async {
+        guard !hasBootAnimated else { return }
+        hasBootAnimated = true
+
+        for (index, log) in bootLogs.enumerated() {
+            // Staggered appearance for a console boot feel
+            let delay = 0.18 + (Double(index) * 0.05)
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+
+            withAnimation(.easeOut(duration: 0.2)) {
+                systemLogs.append(log)
+            }
+
+            scrollToBottom(proxy)
         }
     }
 }
