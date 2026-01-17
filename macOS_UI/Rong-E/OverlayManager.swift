@@ -2,86 +2,92 @@ import SwiftUI
 import Combine
 
 class OverlayWindow: NSPanel {
+    private var keyEventMonitor: Any?
+
     init(contentRect: NSRect, backing: NSWindow.BackingStoreType, defer flag: Bool) {
-        super.init(contentRect: contentRect, 
-           styleMask: [.borderless, .nonactivatingPanel], // Add .borderless
-           backing: backing, 
+        super.init(contentRect: contentRect,
+           styleMask: [.borderless, .nonactivatingPanel],
+           backing: backing,
            defer: flag)
         // 1. Allow this window to sit over full-screen apps
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        
+
         // 2. Set the highest practical level (ScreenSaver is usually too aggressive, Floating is standard)
-        self.level = .floating 
-        
+        self.level = .floating
+
         // 3. Visual transparency settings
         self.backgroundColor = .clear
         self.isOpaque = false
         self.hasShadow = false
-        
+
         self.isFloatingPanel = true
-        
-        // // Enable keyboard events
-        // NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-        //     self?.keyDown(with: event)
-        //     return event
-        // }
+
+        // Enable keyboard events for window movement
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if self?.handleKeyboardMovement(event: event) == true {
+                return nil // Consume the event
+            }
+            return event
+        }
+    }
+
+    deinit {
+        if let monitor = keyEventMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
     }
 
     override var canBecomeKey: Bool {
         return true
     }
-    
+
     override var canBecomeMain: Bool {
         return true
     }
-    
+
     override var acceptsFirstResponder: Bool {
         return true
     }
-    
-    // override func keyDown(with event: NSEvent) {
-    //     // Check if Command key is held
-    //     if event.modifierFlags.contains(.command) {
-    //         print("Command + Arrow Key detected")
-    //         let moveDistance: CGFloat = 20 // Increased for better visual "slide"
-    //         var newOrigin = self.frame.origin
-            
-    //         // Use named constants or enums for better readability
-    //         switch event.keyCode {
-    //         case 123: // Left Arrow
-    //             newOrigin.x -= moveDistance
-    //         case 124: // Right Arrow
-    //             newOrigin.x += moveDistance
-    //         case 125: // Down Arrow
-    //             newOrigin.y -= moveDistance
-    //         case 126: // Up Arrow
-    //             newOrigin.y += moveDistance
-    //         default:
-    //             super.keyDown(with: event)
-    //             return
-    //         }
-            
-    //         if let screen = self.screen ?? NSScreen.main {
-    //             print("Screen frame: \(screen.visibleFrame)")
-    //             print("Window frame before move: \(self.frame)")
-    //             let screenFrame = screen.visibleFrame
-    //             let windowFrame = self.frame
-                
-    //             // Clamp positions so the window doesn't leave the visible area
-    //             newOrigin.x = max(screenFrame.minX, min(newOrigin.x, screenFrame.maxX - windowFrame.width))
-    //             newOrigin.y = max(screenFrame.minY, min(newOrigin.y, screenFrame.maxY - windowFrame.height))
-                
-    //             print("New origin: \(newOrigin)")
-    //         }
-            
-    //         // Animate the frame change
-    //         let newFrame = NSRect(origin: newOrigin, size: self.frame.size)
-    //         self.setFrame(newFrame, display: true, animate: true)
-            
-    //     } else {
-    //         super.keyDown(with: event)
-    //     }
-    // }
+
+    /// Handles Command + Arrow key movement. Returns true if the event was handled.
+    private func handleKeyboardMovement(event: NSEvent) -> Bool {
+        // Only handle if window is visible and Command is held
+        guard self.isVisible, event.modifierFlags.contains(.command) else {
+            return false
+        }
+
+        let moveDistance: CGFloat = 20
+        var newOrigin = self.frame.origin
+
+        switch event.keyCode {
+        case 123: // Left Arrow
+            newOrigin.x -= moveDistance
+        case 124: // Right Arrow
+            newOrigin.x += moveDistance
+        case 125: // Down Arrow
+            newOrigin.y -= moveDistance
+        case 126: // Up Arrow
+            newOrigin.y += moveDistance
+        default:
+            return false
+        }
+
+        // Clamp to screen bounds
+        if let screen = self.screen ?? NSScreen.main {
+            let screenFrame = screen.visibleFrame
+            let windowFrame = self.frame
+
+            newOrigin.x = max(screenFrame.minX, min(newOrigin.x, screenFrame.maxX - windowFrame.width))
+            newOrigin.y = max(screenFrame.minY, min(newOrigin.y, screenFrame.maxY - windowFrame.height))
+        }
+
+        // Move the window
+        self.setFrameOrigin(newOrigin)
+
+        print("Moved window to \(newOrigin)")
+
+        return true
+    }
 }
 
 class WindowCoordinator: ObservableObject {
