@@ -143,7 +143,8 @@ struct SettingsView: View {
                     JarvisTabButton(icon: "gearshape", title: "SYS", isSelected: selectedTab == 0) { selectedTab = 0 }
                     JarvisTabButton(icon: "paintbrush", title: "VIS", isSelected: selectedTab == 1) { selectedTab = 1 }
                     JarvisTabButton(icon: "slider.horizontal.3", title: "MOD", isSelected: selectedTab == 2) { selectedTab = 2 }
-                    JarvisTabButton(icon: "info.circle", title: "DAT", isSelected: selectedTab == 3) { selectedTab = 3 }
+                    JarvisTabButton(icon: "server.rack", title: "MCP", isSelected: selectedTab == 3) { selectedTab = 3 }
+                    JarvisTabButton(icon: "info.circle", title: "DAT", isSelected: selectedTab == 4) { selectedTab = 4 }
                 }
                 .padding(.vertical, 10)
                 
@@ -153,7 +154,8 @@ struct SettingsView: View {
                     case 0: GeneralSettingsView()
                     case 1: AppearanceSettingsView()
                     case 2: ModesSettingsView() // Placeholder or your actual view
-                    case 3: AboutSettingsView()
+                    case 3: MCPSettingsView()
+                    case 4: AboutSettingsView()
                     default: GeneralSettingsView()
                     }
                 }
@@ -295,9 +297,396 @@ struct AppearanceSettingsView: View {
     }
 }
 
+// MARK: - MCP Settings View
+struct MCPSettingsView: View {
+    @ObservedObject var configManager = MCPConfigManager.shared
+    @State private var showFileImporter = false
+    @State private var showAddServerSheet = false
+    @State private var showJSONPasteSheet = false
+    @State private var jsonPasteText = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            // Header with sync status
+            HStack {
+                Text("MCP SERVER ARRAY")
+                    .font(.caption)
+                    .foregroundColor(.jarvisBlue.opacity(0.7))
+                    .tracking(1)
+
+                Spacer()
+
+                if configManager.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            // Error display
+            if let error = configManager.lastError {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text(error)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.orange)
+                    Spacer()
+                    Button("CLEAR") {
+                        configManager.lastError = nil
+                    }
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.jarvisBlue)
+                }
+                .padding(8)
+                .background(Color.orange.opacity(0.1))
+                .overlay(Rectangle().stroke(Color.orange.opacity(0.3), lineWidth: 1))
+            }
+
+            // Server list
+            if configManager.servers.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "server.rack")
+                        .font(.system(size: 30))
+                        .foregroundColor(.jarvisBlue.opacity(0.4))
+                    Text("NO SERVERS CONFIGURED")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.gray)
+                    Text("Import config or add servers manually")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.gray.opacity(0.6))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            } else {
+                ScrollView {
+                    VStack(spacing: 6) {
+                        ForEach(configManager.servers) { server in
+                            MCPServerRow(server: server) {
+                                configManager.removeServer(server)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 150)
+            }
+
+            // Action buttons
+            HStack(spacing: 10) {
+                MCPActionButton(icon: "doc.badge.plus", title: "IMPORT") {
+                    showFileImporter = true
+                }
+                MCPActionButton(icon: "doc.on.clipboard", title: "PASTE") {
+                    showJSONPasteSheet = true
+                }
+                MCPActionButton(icon: "plus.circle", title: "ADD") {
+                    showAddServerSheet = true
+                }
+
+                Spacer()
+
+                if !configManager.servers.isEmpty {
+                    Button(action: { configManager.sendConfigToPython() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text("SYNC")
+                        }
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.jarvisBlue)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.jarvisBlue.opacity(0.2))
+                        .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .modifier(JarvisPanel())
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                guard url.startAccessingSecurityScopedResource() else { return }
+                defer { url.stopAccessingSecurityScopedResource() }
+                configManager.loadConfig(from: url)
+            }
+        }
+        .sheet(isPresented: $showAddServerSheet) {
+            MCPAddServerSheet { server in
+                configManager.addServer(server)
+            }
+        }
+        .sheet(isPresented: $showJSONPasteSheet) {
+            MCPJSONPasteSheet(jsonText: $jsonPasteText) {
+                configManager.loadConfig(from: jsonPasteText)
+                jsonPasteText = ""
+            }
+        }
+    }
+}
+
+struct MCPServerRow: View {
+    let server: MCPServerConfig
+    let onDelete: () -> Void
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Circle()
+                    .fill(Color.jarvisBlue)
+                    .frame(width: 6, height: 6)
+
+                Text(server.name.uppercased())
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.white)
+
+                Text("// \(server.command)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.gray)
+
+                Spacer()
+
+                Button(action: { isExpanded.toggle() }) {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9))
+                        .foregroundColor(.jarvisBlue)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: onDelete) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9))
+                        .foregroundColor(.red.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 2) {
+                    if !server.args.isEmpty {
+                        Text("ARGS: \(server.args.joined(separator: " "))")
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundColor(.gray)
+                    }
+                    if let env = server.env, !env.isEmpty {
+                        Text("ENV: \(env.map { "\($0.key)=\($0.value)" }.joined(separator: ", "))")
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundColor(.gray)
+                    }
+                }
+                .padding(.leading, 14)
+            }
+        }
+        .padding(8)
+        .background(Color.black.opacity(0.3))
+        .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.2), lineWidth: 1))
+    }
+}
+
+struct MCPActionButton: View {
+    let icon: String
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                Text(title)
+            }
+            .font(.system(size: 9, design: .monospaced))
+            .foregroundColor(.jarvisBlue.opacity(0.8))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.black.opacity(0.3))
+            .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct MCPAddServerSheet: View {
+    @Environment(\.dismiss) var dismiss
+    let onAdd: (MCPServerConfig) -> Void
+
+    @State private var name = ""
+    @State private var command = ""
+    @State private var argsText = ""
+    @State private var envText = ""
+    @State private var validationError: String?
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+                .opacity(0.9)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 16) {
+                Text("ADD MCP SERVER")
+                    .font(.system(.headline, design: .monospaced))
+                    .foregroundColor(.jarvisBlue)
+                    .tracking(2)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    MCPTextField(label: "SERVER NAME", text: $name, placeholder: "e.g., filesystem")
+                    MCPTextField(label: "COMMAND", text: $command, placeholder: "e.g., npx, node, python")
+                    MCPTextField(label: "ARGUMENTS", text: $argsText, placeholder: "space-separated args")
+                    MCPTextField(label: "ENVIRONMENT", text: $envText, placeholder: "KEY=value, comma-separated")
+                }
+
+                if let error = validationError {
+                    Text(error)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.red)
+                }
+
+                HStack {
+                    Spacer()
+                    Button("CANCEL") { dismiss() }
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.gray)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .overlay(Rectangle().stroke(Color.gray.opacity(0.5), lineWidth: 1))
+                        .buttonStyle(.plain)
+
+                    Button("ADD") { addServer() }
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.jarvisBlue)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.jarvisBlue.opacity(0.2))
+                        .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
+                        .buttonStyle(.plain)
+                        .disabled(name.isEmpty || command.isEmpty)
+                }
+            }
+            .padding(24)
+        }
+        .frame(width: 400, height: 350)
+    }
+
+    private func addServer() {
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedCommand = command.trimmingCharacters(in: .whitespaces)
+
+        guard !trimmedName.isEmpty else {
+            validationError = "Server name is required"
+            return
+        }
+        guard !trimmedCommand.isEmpty else {
+            validationError = "Command is required"
+            return
+        }
+
+        let args = argsText.split(separator: " ").map { String($0) }.filter { !$0.isEmpty }
+        var env: [String: String]? = nil
+        if !envText.isEmpty {
+            env = [:]
+            for pair in envText.split(separator: ",") {
+                let parts = pair.split(separator: "=", maxSplits: 1)
+                if parts.count == 2 {
+                    env?[String(parts[0]).trimmingCharacters(in: .whitespaces)] =
+                        String(parts[1]).trimmingCharacters(in: .whitespaces)
+                }
+            }
+        }
+
+        let server = MCPServerConfig(name: trimmedName, command: trimmedCommand, args: args, env: env)
+        onAdd(server)
+        dismiss()
+    }
+}
+
+struct MCPJSONPasteSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @Binding var jsonText: String
+    let onSubmit: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+                .opacity(0.9)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 16) {
+                Text("PASTE MCP CONFIG")
+                    .font(.system(.headline, design: .monospaced))
+                    .foregroundColor(.jarvisBlue)
+                    .tracking(2)
+
+                TextEditor(text: $jsonText)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(.white)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.black.opacity(0.5))
+                    .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+                    .frame(minHeight: 150)
+
+                Text("FORMAT: {\"mcpServers\": {\"name\": {\"command\": \"...\", \"args\": [...]}}}")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.gray)
+
+                HStack {
+                    Spacer()
+                    Button("CANCEL") { dismiss() }
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.gray)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .overlay(Rectangle().stroke(Color.gray.opacity(0.5), lineWidth: 1))
+                        .buttonStyle(.plain)
+
+                    Button("IMPORT") {
+                        onSubmit()
+                        dismiss()
+                    }
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.jarvisBlue)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.jarvisBlue.opacity(0.2))
+                    .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
+                    .buttonStyle(.plain)
+                    .disabled(jsonText.isEmpty)
+                }
+            }
+            .padding(24)
+        }
+        .frame(width: 500, height: 350)
+    }
+}
+
+struct MCPTextField: View {
+    let label: String
+    @Binding var text: String
+    var placeholder: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.jarvisBlue.opacity(0.7))
+
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(.body, design: .monospaced))
+                .foregroundColor(.white)
+                .padding(8)
+                .background(Color.black.opacity(0.5))
+                .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+        }
+    }
+}
+
 struct AboutSettingsView: View {
     @State private var rotation: Double = 0
-    
+
     var body: some View {
         VStack(spacing: 0) {
             ZStack {

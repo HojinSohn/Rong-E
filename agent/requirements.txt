@@ -13,3 +13,5 @@ pandas
 python-pptx
 pymupdf
 nest-asyncio
+mcp
+langchain-mcp-adapters

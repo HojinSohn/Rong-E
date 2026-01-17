@@ -20,11 +20,11 @@ class OverlayWindow: NSPanel {
         
         self.isFloatingPanel = true
         
-        // Enable keyboard events
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.keyDown(with: event)
-            return event
-        }
+        // // Enable keyboard events
+        // NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        //     self?.keyDown(with: event)
+        //     return event
+        // }
     }
 
     override var canBecomeKey: Bool {
@@ -39,49 +39,49 @@ class OverlayWindow: NSPanel {
         return true
     }
     
-    override func keyDown(with event: NSEvent) {
-        // Check if Command key is held
-        if event.modifierFlags.contains(.command) {
-            print("Command + Arrow Key detected")
-            let moveDistance: CGFloat = 20 // Increased for better visual "slide"
-            var newOrigin = self.frame.origin
+    // override func keyDown(with event: NSEvent) {
+    //     // Check if Command key is held
+    //     if event.modifierFlags.contains(.command) {
+    //         print("Command + Arrow Key detected")
+    //         let moveDistance: CGFloat = 20 // Increased for better visual "slide"
+    //         var newOrigin = self.frame.origin
             
-            // Use named constants or enums for better readability
-            switch event.keyCode {
-            case 123: // Left Arrow
-                newOrigin.x -= moveDistance
-            case 124: // Right Arrow
-                newOrigin.x += moveDistance
-            case 125: // Down Arrow
-                newOrigin.y -= moveDistance
-            case 126: // Up Arrow
-                newOrigin.y += moveDistance
-            default:
-                super.keyDown(with: event)
-                return
-            }
+    //         // Use named constants or enums for better readability
+    //         switch event.keyCode {
+    //         case 123: // Left Arrow
+    //             newOrigin.x -= moveDistance
+    //         case 124: // Right Arrow
+    //             newOrigin.x += moveDistance
+    //         case 125: // Down Arrow
+    //             newOrigin.y -= moveDistance
+    //         case 126: // Up Arrow
+    //             newOrigin.y += moveDistance
+    //         default:
+    //             super.keyDown(with: event)
+    //             return
+    //         }
             
-            if let screen = self.screen ?? NSScreen.main {
-                print("Screen frame: \(screen.visibleFrame)")
-                print("Window frame before move: \(self.frame)")
-                let screenFrame = screen.visibleFrame
-                let windowFrame = self.frame
+    //         if let screen = self.screen ?? NSScreen.main {
+    //             print("Screen frame: \(screen.visibleFrame)")
+    //             print("Window frame before move: \(self.frame)")
+    //             let screenFrame = screen.visibleFrame
+    //             let windowFrame = self.frame
                 
-                // Clamp positions so the window doesn't leave the visible area
-                newOrigin.x = max(screenFrame.minX, min(newOrigin.x, screenFrame.maxX - windowFrame.width))
-                newOrigin.y = max(screenFrame.minY, min(newOrigin.y, screenFrame.maxY - windowFrame.height))
+    //             // Clamp positions so the window doesn't leave the visible area
+    //             newOrigin.x = max(screenFrame.minX, min(newOrigin.x, screenFrame.maxX - windowFrame.width))
+    //             newOrigin.y = max(screenFrame.minY, min(newOrigin.y, screenFrame.maxY - windowFrame.height))
                 
-                print("New origin: \(newOrigin)")
-            }
+    //             print("New origin: \(newOrigin)")
+    //         }
             
-            // Animate the frame change
-            let newFrame = NSRect(origin: newOrigin, size: self.frame.size)
-            self.setFrame(newFrame, display: true, animate: true)
+    //         // Animate the frame change
+    //         let newFrame = NSRect(origin: newOrigin, size: self.frame.size)
+    //         self.setFrame(newFrame, display: true, animate: true)
             
-        } else {
-            super.keyDown(with: event)
-        }
-    }
+    //     } else {
+    //         super.keyDown(with: event)
+    //     }
+    // }
 }
 
 class WindowCoordinator: ObservableObject {

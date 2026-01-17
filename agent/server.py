@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from agent.agent import EchoAgent
+from agent.agent.agent import EchoAgent
+from agent.models.mcp_config import validate_mcp_config, MCPConfig
 import uvicorn
 import json
 import os
@@ -76,6 +77,35 @@ async def websocket_endpoint(websocket: WebSocket):
                         "content": "✅ Credentials revoked successfully."
                     }))
                     continue  # Skip the rest of the loop
+                elif data["data_type"] == "mcp_config":
+                    print("🔧 Received MCP Config")
+                    try:
+                        # Validate the config
+                        config_data = data.get("config", {})
+                        validated_config = validate_mcp_config(config_data)
+                        agent_config = validated_config.to_agent_format()
+
+                        # Sync MCP servers
+                        await agent.sync_mcp_servers(agent_config)
+
+                        server_count = len(validated_config.mcpServers)
+                        server_names = list(validated_config.mcpServers.keys())
+                        await websocket.send_text(json.dumps({
+                            "type": "mcp_sync_success",
+                            "content": f"✅ Synced {server_count} MCP server(s): {', '.join(server_names) if server_names else 'none'}"
+                        }))
+                    except ValueError as e:
+                        await websocket.send_text(json.dumps({
+                            "type": "mcp_sync_error",
+                            "content": f"❌ Validation error: {str(e)}"
+                        }))
+                    except Exception as e:
+                        print(f"❌ MCP Sync Error: {e}")
+                        await websocket.send_text(json.dumps({
+                            "type": "mcp_sync_error",
+                            "content": f"❌ Failed to sync MCP servers: {str(e)}"
+                        }))
+                    continue  # Skip the rest of the loop
 
             # Normal message processing
             query, mode, base64_image = data["text"], data["mode"], data.get("base64_image")
@@ -110,6 +140,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
             print([tool.name for tool in agent.tools])
             print(agent.tool_map.keys())
+
+            # MCP servers are now configured dynamically via mcp_config messages from the UI
+            # No hardcoded config - use MCPConfigView in the SwiftUI app to configure servers
 
             # --- 2. Run Agent with Callback ---
             # We await the agent, passing our new function

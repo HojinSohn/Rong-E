@@ -97,7 +97,6 @@ class AuthManager():
         self.gmail_toolkit = None
         self.calendar_toolkit = None
         self.sheets_toolkit = None
-        self.authenticate()
 
     def check_connected(self) -> bool:
         """
@@ -129,20 +128,12 @@ class AuthManager():
                             
                 except Exception as e:
                     print(f"Error refreshing token: {e}")
-                    # Trigger full login flow here: TODO
+                    # Throw exception to trigger full login flow
+                    raise e
             else:
                 print("Credentials invalid and cannot be refreshed.")
-                # Trigger full login flow here: TODO
-        """
-        Authenticates with Google APIs and initializes toolkits.
-        """
-        self.credentials = get_google_credentials(
-            token_file=token_file,
-            scopes=["https://www.googleapis.com/auth/calendar", "https://mail.google.com/", "https://www.googleapis.com/auth/spreadsheets"], 
-            client_secrets_file=client_secrets_file
-        )
-
-        print(f"Check {self.credentials}")
+                # Throw exception to trigger full login flow
+                raise Exception("Invalid credentials.")
         
         # Refresh credentials if expired
         if self.credentials and self.credentials.expired and self.credentials.refresh_token:

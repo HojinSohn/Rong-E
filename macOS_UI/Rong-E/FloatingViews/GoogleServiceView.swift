@@ -366,129 +366,132 @@ struct AddSheetModal: View {
                 .background(Color.jarvisBlue.opacity(0.1))
                 .overlay(Rectangle().frame(height: 1).foregroundColor(.jarvisBlue.opacity(0.3)), alignment: .bottom)
                 
-                VStack(alignment: .leading, spacing: 20) {
-                    
-                    // 1. URL Input
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("TARGET URL (G-SHEETS)")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.gray)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
                         
-                        HStack {
-                            JarvisTextField(text: $urlInput)
+                        // 1. URL Input
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("TARGET URL (G-SHEETS)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.gray)
                             
-                            Button(action: { simulateVerify() }) {
-                                Text(isVerifying ? "SCANNING..." : "VERIFY")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .fontWeight(.bold)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 10)
-                                    .background(urlInput.isEmpty ? Color.gray.opacity(0.2) : Color.jarvisBlue.opacity(0.2))
-                                    .foregroundColor(urlInput.isEmpty ? .gray : .jarvisBlue)
-                                    .overlay(Rectangle().stroke(urlInput.isEmpty ? Color.gray : Color.jarvisBlue, lineWidth: 1))
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(BorderlessButtonStyle())
-                            .disabled(urlInput.isEmpty || isVerifying)
-                        }
-                    }
-                    
-                    if isVerifying {
-                         HStack {
-                             Text("ESTABLISHING LINK...")
-                                 .font(.system(size: 10, design: .monospaced))
-                                 .foregroundColor(.jarvisBlue)
-                             Spacer()
-                             // Simple text animation placeholder
-                             Text(">>>")
-                                 .font(.system(size: 10, design: .monospaced))
-                                 .foregroundColor(.jarvisBlue)
-                         }
-                    }
-                    
-                    // 2. Details (Hidden until verified)
-                    if let _ = extractedID {
-                        VStack(alignment: .leading, spacing: 15) {
-                            
-                            // Tab Selector
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("SELECT DATA WORKSHEET")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(.gray)
+                            HStack {
+                                JarvisTextField(text: $urlInput)
                                 
-                                Picker("", selection: $selectedTab) {
-                                    ForEach(foundTabs, id: \.self) { tab in
-                                        Text(tab).tag(tab)
-                                    }
+                                Button(action: { simulateVerify() }) {
+                                    Text(isVerifying ? "SCANNING..." : "VERIFY")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .fontWeight(.bold)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 10)
+                                        .background(urlInput.isEmpty ? Color.gray.opacity(0.2) : Color.jarvisBlue.opacity(0.2))
+                                        .foregroundColor(urlInput.isEmpty ? .gray : .jarvisBlue)
+                                        .overlay(Rectangle().stroke(urlInput.isEmpty ? Color.gray : Color.jarvisBlue, lineWidth: 1))
+                                        .contentShape(Rectangle())
                                 }
-                                .labelsHidden()
-                                .pickerStyle(MenuPickerStyle())
-                                .frame(maxWidth: .infinity)
-                                .background(Color.black.opacity(0.4))
-                                .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
-                            }
-                            
-                            // Alias
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("SYSTEM ALIAS")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(.gray)
-                                JarvisTextField(text: $aliasInput)
-                            }
-                            
-                            // Description
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("CONTEXTUAL USAGE")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(.gray)
-                                JarvisTextField(text: $descriptionInput)
+                                .buttonStyle(BorderlessButtonStyle())
+                                .disabled(urlInput.isEmpty || isVerifying)
                             }
                         }
-                        .transition(.opacity)
+                        
+                        if isVerifying {
+                             HStack {
+                                 Text("ESTABLISHING LINK...")
+                                     .font(.system(size: 10, design: .monospaced))
+                                     .foregroundColor(.jarvisBlue)
+                                 Spacer()
+                                 // Simple text animation placeholder
+                                 Text(">>>")
+                                     .font(.system(size: 10, design: .monospaced))
+                                     .foregroundColor(.jarvisBlue)
+                             }
+                        }
+                        
+                        // 2. Details (Hidden until verified)
+                        if let _ = extractedID {
+                            VStack(alignment: .leading, spacing: 15) {
+                                
+                                // Tab Selector
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("SELECT DATA WORKSHEET")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundColor(.gray)
+                                    
+                                    Picker("", selection: $selectedTab) {
+                                        ForEach(foundTabs, id: \.self) { tab in
+                                            Text(tab).tag(tab)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .pickerStyle(MenuPickerStyle())
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color.black.opacity(0.4))
+                                    .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+                                }
+                                
+                                // Alias
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("SYSTEM ALIAS")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundColor(.gray)
+                                    JarvisTextField(text: $aliasInput)
+                                }
+                                
+                                // Description
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("CONTEXTUAL USAGE")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundColor(.gray)
+                                    JarvisTextField(text: $descriptionInput)
+                                }
+                            }
+                            .transition(.opacity)
+                        }
                     }
+                    .padding(20)
+                }
+                
+                // 3. Actions (Fixed at bottom)
+                HStack {
+                    Button("CANCEL") { isPresented = false }
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.gray)
+                        .buttonStyle(BorderlessButtonStyle())
+                        .keyboardShortcut(.cancelAction)
                     
                     Spacer()
                     
-                    // 3. Actions
-                    HStack {
-                        Button("CANCEL") { isPresented = false }
+                    Button(action: {
+                        let newSheet = SpreadsheetConfig(
+                            alias: aliasInput,
+                            url: urlInput,
+                            sheetID: extractedID ?? "",
+                            selectedTab: selectedTab,
+                            description: descriptionInput
+                        )
+                        onSave(newSheet)
+                        isPresented = false
+                    }) {
+                        Text("INITIALIZE RESOURCE")
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.gray)
-                            .buttonStyle(BorderlessButtonStyle())
-                            .keyboardShortcut(.cancelAction)
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            let newSheet = SpreadsheetConfig(
-                                alias: aliasInput,
-                                url: urlInput,
-                                sheetID: extractedID ?? "",
-                                selectedTab: selectedTab,
-                                description: descriptionInput
-                            )
-                            onSave(newSheet)
-                            isPresented = false
-                        }) {
-                            Text("INITIALIZE RESOURCE")
-                                .font(.system(size: 11, design: .monospaced))
-                                .fontWeight(.bold)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
-                                .background((extractedID == nil || aliasInput.isEmpty) ? Color.gray.opacity(0.2) : Color.jarvisBlue.opacity(0.2))
-                                .foregroundColor((extractedID == nil || aliasInput.isEmpty) ? .gray : .jarvisBlue)
-                                .overlay(Rectangle().stroke((extractedID == nil || aliasInput.isEmpty) ? Color.gray : Color.jarvisBlue, lineWidth: 1))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(BorderlessButtonStyle())
-                        .disabled(extractedID == nil || aliasInput.isEmpty)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background((extractedID == nil || aliasInput.isEmpty) ? Color.gray.opacity(0.2) : Color.jarvisBlue.opacity(0.2))
+                            .foregroundColor((extractedID == nil || aliasInput.isEmpty) ? .gray : .jarvisBlue)
+                            .overlay(Rectangle().stroke((extractedID == nil || aliasInput.isEmpty) ? Color.gray : Color.jarvisBlue, lineWidth: 1))
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(BorderlessButtonStyle())
+                    .disabled(extractedID == nil || aliasInput.isEmpty)
                 }
                 .padding(20)
+                .background(Color.jarvisBlue.opacity(0.05))
+                .overlay(Rectangle().frame(height: 1).foregroundColor(.jarvisBlue.opacity(0.3)), alignment: .top)
             }
         }
-        .frame(width: 450, height: 300)
-        .border(Color.jarvisBlue.opacity(0.5), width: 1)
+        .frame(width: 450, height: 550)
+        .border(Color.jarvisBlue.opacity(0.5))
     }
     
     func simulateVerify() {

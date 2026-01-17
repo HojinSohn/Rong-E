@@ -34,7 +34,7 @@ struct AgentMessage: Codable {
         case "tool_result":
             let val = try container.decode(ToolResultContent.self, forKey: .content)
             content = .toolResult(val)
-        case "credentials_success", "error":
+        case "credentials_success", "error", "mcp_sync_success", "mcp_sync_error":
             // Handle simple string content for status messages
             if let stringContent = try? container.decode(String.self, forKey: .content) {
                 content = .response(ResponseContent(text: stringContent, images: []))
@@ -69,7 +69,7 @@ enum CodableContent {
 
 struct ResponseContent: Codable {
     let text: String
-    let images: [ImageData]
+    let images: [ImageData]? // Optional array of images
 }
 
 struct ThoughtContent: Codable {
@@ -111,6 +111,7 @@ enum CredentialDataType: String {
     case apiKey = "api_key"
     case credentials = "credentials"
     case revoke_credentials = "revoke_credentials"
+    case mcpConfig = "mcp_config"
 }
 
 struct ChatPayload: Codable {
@@ -142,6 +143,7 @@ class SocketClient: ObservableObject {
     var onReceiveImages: (([ImageData]) -> Void)?
     var onDisconnect: ((String) -> Void)?
     var onReceivedCredentialsSuccess: ((String) -> Void)?
+    var onMCPSyncResult: ((Bool, String?) -> Void)?
 
     func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
@@ -214,7 +216,9 @@ class SocketClient: ObservableObject {
             case "response", "final":
                 if case .response(let content) = parsedMsg.content {
                     self.onReceiveResponse?(content.text)
-                    self.onReceiveImages?(content.images)
+                    if content.images != nil {
+                        self.onReceiveImages?(content.images!)
+                    }
                 }
             case "tool_call":
                 if case .toolCall(let content) = parsedMsg.content {
@@ -229,6 +233,18 @@ class SocketClient: ObservableObject {
             case "credentials_success":
                 if case .response(let content) = parsedMsg.content {
                      self.onReceivedCredentialsSuccess?(content.text)
+                }
+            case "mcp_sync_success":
+                if case .response(let content) = parsedMsg.content {
+                    self.onMCPSyncResult?(true, content.text)
+                } else {
+                    self.onMCPSyncResult?(true, nil)
+                }
+            case "mcp_sync_error":
+                if case .response(let content) = parsedMsg.content {
+                    self.onMCPSyncResult?(false, content.text)
+                } else {
+                    self.onMCPSyncResult?(false, "Unknown error")
                 }
             default:
                 print("❓ Unhandled type: \(parsedMsg.type)")
@@ -256,11 +272,30 @@ class SocketClient: ObservableObject {
 
     func sendCredentials(_ dataType: CredentialDataType, content: String) {
         let json: [String: String] = ["data_type": dataType.rawValue, "content": content]
-        if let jsonData = try? JSONEncoder().encode(json), 
+        if let jsonData = try? JSONEncoder().encode(json),
            let jsonString = String(data: jsonData, encoding: .utf8) {
             let message = URLSessionWebSocketTask.Message.string(jsonString)
             webSocketTask?.send(message) { error in
                 if let error = error { print("❌ Send Error: \(error)") }
+            }
+        }
+    }
+
+    func sendMCPConfig(_ config: MCPConfig) {
+        struct MCPConfigPayload: Encodable {
+            let data_type: String
+            let config: MCPConfig
+        }
+
+        let payload = MCPConfigPayload(data_type: "mcp_config", config: config)
+        if let jsonData = try? JSONEncoder().encode(payload),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Sending MCP Config: \(jsonString)")
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error {
+                    print("❌ MCP Config Send Error: \(error)")
+                }
             }
         }
     }
