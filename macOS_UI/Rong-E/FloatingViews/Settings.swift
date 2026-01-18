@@ -370,6 +370,8 @@ struct MCPSettingsView: View {
                 .frame(maxHeight: 150)
             }
 
+            Spacer()
+
             // Action buttons
             HStack(spacing: 10) {
                 MCPActionButton(icon: "doc.badge.plus", title: "IMPORT") {

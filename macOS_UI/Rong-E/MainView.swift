@@ -1182,9 +1182,10 @@ struct MessageView: View {
                         // 3. Dynamic Chat Stream
                         ForEach(appContext.currentSessionChatMessages) { message in
                             RongEMessageRow(message: message)
+                                .id(message.id)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
-                        
+
                         // Spacer for bottom scroll
                         Color.clear
                             .frame(height: 20)
@@ -1194,8 +1195,12 @@ struct MessageView: View {
                 }
                 .frame(maxHeight: fullChatViewMode ? 450 : 300)
                 // Auto-scroll logic
-                .onChange(of: appContext.currentSessionChatMessages.count) { _ in scrollToBottom(proxy) }
-                .onChange(of: systemLogs.count) { _ in scrollToBottom(proxy) }
+                .onChange(of: appContext.currentSessionChatMessages.count) { _ in
+                    scrollToBottom(proxy, useLastMessage: true)
+                }
+                .onChange(of: systemLogs.count) { _ in
+                    scrollToBottom(proxy, useLastMessage: false)
+                }
                 .task { await animateBootLogs(proxy: proxy) }
             }
         }
@@ -1203,9 +1208,17 @@ struct MessageView: View {
     }
 
     @MainActor
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        withAnimation(.easeOut(duration: 0.3)) {
-            proxy.scrollTo("bottom", anchor: .bottom)
+    private func scrollToBottom(_ proxy: ScrollViewProxy, useLastMessage: Bool = false) {
+        // Delay slightly to ensure layout is complete before scrolling
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            withAnimation(.easeOut(duration: 0.3)) {
+                if useLastMessage, let lastMessage = appContext.currentSessionChatMessages.last {
+                    // Scroll to last message first, then to bottom for extra padding
+                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                }
+                // Always scroll to the bottom spacer to ensure we're at the very end
+                proxy.scrollTo("bottom", anchor: .top)
+            }
         }
     }
 
@@ -1221,7 +1234,7 @@ struct MessageView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 systemLogs.append(log)
             }
-            scrollToBottom(proxy)
+            scrollToBottom(proxy, useLastMessage: false)
         }
     }
 }
