@@ -113,7 +113,11 @@ async def websocket_endpoint(websocket: WebSocket):
             print(f"Base64 Image Present: {'Yes' if base64_image else 'No'}")  
             
             # Callback function to stream responses
-            async def agent_callback(type: str, content: str):
+            # content can be:
+            #   - str: Simple text content
+            #   - dict: Rich content with text, images, and/or widgets
+            #           {"text": str, "images": list, "widgets": list}
+            async def agent_callback(type: str, content):
                 payload = None
                 if type == "thought":
                     payload = json.dumps({
@@ -130,11 +134,28 @@ async def websocket_endpoint(websocket: WebSocket):
                         "type": "tool_result",
                         "content": content
                     })
-                elif type == "response": # Final response
-                    payload = json.dumps({
-                        "type": "response",
-                        "content": content
-                    })
+                elif type == "response":
+                    # Handle both string and dict content
+                    if isinstance(content, dict):
+                        # Rich content with widgets
+                        payload = json.dumps({
+                            "type": "response",
+                            "content": {
+                                "text": content.get("text", ""),
+                                "images": content.get("images", []),
+                                "widgets": content.get("widgets", [])
+                            }
+                        })
+                    else:
+                        # Simple text response
+                        payload = json.dumps({
+                            "type": "response",
+                            "content": {
+                                "text": content,
+                                "images": [],
+                                "widgets": []
+                            }
+                        })
                 if payload:
                     await websocket.send_text(payload)
 

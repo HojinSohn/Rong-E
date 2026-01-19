@@ -69,7 +69,56 @@ enum CodableContent {
 
 struct ResponseContent: Codable {
     let text: String
-    let images: [ImageData]? // Optional array of images
+    let images: [ImageData]?
+    let widgets: [ChatWidgetData]?
+
+    init(text: String, images: [ImageData]? = nil, widgets: [ChatWidgetData]? = nil) {
+        self.text = text
+        self.images = images
+        self.widgets = widgets
+    }
+}
+
+// Widget data for JSON parsing (matches backend JSON schema)
+struct ChatWidgetData: Codable {
+    let type: String
+    let label: String
+    let action: WidgetActionData
+    var icon: String?
+    var subtitle: String?
+}
+
+struct WidgetActionData: Codable {
+    var url: String?
+    var appName: String?
+    var appScheme: String?
+    var appBundleId: String?
+    var filePath: String?
+    var fileName: String?
+    var fileType: String?
+    var imageUrl: String?
+    var base64Image: String?
+    var imageAlt: String?
+    var code: String?
+    var language: String?
+    var confirmAction: String?
+    var cancelAction: String?
+
+    enum CodingKeys: String, CodingKey {
+        case url
+        case appName = "app_name"
+        case appScheme = "app_scheme"
+        case appBundleId = "app_bundle_id"
+        case filePath = "file_path"
+        case fileName = "file_name"
+        case fileType = "file_type"
+        case imageUrl = "image_url"
+        case base64Image = "base64_image"
+        case imageAlt = "image_alt"
+        case code, language
+        case confirmAction = "confirm_action"
+        case cancelAction = "cancel_action"
+    }
 }
 
 struct ThoughtContent: Codable {
@@ -141,6 +190,7 @@ class SocketClient: ObservableObject {
     var onReceiveToolCall: ((ToolCallContent) -> Void)?
     var onReceiveToolOutput: ((ToolResultContent) -> Void)?
     var onReceiveImages: (([ImageData]) -> Void)?
+    var onReceiveWidgets: (([ChatWidgetData]) -> Void)?
     var onDisconnect: ((String) -> Void)?
     var onReceivedCredentialsSuccess: ((String) -> Void)?
     var onMCPSyncResult: ((Bool, String?) -> Void)?
@@ -215,10 +265,14 @@ class SocketClient: ObservableObject {
                 }
             case "response", "final":
                 if case .response(let content) = parsedMsg.content {
-                    self.onReceiveResponse?(content.text)
-                    if content.images != nil {
-                        self.onReceiveImages?(content.images!)
+                    if let images = content.images, !images.isEmpty {
+                        self.onReceiveImages?(images)
                     }
+                    if let widgets = content.widgets, !widgets.isEmpty {
+                        print("🧩 Received Widgets!!!!!: \(widgets)")
+                        self.onReceiveWidgets?(widgets)
+                    }
+                    self.onReceiveResponse?(content.text)
                 }
             case "tool_call":
                 if case .toolCall(let content) = parsedMsg.content {

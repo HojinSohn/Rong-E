@@ -1,8 +1,9 @@
 import os
-import shutil
+import json
 import asyncio
 from contextlib import AsyncExitStack
 from pathlib import Path
+import shutil
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -10,7 +11,7 @@ from langchain.tools import tool
 
 # Agent imports
 from agent.agent.google_agent import GoogleAgent
-from agent.tools import get_tools, get_tool_map
+from agent.tools import get_tools
 from agent.services.google_service import AuthManager
 
 # --- OFFICIAL MCP IMPORTS ---
@@ -22,7 +23,32 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 PROMPTS_DIR = BASE_DIR / "prompts"
 
 load_dotenv()
+from typing import List, Literal, Optional
+from pydantic import BaseModel, Field
 
+# 1. Define the Action Schema (The "payload" of the widget)
+class WidgetAction(BaseModel):
+    url: Optional[str] = Field(None, description="Valid HTTPS URL for links or search results")
+    app_name: Optional[str] = Field(None, description="Name of the application to open (e.g., 'Spotify', 'VS Code')")
+    code: Optional[str] = Field(None, description="The code snippet to copy or run")
+    language: Optional[str] = Field(None, description="Programming language for the code snippet")
+    file_path: Optional[str] = Field(None, description="Absolute path to the file to preview")
+
+# 2. Define the Widget Schema
+class Widget(BaseModel):
+    type: Literal["link", "app_launch", "code_block", "file_preview"] = Field(
+        ..., description="The functional type of the widget"
+    )
+    label: str = Field(..., description="Short, button-like text (2-4 words)")
+    icon: str = Field(..., description="SF Symbol name (e.g., 'safari', 'envelope')")
+    action: WidgetAction = Field(..., description="The data required to execute the widget's function")
+
+# 3. Define the Container (The LLM will return this object)
+class WidgetResponse(BaseModel):
+    widgets: List[Widget] = Field(
+        default_factory=list, 
+        description="A list of 0 to 4 interactive widgets based on the conversation."
+    )
 class EchoAgent:
     def __init__(self):
         # 1. Initialize Components
@@ -167,9 +193,65 @@ class EchoAgent:
     async def run(self, user_query, mode=None, base64_image=None, callback=None):
         return await self._execute_run_loop(user_query, base64_image, callback)
 
+    async def _generate_widgets_with_llm(self, user_query: str, response_text: str, tool_history: list) -> list:
+        """
+        Generates widgets using Structured Output.
+        Returns a clean list of dictionaries, guaranteed to match the schema.
+        """
+        # --- 1. Prepare Context (Same as before) ---
+        safe_text = (response_text[:2000] + '...') if len(response_text) > 2000 else response_text
+        
+        tool_summary_lines = []
+        if tool_history:
+            for t in tool_history[-5:]:
+                args_str = str(t.get('args', {}))[:200]
+                out_str = str(t.get('output', ''))[:200]
+                tool_summary_lines.append(f"- Tool: {t.get('name')}\n  Args: {args_str}\n  Output: {out_str}")
+        
+        context_str = "\n".join(tool_summary_lines) if tool_summary_lines else "No tools used."
+
+        # --- 2. Configure the Structured LLM ---
+        # We use a low temperature for strict adherence to facts/links
+        structured_llm = self.llm.with_structured_output(WidgetResponse)
+
+        prompt = f"""
+        Analyze the conversation and generate interactive widgets.
+        
+        USER QUERY: {user_query}
+        AI RESPONSE: {safe_text}
+        TOOL HISTORY: {context_str}
+        
+        Rules:
+        1. If a URL is mentioned, create a 'link' widget.
+        2. If the user asks to open an app, create an 'app_launch' widget.
+        3. If a file was created or read, create a 'file_preview' widget.
+        4. Do not hallucinate URLs. Use only what is present in the context.
+        """
+
+        try:
+            # --- 3. Execute (Returns a Pydantic Object, not string!) ---
+            result: WidgetResponse = await structured_llm.ainvoke(prompt)
+            
+            # --- 4. Convert back to Dict for your frontend ---
+            # The result is already validated. We just need to dump it.
+            valid_widgets = [w.dict() for w in result.widgets]
+            
+            # Optional: Extra sanity check on URLs (Pydantic validates structure, not 404s)
+            final_widgets = []
+            for w in valid_widgets:
+                if w['type'] == 'link' and (not w['action'].get('url') or 'http' not in w['action']['url']):
+                    continue
+                final_widgets.append(w)
+
+            return final_widgets
+
+        except Exception as e:
+            print(f"❌ Structured Output Failed: {e}")
+            return []
+
     async def _execute_run_loop(self, user_query, base64_image, callback):
         print(f"\nUser: {user_query}")
-        
+
         if base64_image:
             image_url = base64_image if base64_image.startswith("data:") else f"data:image/jpeg;base64,{base64_image}"
             message_content = [{"type": "text", "text": user_query}, {"type": "image_url", "image_url": {"url": image_url}}]
@@ -178,7 +260,8 @@ class EchoAgent:
 
         self.messages.append(HumanMessage(content=message_content))
         iteration = 0
-        
+        tool_history = []  # Track tool calls for widget generation
+
         try:
             while iteration < self.max_iterations:
                 iteration += 1
@@ -187,12 +270,12 @@ class EchoAgent:
 
                 if ai_msg.tool_calls:
                     if callback: await callback("thought", ai_msg.content)
-                    
+
                     for tool_call in ai_msg.tool_calls:
                         tool_name = tool_call["name"].lower()
                         tool_args = tool_call["args"]
                         tool_call_id = tool_call["id"]
-                        
+
                         if callback: await callback("tool_call", {"toolName": tool_name, "toolArgs": tool_args})
 
                         selected_tool = self.tool_map.get(tool_name)
@@ -205,15 +288,35 @@ class EchoAgent:
                                     tool_output = selected_tool.invoke(tool_args)
                             except Exception as e:
                                 tool_output = f"Error: {e}"
-                            
+
+                            # Track tool usage for widget generation
+                            tool_history.append({
+                                "name": tool_name,
+                                "args": tool_args,
+                                "output": str(tool_output)[:1000]  # Limit output size
+                            })
+
                             self.messages.append(ToolMessage(content=str(tool_output), tool_call_id=tool_call_id, name=tool_name))
                             if callback: await callback("tool_result", {"toolName": tool_name, "result": str(tool_output)})
                         else:
                             self.messages.append(ToolMessage(content=f"Error: Tool {tool_name} not found", tool_call_id=tool_call_id, name=tool_name))
                 else:
-                    if callback: await callback("response", {"text": ai_msg.content})
-                    return {"text": ai_msg.content}
-                    
+                    # Generate widgets using LLM
+                    widgets = await self._generate_widgets_with_llm(
+                        user_query,
+                        ai_msg.content,
+                        tool_history
+                    )
+
+                    response_data = {
+                        "text": ai_msg.content,
+                        "images": [],
+                        "widgets": widgets
+                    }
+
+                    if callback: await callback("response", response_data)
+                    return response_data
+
         except Exception as e:
             print(f"Error: {e}")
-            return {"text": str(e)}
+            return {"text": str(e), "images": [], "widgets": []}

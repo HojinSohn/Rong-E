@@ -27,6 +27,8 @@ struct MainView: View {
     @State private var isListening = false
     @State private var isProcessing = false
     @State private var activeTool: String? = nil
+    @State private var expandedStepIds: Set<UUID> = []
+    @State private var pendingWidgets: [ChatWidgetData] = []
 
     // 6. Environment Objects
     @EnvironmentObject var appContext: AppContext
@@ -284,15 +286,24 @@ struct MainView: View {
         }
 
         socketClient.onReceiveToolCall = { toolCallContent in
+            // Format tool arguments as details string
+            let argsDetails = toolCallContent.toolArgs.map { "\($0.key): \($0.value.description)" }.joined(separator: "\n")
             appContext.reasoningSteps.append(
-                ReasoningStep(description: toolCallContent.toolName, status: .active)
+                ReasoningStep(description: toolCallContent.toolName, details: argsDetails.isEmpty ? nil : argsDetails, status: .active)
             )
         }
 
         socketClient.onReceiveToolOutput = { toolResultContent in
-            // Mark the last reasoning step as completed
+            // Mark the last reasoning step as completed and add result details
             if let lastIndex = appContext.reasoningSteps.lastIndex(where: { $0.status == .active }) {
                 appContext.reasoningSteps[lastIndex].status = .completed
+                // Append result to existing details or set as new details
+                let resultPreview = String(toolResultContent.result.prefix(500))
+                if let existingDetails = appContext.reasoningSteps[lastIndex].details {
+                    appContext.reasoningSteps[lastIndex].details = existingDetails + "\n\n--- Result ---\n" + resultPreview
+                } else {
+                    appContext.reasoningSteps[lastIndex].details = resultPreview
+                }
             }
         }
         
@@ -316,7 +327,11 @@ struct MainView: View {
                 ), size: CGSize(width: 600, height: 400), location: CGPoint(x: randomX, y: randomY))
             }
         }
-        
+
+        socketClient.onReceiveWidgets = { widgets in
+            pendingWidgets = widgets
+        }
+
         socketClient.onDisconnect = { errorText in
             finishProcessing(response: "Error: \(errorText)")
         }
@@ -402,9 +417,16 @@ struct MainView: View {
             isProcessing = false
             activeTool = nil
             shouldAnimateResponse = true
-            appContext.currentSessionChatMessages.append(ChatMessage(role: "assistant", content: response))
+
+            // Include any pending widgets in the message
+            let messageWidgets = pendingWidgets.isEmpty ? nil : pendingWidgets
+            appContext.currentSessionChatMessages.append(
+                ChatMessage(role: "assistant", content: response, widgets: messageWidgets)
+            )
+            pendingWidgets = [] // Clear pending widgets
+
             appContext.response = response
-            inputMode = false // Check this
+            inputMode = false
             fullChatViewMode = true
         }
     }
@@ -570,6 +592,7 @@ struct OrbiterButton: View {
 struct LeftColumnView: View {
     // Inject the context
     @EnvironmentObject var appContext: AppContext
+    @State private var expandedStepIds: Set<UUID> = []
 
     var body: some View {
         VStack(spacing: 12) {
@@ -649,31 +672,28 @@ struct LeftColumnView: View {
                         .font(.caption2)
                         .foregroundStyle(.cyan.opacity(0.8))
                 }
-                
+
                 // Dynamic List of Steps
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(appContext.reasoningSteps) { step in
-                            HStack(alignment: .top, spacing: 8) {
-                                // Status Icon
-                                statusIcon(for: step.status)
-                                    .padding(.top, 2)
-                                
-                                // Description
-                                Text(step.description)
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(.white.opacity(0.9))
-                                
-                                Spacer()
+                            ReasoningStepRow(step: step, isExpanded: expandedStepIds.contains(step.id)) {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    if expandedStepIds.contains(step.id) {
+                                        expandedStepIds.remove(step.id)
+                                    } else {
+                                        expandedStepIds.insert(step.id)
+                                    }
+                                }
                             }
                         }
                     }
                 }
-                
+
                 Spacer()
             }
             .padding(16)
-            .frame(height: 140)
+            .frame(minHeight: 140)
             .frame(maxWidth: .infinity)
             .background(Color.black.opacity(0.3))
             .cornerRadius(24)
@@ -688,6 +708,70 @@ struct LeftColumnView: View {
     // Helper View for status icons
     @ViewBuilder
     func statusIcon(for status: ReasoningStep.StepStatus) -> some View {
+        switch status {
+        case .completed:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.caption)
+        case .active:
+            ZStack {
+                Circle().stroke(Color.cyan, lineWidth: 2).frame(width: 10, height: 10)
+                Circle().fill(Color.cyan).frame(width: 4, height: 4)
+            }
+        case .pending:
+            Circle().stroke(Color.white.opacity(0.2), lineWidth: 1).frame(width: 10, height: 10)
+        }
+    }
+}
+
+// MARK: - Reasoning Step Row
+struct ReasoningStepRow: View {
+    let step: ReasoningStep
+    let isExpanded: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                // Status Icon
+                statusIcon(for: step.status)
+                    .padding(.top, 2)
+
+                // Description
+                Text(step.description)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.9))
+
+                Spacer()
+
+                // Expand/collapse indicator if details exist
+                if step.details != nil {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if step.details != nil {
+                    onTap()
+                }
+            }
+
+            // Expandable details section
+            if isExpanded, let details = step.details {
+                Text(details)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .padding(.leading, 20)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(8)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func statusIcon(for status: ReasoningStep.StepStatus) -> some View {
         switch status {
         case .completed:
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.caption)
@@ -1268,13 +1352,13 @@ struct RongEMessageRow: View {
             }
             
             // Message Bubble
-            VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
+            VStack(alignment: isUser ? .trailing : .leading, spacing: 8) {
                 // Header Label
                 Text(isUser ? "COMMAND INPUT" : "SYSTEM RESPONSE")
                     .font(.system(size: 8, weight: .bold))
                     .tracking(1.5)
                     .foregroundStyle(isUser ? Color.orange.opacity(0.8) : Color.cyan.opacity(0.8))
-                
+
                 // Content
                 VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
                     ForEach(message.content.components(separatedBy: "\n"), id: \.self) { line in
@@ -1289,6 +1373,12 @@ struct RongEMessageRow: View {
                 .background(
                     HUDGlassPanel(isAccent: isUser)
                 )
+
+                // Widgets (if present)
+                if let widgets = message.widgets, !widgets.isEmpty {
+                    ChatWidgetsContainer(widgets: widgets)
+                        .frame(maxWidth: 280)
+                }
             }
             .frame(maxWidth: 280, alignment: isUser ? .trailing : .leading)
             

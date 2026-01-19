@@ -1,10 +1,25 @@
 import SwiftUI
 import Combine
 
-struct ChatMessage: Identifiable, Codable, Hashable {
-    var id = UUID() 
+struct ChatMessage: Identifiable, Hashable {
+    var id = UUID()
     let role: String
     let content: String
+    var widgets: [ChatWidgetData]?
+
+    init(role: String, content: String, widgets: [ChatWidgetData]? = nil) {
+        self.role = role
+        self.content = content
+        self.widgets = widgets
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
+        lhs.id == rhs.id
+    }
 }
 
 enum AgentActivityType: Equatable {
@@ -16,10 +31,17 @@ enum AgentActivityType: Equatable {
 struct ReasoningStep: Identifiable {
     let id = UUID()
     let description: String
+    var details: String?
     var status: StepStatus
-    
+
     enum StepStatus {
         case completed, active, pending
+    }
+
+    init(description: String, details: String? = nil, status: StepStatus) {
+        self.description = description
+        self.details = details
+        self.status = status
     }
 }
 
