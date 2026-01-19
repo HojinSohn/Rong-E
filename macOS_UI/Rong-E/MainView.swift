@@ -590,135 +590,162 @@ struct OrbiterButton: View {
 
 // MARK: - Left Column (Agentic Dashboard)
 struct LeftColumnView: View {
-    // Inject the context
     @EnvironmentObject var appContext: AppContext
     @State private var expandedStepIds: Set<UUID> = []
 
     var body: some View {
         VStack(spacing: 12) {
             
-            // 1. System Vitals (Dynamic)
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("Orbita Core", systemImage: "cpu.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.cyan)
-                    Spacer()
-                    // Blinking Status Light
-                    Circle()
-                        .fill(appContext.currentActivity == .idle ? Color.gray : Color.green)
-                        .frame(width: 6, height: 6)
-                        .shadow(color: .green, radius: 4)
-                }
-                
-                // CPU Usage Bar
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("CPU Load")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.6))
-                        Spacer()
-                        Text("\(Int(appContext.cpuUsage * 100))%")
-                            .font(.caption2.bold())
-                            .foregroundStyle(.cyan)
-                    }
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.1))
-                            Capsule().fill(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
-                                .frame(width: geo.size.width * appContext.cpuUsage)
-                                .animation(.easeOut, value: appContext.cpuUsage)
-                        }
-                    }
-                    .frame(height: 4)
-                }
-                
-                // Memory Usage Bar
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Memory")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.6))
-                        Spacer()
-                        Text(appContext.memoryUsage)
-                            .font(.caption2.bold())
-                            .foregroundStyle(.purple)
-                    }
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.1))
-                            Capsule().fill(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
-                                .frame(width: geo.size.width * 0.6) // Mock value for now
-                        }
-                    }
-                    .frame(height: 4)
-                }
-            }
-            .padding(16)
-            .frame(height: 130)
-            .frame(maxWidth: .infinity)
-            .background(LinearGradient(colors: [Color(red: 0.1, green: 0.1, blue: 0.2), Color.black.opacity(0.4)], startPoint: .top, endPoint: .bottom))
-            .cornerRadius(24)
-            .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.08), lineWidth: 1))
-
-            // 2. Reasoning Trace (Dynamic List)
-            VStack(alignment: .leading, spacing: 14) {
+            // 1. Reasoning Trace (EXPANDED SECTION)
+            VStack(alignment: .leading, spacing: 0) {
+                // Header
                 HStack {
                     Text("Reasoning Trace")
-                        .font(.caption.bold())
-                        .foregroundStyle(.white.opacity(0.7))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .textCase(.uppercase)
                     Spacer()
-                    Image(systemName: "brain.head.profile")
+                    Image(systemName: "lines.measurement.horizontal")
                         .font(.caption2)
-                        .foregroundStyle(.cyan.opacity(0.8))
+                        .foregroundStyle(.white.opacity(0.3))
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.black.opacity(0.2))
 
-                // Dynamic List of Steps
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(appContext.reasoningSteps) { step in
-                            ReasoningStepRow(step: step, isExpanded: expandedStepIds.contains(step.id)) {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    if expandedStepIds.contains(step.id) {
-                                        expandedStepIds.remove(step.id)
-                                    } else {
-                                        expandedStepIds.insert(step.id)
-                                    }
+                // Scrollable Content
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(appContext.reasoningSteps) { step in
+                                ReasoningStepRow(
+                                    step: step,
+                                    isExpanded: expandedStepIds.contains(step.id)
+                                ) {
+                                    toggleExpansion(for: step.id)
                                 }
+                                .id(step.id)
                             }
+                        }
+                        .padding(10)
+                    }
+                    // Auto-scroll to bottom when new steps arrive
+                    .onChange(of: appContext.reasoningSteps.count) { _ in
+                        if let lastId = appContext.reasoningSteps.last?.id {
+                            withAnimation { proxy.scrollTo(lastId, anchor: .bottom) }
                         }
                     }
                 }
-
-                Spacer()
             }
-            .padding(16)
-            .frame(minHeight: 140)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity) // Fills remaining space
             .background(Color.black.opacity(0.3))
-            .cornerRadius(24)
-            .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.05), lineWidth: 1))
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(.white.opacity(0.05), lineWidth: 1)
+            )
             
-            // 3. Smart Handoff Widget (Connected to AppContext)
-            SmartHandoffWidget()
-        }
-        .frame(width: 200)
-    }
-    
-    // Helper View for status icons
-    @ViewBuilder
-    func statusIcon(for status: ReasoningStep.StepStatus) -> some View {
-        switch status {
-        case .completed:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.caption)
-        case .active:
-            ZStack {
-                Circle().stroke(Color.cyan, lineWidth: 2).frame(width: 10, height: 10)
-                Circle().fill(Color.cyan).frame(width: 4, height: 4)
+            // 2. Agent Environment (New Useful Widget)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Environment")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .textCase(.uppercase)
+                
+                // Model Info
+                HStack {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(.yellow)
+                    Text("Gemini 2.5 Flash")
+                        .foregroundStyle(.white.opacity(0.9))
+                    Spacer()
+                    Text("PRO")
+                        .font(.system(size: 8, weight: .bold))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(4)
+                }
+                .font(.caption)
+                
+                Divider().overlay(.white.opacity(0.1))
+                
+                // Workspace / Context
+                HStack {
+                    Image(systemName: "folder.fill")
+                        .foregroundStyle(.blue)
+                    Text("~/Projects/Rong-E")
+                        .truncationMode(.middle)
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .font(.caption)
+                
+                // Active Tools Count
+                HStack {
+                    Image(systemName: "hammer.fill")
+                        .foregroundStyle(.orange)
+                    Text("MCP Servers")
+                        .foregroundStyle(.white.opacity(0.7))
+                    Spacer()
+                    Text("3 Active")
+                        .foregroundStyle(.green)
+                        .fontWeight(.medium)
+                }
+                .font(.caption)
             }
-        case .pending:
-            Circle().stroke(Color.white.opacity(0.2), lineWidth: 1).frame(width: 10, height: 10)
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(red: 0.12, green: 0.12, blue: 0.14))
+                    .stroke(.white.opacity(0.08), lineWidth: 1)
+            )
         }
+        .frame(width: 240) // Slightly widened for better reading
+        .padding(.vertical, 12)
+        .padding(.leading, 12)
+    }
+
+    private func toggleExpansion(for id: UUID) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            if expandedStepIds.contains(id) {
+                expandedStepIds.remove(id)
+            } else {
+                expandedStepIds.insert(id)
+            }
+        }
+    }
+}
+
+// MARK: - Helper Views
+
+// A compact Ring chart for CPU/Mem
+struct MetricRing: View {
+    let label: String
+    let value: Double // 0.0 to 1.0
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.1), lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: value)
+                    .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 24, height: 24)
+            
+            VStack(alignment: .leading, spacing: 0) {
+                Text(label)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.5))
+                Text("\(Int(value * 100))%")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(color)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
