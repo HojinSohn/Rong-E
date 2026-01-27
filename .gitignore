@@ -5,4 +5,6 @@ tts/
 # Secrets
 .env
 agent/config
-*.DS_Store
+.DS_Store
+dist/
+build/

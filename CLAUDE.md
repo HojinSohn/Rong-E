@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Echo is a macOS AI assistant with a Python FastAPI/LangChain backend and a native SwiftUI frontend. The assistant ("Rong-E") runs as a floating overlay window and communicates with the backend via WebSocket.
+Rong-E is a macOS AI assistant with a Python FastAPI/LangChain backend and a native SwiftUI frontend. The assistant ("Rong-E") runs as a floating overlay window and communicates with the backend via WebSocket.
 
 ## Commands
 
@@ -38,7 +38,7 @@ RongESocketClient (WebSocket)
     ↓
 FastAPI Server (server.py)
     ↓
-EchoAgent (LangChain orchestrator)
+Rong-E Agent (LangChain orchestrator)
     ├── Gemini 2.5 Flash (LLM)
     ├── Base Tools (web_search, file_ops, KB search)
     ├── GoogleAgent (Gmail, Calendar, Sheets sub-agent)

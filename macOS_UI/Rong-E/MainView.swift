@@ -400,16 +400,35 @@ struct MainView: View {
             onRetry: {
                 Task { @MainActor in
                     do {
-                    } catch {}
+                        let _ = try await ScreenshotManager.captureMainScreen()
+                        
+                        // Success! Permission granted
+                        print("✅ Manual retry successful!")
+                        
+                        if let query = pendingQuery, let mode = pendingMode {
+                            pendingQuery = nil
+                            pendingMode = nil
+                            waitingForPermission = false
+
+                            // close overlay
+                            windowCoordinator.closePermissionWaitingOverlay()
+
+                            captureAndSendWithScreenshot(query: query, selectedMode: mode)
+                        }
+                    } catch {
+                        print("❌ Still no permission on manual retry")
+                    }
                 }
             },
             onCancel: {
+                // Send query without screenshot
                 if let query = pendingQuery, let mode = pendingMode {
                     pendingQuery = nil
                     pendingMode = nil
                     waitingForPermission = false
                     socketClient.sendMessage(query, mode: mode)
 
+                    // close overlay
                     windowCoordinator.closePermissionWaitingOverlay()
 
                     activeTool = "WS_STREAM"
@@ -1427,27 +1446,27 @@ struct RongEMessageRow: View {
 /// The "Glass" background for bubbles
 struct HUDGlassPanel: View {
     var isAccent: Bool
-    
+
     var body: some View {
         ZStack {
             // Translucent filling
-            Color.black.opacity(0.4)
-            
+            Color.black.opacity(0.2)
+
             // Tech Borders
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(
                     LinearGradient(
-                        colors: isAccent 
-                            ? [.orange.opacity(0.6), .orange.opacity(0.1)] 
-                            : [.cyan.opacity(0.6), .cyan.opacity(0.1)],
+                        colors: isAccent
+                            ? [.orange.opacity(0.4), .orange.opacity(0.08)]
+                            : [.cyan.opacity(0.4), .cyan.opacity(0.08)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 1
+                    lineWidth: 0.8
                 )
         }
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: isAccent ? .orange.opacity(0.1) : .cyan.opacity(0.15), radius: 8)
+        .shadow(color: isAccent ? .orange.opacity(0.08) : .cyan.opacity(0.1), radius: 6)
     }
 }
 
@@ -1481,8 +1500,8 @@ struct RongEAvatarIcon: View {
 struct RongEBackground: View {
     var body: some View {
         ZStack {
-            Color(red: 0.05, green: 0.08, blue: 0.12) // Deep Sci-fi Blue
-            
+            Color(red: 0.08, green: 0.10, blue: 0.14) // Lighter sci-fi blue
+
             // Grid Lines
             GeometryReader { geo in
                 Path { path in
@@ -1492,19 +1511,19 @@ struct RongEBackground: View {
                         path.addLine(to: CGPoint(x: geo.size.width, y: y))
                     }
                 }
-                .stroke(Color.cyan.opacity(0.05), lineWidth: 1)
+                .stroke(Color.cyan.opacity(0.03), lineWidth: 1)
             }
-            
+
             // Vignette
             RadialGradient(
-                colors: [.clear, .black.opacity(0.8)],
+                colors: [.clear, .black.opacity(0.4)],
                 center: .center,
                 startRadius: 100,
                 endRadius: 400
             )
         }
         .ignoresSafeArea()
-        .opacity(0.7)
+        .opacity(0.5)
     }
 }
 
@@ -1520,6 +1539,7 @@ struct HeaderView: View {
     let toggleMinimized: () -> Void
     
     @State private var googleHovering = false
+    @State private var workflowHovering = false
     @State private var settingsHovering = false
     @State private var shrinkHovering = false
 
@@ -1559,6 +1579,36 @@ struct HeaderView: View {
             .onHover { hovering in
                 withAnimation(.easeInOut(duration: 0.2)) {
                     googleHovering = hovering
+                }
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .contentShape(Rectangle())
+            .zIndex(10)
+
+            // Workflow Settings Button
+            Button(action: {
+                windowCoordinator.openWorkflowSettings()
+            }) {
+                ZStack {
+                    Color.white.opacity(workflowHovering ? 0.25 : 0.15)
+                        .cornerRadius(8)
+
+                    Image(systemName: "list.bullet.clipboard.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 32, height: 32)
+                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .scaleEffect(workflowHovering ? 1.1 : 1.0)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    workflowHovering = hovering
                 }
                 if hovering {
                     NSCursor.pointingHand.push()
