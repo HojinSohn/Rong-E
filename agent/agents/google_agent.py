@@ -11,7 +11,7 @@ from agent.settings.settings import PROMPTS_DIR
 
 # Google Agent Class
 # Simplified agent focused on Google API interactions
-# Should not share state with EchoAgent. Independent Agent for Google tasks.
+# Should not share state with RongEAgent. Independent Agent for Google tasks.
 class GoogleAgent:
     def __init__(self):
         # 1. Initialize LLM
@@ -57,6 +57,7 @@ class GoogleAgent:
         except Exception as e:
             self.connected = False
             print(f"Authentication failed: {e}")
+            raise e
 
     async def refresh_credentials(self):
         """Refreshes Google API Credentials"""
@@ -86,7 +87,7 @@ class GoogleAgent:
         self.llm_with_tools = None
 
     async def run(self, task_description: str) -> str:
-        """Runs the agent with the given task description. Task description is provided by the EchoAgent to perform Google-related tasks."""
+        """Runs the agent with the given task description. Task description is provided by the RongEAgent to perform Google-related tasks."""
         
         if not self.connected:
             return "❌ Not authenticated with Google APIs."

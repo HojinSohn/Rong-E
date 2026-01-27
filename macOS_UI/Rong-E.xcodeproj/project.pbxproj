@@ -6,7 +6,26 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A406C0232F25673F008FA20C /* Rong-E_agent in Copy Files */ = {isa = PBXBuildFile; fileRef = A406C0222F25673F008FA20C /* Rong-E_agent */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A406BFD92F2538AF008FA20C /* Copy Files */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 7;
+			files = (
+				A406C0232F25673F008FA20C /* Rong-E_agent in Copy Files */,
+			);
+			name = "Copy Files";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		A406C0222F25673F008FA20C /* Rong-E_agent */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "Rong-E_agent"; path = "../agent/dist/Rong-E_agent"; sourceTree = "<group>"; };
 		A4425FE02EEB6C620009FAC8 /* Rong-E.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Rong-E.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -32,6 +51,7 @@
 		A4425FD72EEB6C620009FAC8 = {
 			isa = PBXGroup;
 			children = (
+				A406C0222F25673F008FA20C /* Rong-E_agent */,
 				A4425FE22EEB6C620009FAC8 /* Rong-E */,
 				A4425FE12EEB6C620009FAC8 /* Products */,
 			);
@@ -55,6 +75,7 @@
 				A4425FDC2EEB6C620009FAC8 /* Sources */,
 				A4425FDD2EEB6C620009FAC8 /* Frameworks */,
 				A4425FDE2EEB6C620009FAC8 /* Resources */,
+				A406BFD92F2538AF008FA20C /* Copy Files */,
 			);
 			buildRules = (
 			);

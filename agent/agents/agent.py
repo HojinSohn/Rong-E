@@ -10,22 +10,20 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.tools import tool
 
 # Agent imports
-from agent.agent.google_agent import GoogleAgent
+from agent.agents.google_agent import GoogleAgent
 from agent.tools import get_tools
 from agent.services.google_service import AuthManager
+from agent.settings.settings import PROMPTS_DIR
 
 # --- OFFICIAL MCP IMPORTS ---
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from langchain_mcp_adapters.tools import load_mcp_tools
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-PROMPTS_DIR = BASE_DIR / "prompts"
-
-load_dotenv()
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
+load_dotenv()
 # 1. Define the Action Schema (The "payload" of the widget)
 class WidgetAction(BaseModel):
     url: Optional[str] = Field(None, description="Valid HTTPS URL for links or search results")
@@ -49,7 +47,7 @@ class WidgetResponse(BaseModel):
         default_factory=list, 
         description="A list of 0 to 4 interactive widgets based on the conversation."
     )
-class EchoAgent:
+class RongEAgent:
     def __init__(self):
         # 1. Initialize Components
         self.llm = ChatGoogleGenerativeAI(
@@ -93,6 +91,10 @@ class EchoAgent:
         """Authenticate GoogleAgent"""
         await self.google_agent.authenticate(token_file, client_secrets_file)
 
+    async def revoke_google_credentials(self):
+        """Revoke Google Credentials"""
+        await self.google_agent.revoke_credentials()
+
     def refresh_active_tools(self):
         """Aggregates Base Tools + Tools from all Active MCP Servers"""
         # 1. Start with Base Tools
@@ -114,10 +116,11 @@ class EchoAgent:
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         # print(f"🔄 State Synced: {len(self.tools)} tools active.")
 
-    async def sync_mcp_servers(self, config: dict):
+    async def sync_mcp_servers(self, config: dict) -> dict:
         """
         The Diffing Engine:
         Compares incoming config vs active servers.
+        Returns per-server results: {name: {"status": "connected"|"error", "error": str|None}}
         """
         requested_servers = config.get("mcpServers", {})
         current_server_names = set(self.active_mcp_servers.keys())
@@ -126,7 +129,9 @@ class EchoAgent:
         # 1. Calculate Diff
         to_add = requested_server_names - current_server_names
         to_remove = current_server_names - requested_server_names
-        
+
+        results = {}
+
         # 2. Handle Removals
         for name in to_remove:
             print(f"🔻 Stopping MCP Server: {name}")
@@ -137,23 +142,39 @@ class EchoAgent:
         for name in to_add:
             print(f"🔺 Starting MCP Server: {name}")
             server_config = requested_servers[name]
-            await self._start_single_server(name, server_config)
+            success, error = await self._start_single_server(name, server_config)
+            if success:
+                results[name] = {"status": "connected", "error": None}
+            else:
+                results[name] = {"status": "error", "error": error}
 
-        # 4. Refresh Tools if state changed
+        # 4. Include already-running servers as connected
+        for name in (requested_server_names & current_server_names):
+            results[name] = {"status": "connected", "error": None}
+
+        # 5. Refresh Tools if state changed
         if to_add or to_remove:
             self.refresh_active_tools()
         else:
             print("✅ MCP Config unchanged. Keeping connections alive.")
 
-    async def _start_single_server(self, name: str, config: dict):
-        """Helper to start a single server and store its state"""
+        return results
+
+    def get_server_statuses(self) -> dict:
+        """Returns current active server names with connected status."""
+        return {
+            name: {"status": "connected", "error": None}
+            for name in self.active_mcp_servers
+        }
+
+    async def _start_single_server(self, name: str, config: dict) -> tuple[bool, str | None]:
+        """Helper to start a single server and store its state. Returns (success, error_msg)."""
+        stack = AsyncExitStack()
         try:
-            stack = AsyncExitStack()
-            
             command = config.get("command")
             args = config.get("args", [])
             env = config.get("env", {})
-            
+
             full_env = os.environ.copy()
             full_env.update(env)
             executable = shutil.which(command) or command
@@ -164,22 +185,24 @@ class EchoAgent:
             stdio_transport = await stack.enter_async_context(stdio_client(server_params))
             read, write = stdio_transport
             session = await stack.enter_async_context(ClientSession(read, write))
-            
+
             await session.initialize()
-            
+
             # Load Tools
             mcp_tools = await load_mcp_tools(session)
-            
+
             # STORE IN STATE
             self.active_mcp_servers[name] = {
                 "session": session,
                 "stack": stack,
                 "tools": mcp_tools
             }
-            
+            return (True, None)
+
         except Exception as e:
             print(f"❌ Failed to start {name}: {e}")
             await stack.aclose()
+            return (False, str(e))
 
     async def shutdown_all_servers(self):
         """Full cleanup"""

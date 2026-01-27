@@ -194,6 +194,7 @@ class SocketClient: ObservableObject {
     var onDisconnect: ((String) -> Void)?
     var onReceivedCredentialsSuccess: ((String) -> Void)?
     var onMCPSyncResult: ((Bool, String?) -> Void)?
+    var onMCPServerStatus: (([MCPServerStatusInfo]) -> Void)?
 
     func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
@@ -205,14 +206,34 @@ class SocketClient: ObservableObject {
 
     func connect() {
         if webSocketTask?.state == .running { return }
+        connectWithRetry(maxRetries: 10, delay: 1.0)
+    }
 
+    private func connectWithRetry(maxRetries: Int, delay: TimeInterval, attempt: Int = 0) {
         let url = URL(string: "ws://127.0.0.1:8000/ws")!
         let session = URLSession(configuration: .default)
         webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
-        
-        receiveMessages()
-        DispatchQueue.main.async { self.isConnected = true }
+
+        // Check connection after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+
+            if self.webSocketTask?.state == .running {
+                print("✅ WebSocket connected on attempt \(attempt + 1)")
+                self.isConnected = true
+                self.receiveMessages()
+            } else if attempt < maxRetries - 1 {
+                print("🔄 WebSocket connection attempt \(attempt + 1) failed, retrying in \(delay)s...")
+                self.webSocketTask?.cancel(with: .goingAway, reason: nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    self.connectWithRetry(maxRetries: maxRetries, delay: delay, attempt: attempt + 1)
+                }
+            } else {
+                print("❌ WebSocket failed to connect after \(maxRetries) attempts")
+                self.isConnected = false
+            }
+        }
     }
     
     func disconnect() {
@@ -246,6 +267,20 @@ class SocketClient: ObservableObject {
 
     private func handleMessage(_ text: String) {
         guard let data = text.data(using: .utf8) else { return }
+
+        // Handle mcp_server_status specially (content is an object, not a string)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let type = json["type"] as? String,
+           type == "mcp_server_status",
+           let contentObj = json["content"],
+           let contentData = try? JSONSerialization.data(withJSONObject: contentObj),
+           let statusContent = try? JSONDecoder().decode(MCPServerStatusContent.self, from: contentData) {
+            DispatchQueue.main.async { [weak self] in
+                self?.onMCPServerStatus?(statusContent.servers)
+            }
+            return
+        }
+
         do {
             let parsedMsg = try self.decoder.decode(AgentMessage.self, from: data)
             respondToParsedMessage(parsedMsg)
@@ -314,6 +349,11 @@ class SocketClient: ObservableObject {
         let payload = ChatPayload(text: text, mode: mode, base64_image: base64Image)
         if let jsonData = try? JSONEncoder().encode(payload),
            let jsonString = String(data: jsonData, encoding: .utf8) {
+            if webSocketTask?.state != .running {
+                // Try to reconnect
+                print("⚠️ WebSocket not connected, attempting to reconnect...")
+                connect()
+            }
             let message = URLSessionWebSocketTask.Message.string(jsonString)
             webSocketTask?.send(message) { error in
                 if let error = error {
@@ -331,6 +371,17 @@ class SocketClient: ObservableObject {
             let message = URLSessionWebSocketTask.Message.string(jsonString)
             webSocketTask?.send(message) { error in
                 if let error = error { print("❌ Send Error: \(error)") }
+            }
+        }
+    }
+
+    func sendMCPStatusRequest() {
+        let json: [String: String] = ["data_type": "mcp_status_request"]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ MCP Status Request Send Error: \(error)") }
             }
         }
     }

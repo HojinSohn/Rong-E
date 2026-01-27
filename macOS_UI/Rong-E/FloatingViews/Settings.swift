@@ -361,7 +361,10 @@ struct MCPSettingsView: View {
                 ScrollView {
                     VStack(spacing: 6) {
                         ForEach(configManager.servers) { server in
-                            MCPServerRow(server: server) {
+                            MCPServerRow(
+                                server: server,
+                                status: configManager.serverStatuses[server.name] ?? .idle
+                            ) {
                                 configManager.removeServer(server)
                             }
                         }
@@ -431,15 +434,14 @@ struct MCPSettingsView: View {
 
 struct MCPServerRow: View {
     let server: MCPServerConfig
+    let status: MCPServerConnectionStatus
     let onDelete: () -> Void
     @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Circle()
-                    .fill(Color.jarvisBlue)
-                    .frame(width: 6, height: 6)
+                statusIndicator
 
                 Text(server.name.uppercased())
                     .font(.system(size: 11, design: .monospaced))
@@ -485,6 +487,30 @@ struct MCPServerRow: View {
         .padding(8)
         .background(Color.black.opacity(0.3))
         .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.2), lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private var statusIndicator: some View {
+        switch status {
+        case .idle:
+            Circle()
+                .fill(Color.gray)
+                .frame(width: 6, height: 6)
+        case .connecting:
+            ProgressView()
+                .controlSize(.mini)
+                .frame(width: 12, height: 12)
+        case .connected:
+            Circle()
+                .fill(Color.green)
+                .frame(width: 6, height: 6)
+                .shadow(color: .green.opacity(0.6), radius: 3)
+        case .error(let msg):
+            Circle()
+                .fill(Color.red)
+                .frame(width: 6, height: 6)
+                .help(msg)
+        }
     }
 }
 

@@ -192,6 +192,25 @@ struct MCPConfigValidator {
     }
 }
 
+// MARK: - Server Connection Status
+
+enum MCPServerConnectionStatus: Equatable {
+    case idle
+    case connecting
+    case connected
+    case error(String)
+}
+
+struct MCPServerStatusInfo: Codable {
+    let name: String
+    let status: String
+    let error: String?
+}
+
+struct MCPServerStatusContent: Codable {
+    let servers: [MCPServerStatusInfo]
+}
+
 // MARK: - Persistence
 
 class MCPConfigManager: ObservableObject {
@@ -201,6 +220,38 @@ class MCPConfigManager: ObservableObject {
     @Published var servers: [MCPServerConfig] = []
     @Published var lastError: String?
     @Published var isLoading: Bool = false
+    @Published var serverStatuses: [String: MCPServerConnectionStatus] = [:]
+
+    /// Number of currently connected servers
+    var connectedServerCount: Int {
+        serverStatuses.values.filter { $0 == .connected }.count
+    }
+
+    /// Names of currently connected servers
+    var connectedServerNames: [String] {
+        serverStatuses.filter { $0.value == .connected }.map { $0.key }.sorted()
+    }
+
+    /// Update statuses from backend response
+    func updateStatuses(from serverInfos: [MCPServerStatusInfo]) {
+        for info in serverInfos {
+            switch info.status {
+            case "connecting":
+                serverStatuses[info.name] = .connecting
+            case "connected":
+                serverStatuses[info.name] = .connected
+            case "error":
+                serverStatuses[info.name] = .error(info.error ?? "Unknown error")
+            default:
+                serverStatuses[info.name] = .idle
+            }
+        }
+        // Remove statuses for servers no longer in the list
+        let activeNames = Set(serverInfos.map { $0.name })
+        for key in serverStatuses.keys where !activeNames.contains(key) {
+            serverStatuses.removeValue(forKey: key)
+        }
+    }
 
     private let configKey = "mcp_config"
 

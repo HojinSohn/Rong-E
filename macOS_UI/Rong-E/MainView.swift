@@ -172,17 +172,19 @@ struct MainView: View {
                         }
                         .padding(24)
                         .background(
-                            RongEHUDView(isHovering: false)
+                            
+                            RongERing()
+                                .scaleEffect(2.5)
                                 .blur(radius: 10)
+                                .environmentObject(themeManager)
                                 .allowsHitTesting(false)
                         )
                     }
                     .transition(.opacity)
                 } else {
-                    RongEHUDView(isHovering: onCoreHover)
-                        .blur(radius: 0)
-                        .allowsHitTesting(false)
-                        .scaleEffect(0.2)
+                    RongERing()
+                        .scaleEffect(0.6)
+                        .environmentObject(themeManager)
                 }
             }
             // MARK: - Frame Animation Logic
@@ -330,6 +332,10 @@ struct MainView: View {
 
         socketClient.onReceiveWidgets = { widgets in
             pendingWidgets = widgets
+        }
+
+        socketClient.onMCPServerStatus = { statusInfos in
+            MCPConfigManager.shared.updateStatuses(from: statusInfos)
         }
 
         socketClient.onDisconnect = { errorText in
@@ -591,6 +597,7 @@ struct OrbiterButton: View {
 // MARK: - Left Column (Agentic Dashboard)
 struct LeftColumnView: View {
     @EnvironmentObject var appContext: AppContext
+    @ObservedObject var mcpConfigManager = MCPConfigManager.shared
     @State private var expandedStepIds: Set<UUID> = []
 
     var body: some View {
@@ -680,24 +687,25 @@ struct LeftColumnView: View {
                 }
                 .font(.caption)
                 
-                // Active Tools Count
+                // Active MCP Servers Count
                 HStack {
                     Image(systemName: "hammer.fill")
                         .foregroundStyle(.orange)
                     Text("MCP Servers")
                         .foregroundStyle(.white.opacity(0.7))
                     Spacer()
-                    Text("3 Active")
-                        .foregroundStyle(.green)
+                    Text("\(mcpConfigManager.connectedServerCount) Active")
+                        .foregroundStyle(mcpConfigManager.connectedServerCount > 0 ? .green : .gray)
                         .fontWeight(.medium)
                 }
                 .font(.caption)
             }
             .padding(14)
-            .background(
+            .background(Color.black.opacity(0.3))
+            .cornerRadius(16)
+            .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(red: 0.12, green: 0.12, blue: 0.14))
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
+                    .stroke(.white.opacity(0.05), lineWidth: 1)
             )
         }
         .frame(width: 240) // Slightly widened for better reading
@@ -827,11 +835,6 @@ struct MainColumnView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                // Rong-E Icon
-                Image("RongeIcon")
-                    .resizable()
-                    .frame(width: 40, height: 40)
-
                 // Mode Indicator
                 Text("\(appContext.modes.first(where: { $0.id == Int(appContext.currentMode.id) })?.name ?? "Default Mode") MODE")
                     .font(.system(size: 12, weight: .medium))
@@ -1007,93 +1010,79 @@ struct InputAreaView: View {
     }
 }
 
-
-struct RongEHUDView: View {
-  var isHovering: Bool = false
-  
-  let neonBlue = Color(red: 0.2, green: 0.8, blue: 1.0)
-  let deepBlue = Color(red: 0.05, green: 0.1, blue: 0.3)
-  
-  var body: some View {
-    ZStack {
-      // Simplified background - single gradient instead of expanding on hover
-      RadialGradient(
-        gradient: Gradient(colors: [
-          deepBlue.opacity(isHovering ? 0.6 : 0.3),
-          Color.clear
-        ]),
-        center: .center,
-        startRadius: 10,
-        endRadius: isHovering ? 400 : 300
-      )
-      .animation(.easeInOut(duration: 0.3), value: isHovering)
-      
-      ZStack {
-        // Combined outer rings - reduced from 2 to 1 with dual effect
-        Circle()
-          .trim(from: 0.1, to: 0.4)
-          .stroke(
-            LinearGradient(
-              gradient: Gradient(colors: [.gray, neonBlue, .gray]),
-              startPoint: .topLeading,
-              endPoint: .bottomTrailing
-            ),
-            style: StrokeStyle(lineWidth: 10, lineCap: .round)
-          )
-          .frame(width: 350, height: 350)
-          .rotationEffect(.degrees(isHovering ? 45 : 360))
-          .animation(
-            isHovering ? .spring() : .linear(duration: 40).repeatForever(autoreverses: false),
-            value: isHovering
-          )
-        
-        // Middle data ring
-        Circle()
-          .stroke(neonBlue.opacity(0.5), style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: [5, 10]))
-          .frame(width: 300, height: 300)
-          .rotationEffect(.degrees(isHovering ? -20 : 360))
-          .animation(
-            isHovering ? .spring() : .linear(duration: 20).repeatForever(autoreverses: false),
-            value: isHovering
-          )
-        
-        // Inner accent rings - combined into single layer
-        Circle()
-          .trim(from: 0, to: 0.8)
-          .stroke(neonBlue, style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [20, 20]))
-          .frame(width: 210, height: 210)
-          .rotationEffect(.degrees(isHovering ? 0 : 360))
-          .animation(
-            isHovering ? .spring() : .linear(duration: 15).repeatForever(autoreverses: false),
-            value: isHovering
-          )
-        
-        // Core element - simplified and combined
+struct RongERing: View {
+    // We can keep ThemeManager if you need it for other things, 
+    // but here we define specific light blue colors for the glow effect.
+    @EnvironmentObject var themeManager: ThemeManager 
+    
+    @State private var pulse = false
+    @State private var rotate = false
+    
+    // Define custom light blue colors
+    let lightBlueGlow = Color(red: 0.2, green: 0.85, blue: 1.0) // Cyan-ish
+    let deepBlue = Color(red: 0.0, green: 0.5, blue: 1.0)       // Standard Blue
+    
+    var body: some View {
         ZStack {
-          Circle()
-            .fill(Color.white)
-            .frame(width: isHovering ? 25 : 20, height: isHovering ? 25 : 20)
-            .blur(radius: isHovering ? 5 : 3)
-            .shadow(color: .white, radius: isHovering ? 15 : 10)
-          
-          Circle()
-            .stroke(Color.white, lineWidth: 2)
-            .frame(width: 40, height: 40)
-          
-          // Single combined crosshair rectangle group
-          Group {
-            Rectangle().fill(neonBlue).frame(width: isHovering ? 150 : 100, height: 1)
-            Rectangle().fill(neonBlue).frame(width: 1, height: isHovering ? 150 : 100)
-          }
-          .animation(.spring(), value: isHovering)
+            // 1. Outer Ambient Glow (The "Atmosphere")
+            Circle()
+                .fill(lightBlueGlow.opacity(pulse ? 0.4 : 0.1))
+                .frame(width: 130, height: 130)
+                .blur(radius: 20)
+                .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: pulse)
+            
+            // 2. Rotating Outer Ring (With Angular Gradient for motion effect)
+            Circle()
+                .trim(from: 0.0, to: 0.75) // Not a full circle makes rotation visible
+                .stroke(
+                    AngularGradient(
+                        gradient: Gradient(colors: [lightBlueGlow.opacity(0), lightBlueGlow]),
+                        center: .center
+                    ),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                )
+                .frame(width: 110, height: 110)
+                .rotationEffect(.degrees(rotate ? 360 : 0))
+                .animation(.linear(duration: 3).repeatForever(autoreverses: false), value: rotate)
+            
+            // 3. Static Thin Ring
+            Circle()
+                .stroke(lightBlueGlow.opacity(0.3), lineWidth: 1)
+                .frame(width: 95, height: 95)
+            
+            // 4. Main Button Orb
+            Circle()
+                .fill(
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            Color.white.opacity(0.8), // Hot center
+                            lightBlueGlow,            // Bright Blue body
+                            deepBlue                  // Darker edges for 3D depth
+                        ]),
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 50
+                    )
+                )
+                .frame(width: 80, height: 80)
+                // Strong Glow Shadow
+                .shadow(color: lightBlueGlow.opacity(0.8), radius: pulse ? 25 : 15)
+                .shadow(color: deepBlue.opacity(0.5), radius: 5)
+                .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: pulse)
+            
+            // 5. Glossy Reflection (Top Left) - Makes it look like glass/button
+            Circle()
+                .trim(from: 0.6, to: 0.9)
+                .stroke(Color.white.opacity(0.6), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .frame(width: 70, height: 70)
+                .blur(radius: 1)
+                .rotationEffect(.degrees(-45))
         }
-        .opacity(0.9)
-      }
-      .scaleEffect(isHovering ? 1.05 : 1.0)
-      .shadow(color: neonBlue.opacity(isHovering ? 0.8 : 0.6), radius: isHovering ? 30 : 20)
-      .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isHovering)
+        .onAppear {
+            pulse = true
+            rotate = true
+        }
     }
-  }
 }
 
 struct ChatView: View {
@@ -1372,8 +1361,18 @@ struct RongEMessageRow: View {
             
             // AI Avatar / Decorator
             if !isUser {
-                RongEAvatarIcon()
-                    .padding(.top, 4)
+                // Rong-E Icon
+                Image("RongeIcon")
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 50, height: 50)
+                    .background(Circle().fill(Color.cyan.opacity(0.2)))
+                    .shadow(color: Color.cyan.opacity(0.4), radius: 8)
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(Color.cyan, lineWidth: 2)
+                    )
             } else {
                 Spacer()
             }

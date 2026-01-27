@@ -3,21 +3,16 @@ import os
 import platform
 from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchRun
-from agent.utils.file_utils import display_directory_tree, read_file_data, collect_file_paths, separate_files_by_type
-from agent.services.rag import rag
-import datetime
-import os
 import subprocess
 from typing import List
 from agent.models.model import (
-    JobApplicationSchema, 
-    WebSearchSchema, 
-    ListDirectorySchema, 
-    ReadFileSchema, 
-    CollectFilesSchema, 
-    SeparateFilesSchema, 
-    OpenApplicationSchema, 
-    KBSearchSchema
+    JobApplicationSchema,
+    WebSearchSchema,
+    ListDirectorySchema,
+    ReadFileSchema,
+    CollectFilesSchema,
+    SeparateFilesSchema,
+    OpenApplicationSchema
 )
 
 search = DuckDuckGoSearchRun()
@@ -31,36 +26,6 @@ def web_search(query: str):
 def get_current_date_time():
     """Returns the current local date and time."""
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-@tool("list_directory", description="Lists the directory tree of a given path.", args_schema=ListDirectorySchema)
-def list_directory(path: str):
-    """Lists the directory tree of a given path."""
-    display_directory_tree(path)
-    return f"Displayed directory tree for {path}"
-
-@tool("read_file", description="Reads the content of a file based on its type.", args_schema=ReadFileSchema)
-def read_file(path: str):
-    """Reads the content of a file based on its type."""
-    content = read_file_data(path)
-    if content is not None:
-        return content
-    else:
-        return f"Unsupported file type or error reading file: {path}"
-    
-@tool("collect_files", description="Collects all file paths from a directory or single file.", args_schema=CollectFilesSchema)
-def collect_files(path: str):
-    """Collects all file paths from a directory or single file."""
-    file_paths = collect_file_paths(path)
-    return file_paths
-
-@tool("separate_files", description="Separates files into image and text categories.", args_schema=SeparateFilesSchema)
-def separate_files(file_paths: List[str]):
-    """Separates files into image and text categories."""
-    image_files, text_files = separate_files_by_type(file_paths)
-    return {
-        "image_files": image_files,
-        "text_files": text_files
-    }
 
 @tool("pwd", description="Returns the current working directory.")
 def pwd():
@@ -87,11 +52,6 @@ def open_application(app_name: str):
         return f"Failed to open {app_name}: {e}"
     return f"Opened {app_name}"
 
-@tool("search_knowledge_base", description="Searches the knowledge base for information. Must be used when information regarding Hojin's personal information, projects, files, or context-sensitive data.", args_schema=KBSearchSchema)
-def kb_search(query: str):
-    output = rag.search_knowledge_base(query)
-    return output
-
 @tool
 def open_chrome_tab(url: str):
     """Opens a specific URL in the user's visible Google Chrome browser."""
@@ -115,7 +75,7 @@ def get_tools():
     Filters out complex Sheets tools that cause schema validation errors with Gemini.
     Sheets operations are better handled through the multi-agent system.
     """
-    existing_tools = [get_current_date_time, web_search, pwd, open_application, kb_search]
+    existing_tools = [get_current_date_time, web_search, pwd, open_application]
     
     return existing_tools
 
@@ -126,10 +86,9 @@ def get_tool_map():
     handled through the multi-agent system due to complex schema requirements.
     """
     tool_map = {
-        "get_current_date_time": get_current_date_time, 
+        "get_current_date_time": get_current_date_time,
         "web_search": web_search,
         "open_application": open_application,
-        "search_knowledge_base": kb_search,
     }
 
     return tool_map

@@ -5,15 +5,46 @@ import Combine
 class AppDelegate: NSObject, NSApplicationDelegate {
     // The Delegate references the shared coordinator
     var coordinator = WindowCoordinator.shared
-    
+    let pythonManager = PythonProcessManager.shared
+    private var cancellables = Set<AnyCancellable>()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 1. Start the Rong-E agent server
+        print("🚀 Starting Rong-E agent server...")
+        pythonManager.startServer()
+
         // 2. Safe to show window now that AppKit is ready
         coordinator.showMainOverlay()
-        
-        // 3. Run startup workflow after a brief delay to ensure everything is initialized
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+
+        // 3. Connect WebSocket after server has time to start (with retry)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            print("🔌 Auto-connecting WebSocket...")
+            self.coordinator.client.connect()
+        }
+
+        // 4. Auto-sync MCP config when WebSocket first connects
+        coordinator.client.$isConnected
+            .removeDuplicates()
+            .filter { $0 == true }
+            .first()
+            .sink { _ in
+                print("🔧 Auto-syncing MCP config on connection...")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    MCPConfigManager.shared.sendConfigToPython()
+                }
+            }
+            .store(in: &cancellables)
+
+        // 5. Run startup workflow after a brief delay to ensure server is ready
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             self?.runStartupWorkflowIfNeeded()
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Stop the server when app quits
+        print("🛑 Stopping Rong-E agent server...")
+        pythonManager.stopServer()
     }
     
     private func runStartupWorkflowIfNeeded() {

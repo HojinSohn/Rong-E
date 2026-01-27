@@ -1,13 +1,10 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from agent.agent.agent import EchoAgent
+from agent.agents.agent import RongEAgent
 from agent.models.mcp_config import validate_mcp_config, MCPConfig
 import uvicorn
 import json
-import os
-import time
-from agent.utils.audio import speak 
     
 app = FastAPI()
 
@@ -20,7 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-agent = EchoAgent()
+agent = RongEAgent()
 global_websocket = None
 
 @app.websocket("/ws")
@@ -55,6 +52,11 @@ async def websocket_endpoint(websocket: WebSocket):
                             "content": f"❌ Error during authentication: {str(e)}"
                         }))
                         print(f"❌ Error during authentication: {str(e)}")
+                        # Delete token file if exists
+                        import os
+                        if os.path.exists(token_file_path):
+                            os.remove(token_file_path)
+                            print("🗑️ Deleted invalid token file.")
                         continue  # Skip the rest of the loop
                     await websocket.send_text(json.dumps({
                         "type": "credentials_success",
@@ -85,8 +87,28 @@ async def websocket_endpoint(websocket: WebSocket):
                         validated_config = validate_mcp_config(config_data)
                         agent_config = validated_config.to_agent_format()
 
-                        # Sync MCP servers
-                        await agent.sync_mcp_servers(agent_config)
+                        # Send "connecting" status for all requested servers
+                        requested_names = list(validated_config.mcpServers.keys())
+                        connecting_statuses = [
+                            {"name": n, "status": "connecting"} for n in requested_names
+                        ]
+                        await websocket.send_text(json.dumps({
+                            "type": "mcp_server_status",
+                            "content": {"servers": connecting_statuses}
+                        }))
+
+                        # Sync MCP servers and get per-server results
+                        results = await agent.sync_mcp_servers(agent_config)
+
+                        # Send final per-server statuses
+                        final_statuses = [
+                            {"name": n, "status": r["status"], "error": r.get("error")}
+                            for n, r in results.items()
+                        ]
+                        await websocket.send_text(json.dumps({
+                            "type": "mcp_server_status",
+                            "content": {"servers": final_statuses}
+                        }))
 
                         server_count = len(validated_config.mcpServers)
                         server_names = list(validated_config.mcpServers.keys())
@@ -105,6 +127,18 @@ async def websocket_endpoint(websocket: WebSocket):
                             "type": "mcp_sync_error",
                             "content": f"❌ Failed to sync MCP servers: {str(e)}"
                         }))
+                    continue  # Skip the rest of the loop
+                elif data["data_type"] == "mcp_status_request":
+                    print("📊 Received MCP Status Request")
+                    statuses = agent.get_server_statuses()
+                    status_list = [
+                        {"name": n, "status": s["status"], "error": s.get("error")}
+                        for n, s in statuses.items()
+                    ]
+                    await websocket.send_text(json.dumps({
+                        "type": "mcp_server_status",
+                        "content": {"servers": status_list}
+                    }))
                     continue  # Skip the rest of the loop
 
             # Normal message processing

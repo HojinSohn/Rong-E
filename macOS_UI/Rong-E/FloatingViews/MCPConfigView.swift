@@ -161,9 +161,13 @@ struct MCPConfigView: View {
         ScrollView {
             LazyVStack(spacing: 8) {
                 ForEach(configManager.servers) { server in
-                    ServerRowView(server: server, onDelete: {
-                        configManager.removeServer(server)
-                    })
+                    ServerRowView(
+                        server: server,
+                        status: configManager.serverStatuses[server.name] ?? .idle,
+                        onDelete: {
+                            configManager.removeServer(server)
+                        }
+                    )
                 }
             }
         }
@@ -212,14 +216,14 @@ struct MCPConfigView: View {
 
 struct ServerRowView: View {
     let server: MCPServerConfig
+    let status: MCPServerConnectionStatus
     let onDelete: () -> Void
     @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Image(systemName: "server.rack")
-                    .foregroundColor(.accentColor)
+                statusIndicator
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(server.name)
@@ -264,6 +268,25 @@ struct ServerRowView: View {
         .padding(10)
         .background(Color.secondary.opacity(0.1))
         .cornerRadius(8)
+    }
+
+    @ViewBuilder
+    private var statusIndicator: some View {
+        switch status {
+        case .idle:
+            Image(systemName: "server.rack")
+                .foregroundColor(.secondary)
+        case .connecting:
+            ProgressView()
+                .controlSize(.small)
+        case .connected:
+            Image(systemName: "server.rack")
+                .foregroundColor(.green)
+        case .error(let msg):
+            Image(systemName: "server.rack")
+                .foregroundColor(.red)
+                .help(msg)
+        }
     }
 }
 

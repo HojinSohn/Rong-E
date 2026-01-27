@@ -1,10 +1,9 @@
 import asyncio
-from agent.agent import EchoAgent
+from agent.agents import RongEAgent
 
 async def main():
-    agent = EchoAgent()
-    print("Echo is ready. Type 'quit' to exit.")
-
+    agent = RongEAgent()
+    print("RongE is ready. Type 'quit' to exit.")
     config = {
         "mcpServers": {
             "filesystem": {
