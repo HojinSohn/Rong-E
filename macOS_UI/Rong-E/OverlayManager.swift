@@ -193,23 +193,6 @@ class WindowCoordinator: ObservableObject {
         controllers[id]?.showWindow(nil)
     }
 
-    func openWebWindow(url: URL, size: CGSize) {
-        let id = "web_\(url.absoluteString)"
-        print("Opening web window with ID: \(id)")
-        if controllers[id] == nil {
-            let body = WebWindowView(url: url, windowID: id, size: size)
-            let anyView = AnyView(body)
-            print("opening the webview through controller")
-            let controller = DynamicWindowController(
-                id: id,
-                view: anyView,
-                size: size
-            )
-            controllers[id] = controller
-        }
-        controllers[id]?.showWindow(nil)
-    }
-
     func openGoogleService() {
         let id = "google_service_window"
         
