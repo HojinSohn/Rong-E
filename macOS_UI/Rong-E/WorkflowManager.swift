@@ -31,7 +31,7 @@ class WorkflowManager: ObservableObject {
             // Default "Demo" Tasks
             self.tasks = [
                 WorkflowTask(prompt: "Check my calendar for meetings today.", isEnabled: true, order: 0),
-                WorkflowTask(prompt: "Check unread emails from 'Honeywell'.", isEnabled: true, order: 1),
+                WorkflowTask(prompt: "Check unread emails and summarize'.", isEnabled: true, order: 1),
                 WorkflowTask(prompt: "Search online for 'AI News today'.", isEnabled: false, order: 2)
             ]
         }

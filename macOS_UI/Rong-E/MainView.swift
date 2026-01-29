@@ -336,10 +336,16 @@ struct MainView: View {
 
         socketClient.onMCPServerStatus = { statusInfos in
             MCPConfigManager.shared.updateStatuses(from: statusInfos)
+            // Refresh active tools list after MCP status changes
+            socketClient.sendToolsRequest()
         }
 
         socketClient.onDisconnect = { errorText in
-            finishProcessing(response: "Error: \(errorText)")
+            withAnimation {
+                self.isProcessing = false
+                self.activeTool = nil
+            }
+            print("⚠️ Socket disconnected: \(errorText)")
         }
     }
 
@@ -616,8 +622,10 @@ struct OrbiterButton: View {
 // MARK: - Left Column (Agentic Dashboard)
 struct LeftColumnView: View {
     @EnvironmentObject var appContext: AppContext
+    @EnvironmentObject var socketClient: SocketClient
     @ObservedObject var mcpConfigManager = MCPConfigManager.shared
     @State private var expandedStepIds: Set<UUID> = []
+    @State private var activeTools: [ActiveToolInfo] = []
 
     var body: some View {
         VStack(spacing: 12) {
@@ -696,16 +704,6 @@ struct LeftColumnView: View {
                 
                 Divider().overlay(.white.opacity(0.1))
                 
-                // Workspace / Context
-                HStack {
-                    Image(systemName: "folder.fill")
-                        .foregroundStyle(.blue)
-                    Text("~/Projects/Rong-E")
-                        .truncationMode(.middle)
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-                .font(.caption)
-                
                 // Active MCP Servers Count
                 HStack {
                     Image(systemName: "hammer.fill")
@@ -726,10 +724,79 @@ struct LeftColumnView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(.white.opacity(0.05), lineWidth: 1)
             )
+
+            // 3. Active Tools
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Active Tools")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .textCase(.uppercase)
+                    Spacer()
+                    Text("\(activeTools.count)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.cyan.opacity(0.7))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.black.opacity(0.2))
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        if activeTools.isEmpty {
+                            Text("No tools loaded")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.white.opacity(0.3))
+                                .padding(.horizontal, 10)
+                        } else {
+                            // Group tools by source
+                            let grouped = Dictionary(grouping: activeTools, by: { $0.source })
+                            let sortedKeys = grouped.keys.sorted { a, b in
+                                if a == "base" { return true }
+                                if b == "base" { return false }
+                                return a < b
+                            }
+                            ForEach(sortedKeys, id: \.self) { source in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(source == "base" ? "BASE" : source.uppercased())
+                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(source == "base" ? .cyan.opacity(0.5) : .orange.opacity(0.5))
+                                        .padding(.top, 4)
+
+                                    ForEach(grouped[source] ?? [], id: \.name) { tool in
+                                        HStack(spacing: 6) {
+                                            Circle()
+                                                .fill(source == "base" ? Color.cyan : Color.orange)
+                                                .frame(width: 5, height: 5)
+                                            Text(tool.name)
+                                                .font(.system(size: 11, design: .monospaced))
+                                                .foregroundStyle(.white.opacity(0.8))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(10)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: 140)
+            .background(Color.black.opacity(0.3))
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(.white.opacity(0.05), lineWidth: 1)
+            )
         }
         .frame(width: 240) // Slightly widened for better reading
         .padding(.vertical, 12)
         .padding(.leading, 12)
+        .onAppear {
+            socketClient.onReceiveActiveTools = { tools in
+                activeTools = tools
+            }
+            socketClient.sendToolsRequest()
+        }
     }
 
     private func toggleExpansion(for id: UUID) {
@@ -1262,7 +1329,6 @@ struct MessageView: View {
     
     // State
     @State private var systemLogs: [String] = []
-    @State private var hasBootAnimated = false
     
     // RongE Themed Boot Sequence
     private let bootLogs: [String] = [
@@ -1343,8 +1409,8 @@ struct MessageView: View {
 
     @MainActor
     private func animateBootLogs(proxy: ScrollViewProxy) async {
-        guard !hasBootAnimated else { return }
-        hasBootAnimated = true
+        guard !appContext.hasBootAnimated else { return }
+        appContext.hasBootAnimated = true
 
         for (index, log) in bootLogs.enumerated() {
             let delay = 0.12 + (Double(index) * 0.04) // Faster, tech-like typing
@@ -1541,6 +1607,7 @@ struct HeaderView: View {
     @State private var googleHovering = false
     @State private var workflowHovering = false
     @State private var settingsHovering = false
+    @State private var refreshHovering = false
     @State private var shrinkHovering = false
 
     var body: some View {
@@ -1648,7 +1715,38 @@ struct HeaderView: View {
             }
             .contentShape(Rectangle())
             .zIndex(10)
-            
+
+            // Refresh Session Button
+            Button(action: {
+                appContext.clearSession()
+                socketClient.sendResetSession()
+            }) {
+                ZStack {
+                    Color.white.opacity(refreshHovering ? 0.25 : 0.15)
+                        .cornerRadius(8)
+
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 32, height: 32)
+                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .scaleEffect(refreshHovering ? 1.1 : 1.0)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    refreshHovering = hovering
+                }
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .contentShape(Rectangle())
+            .zIndex(10)
+
             // Shrink Button
             Button(action: {
                 toggleMinimized()

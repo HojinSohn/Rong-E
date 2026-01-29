@@ -198,6 +198,7 @@ enum MCPServerConnectionStatus: Equatable {
     case idle
     case connecting
     case connected
+    case connectedPermissionDenied  // Server connected but macOS permission was denied
     case error(String)
 }
 
@@ -205,10 +206,28 @@ struct MCPServerStatusInfo: Codable {
     let name: String
     let status: String
     let error: String?
+    let permissionStatus: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, status, error
+        case permissionStatus = "permission_status"
+    }
 }
 
 struct MCPServerStatusContent: Codable {
     let servers: [MCPServerStatusInfo]
+}
+
+// MARK: - Active Tools
+
+struct ActiveToolInfo: Codable, Identifiable {
+    var id: String { name }
+    let name: String
+    let source: String
+}
+
+struct ActiveToolsContent: Codable {
+    let tools: [ActiveToolInfo]
 }
 
 // MARK: - Persistence
@@ -239,7 +258,11 @@ class MCPConfigManager: ObservableObject {
             case "connecting":
                 serverStatuses[info.name] = .connecting
             case "connected":
-                serverStatuses[info.name] = .connected
+                if info.permissionStatus == "denied" {
+                    serverStatuses[info.name] = .connectedPermissionDenied
+                } else {
+                    serverStatuses[info.name] = .connected
+                }
             case "error":
                 serverStatuses[info.name] = .error(info.error ?? "Unknown error")
             default:

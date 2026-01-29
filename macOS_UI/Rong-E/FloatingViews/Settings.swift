@@ -505,6 +505,12 @@ struct MCPServerRow: View {
                 .fill(Color.green)
                 .frame(width: 6, height: 6)
                 .shadow(color: .green.opacity(0.6), radius: 3)
+        case .connectedPermissionDenied:
+            Circle()
+                .fill(Color.orange)
+                .frame(width: 6, height: 6)
+                .shadow(color: .orange.opacity(0.6), radius: 3)
+                .help("macOS permission denied. Grant in System Settings > Privacy & Security.")
         case .error(let msg):
             Circle()
                 .fill(Color.red)

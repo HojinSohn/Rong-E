@@ -34,7 +34,7 @@ struct AgentMessage: Codable {
         case "tool_result":
             let val = try container.decode(ToolResultContent.self, forKey: .content)
             content = .toolResult(val)
-        case "credentials_success", "error", "mcp_sync_success", "mcp_sync_error":
+        case "credentials_success", "error", "mcp_sync_success", "mcp_sync_error", "session_reset":
             // Handle simple string content for status messages
             if let stringContent = try? container.decode(String.self, forKey: .content) {
                 content = .response(ResponseContent(text: stringContent, images: []))
@@ -195,6 +195,8 @@ class SocketClient: ObservableObject {
     var onReceivedCredentialsSuccess: ((String) -> Void)?
     var onMCPSyncResult: ((Bool, String?) -> Void)?
     var onMCPServerStatus: (([MCPServerStatusInfo]) -> Void)?
+    var onSessionReset: (() -> Void)?
+    var onReceiveActiveTools: (([ActiveToolInfo]) -> Void)?
 
     func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
@@ -281,6 +283,19 @@ class SocketClient: ObservableObject {
             return
         }
 
+        // Handle active_tools specially (content is an object)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let type = json["type"] as? String,
+           type == "active_tools",
+           let contentObj = json["content"],
+           let contentData = try? JSONSerialization.data(withJSONObject: contentObj),
+           let toolsContent = try? JSONDecoder().decode(ActiveToolsContent.self, from: contentData) {
+            DispatchQueue.main.async { [weak self] in
+                self?.onReceiveActiveTools?(toolsContent.tools)
+            }
+            return
+        }
+
         do {
             let parsedMsg = try self.decoder.decode(AgentMessage.self, from: data)
             respondToParsedMessage(parsedMsg)
@@ -335,6 +350,8 @@ class SocketClient: ObservableObject {
                 } else {
                     self.onMCPSyncResult?(false, "Unknown error")
                 }
+            case "session_reset":
+                self.onSessionReset?()
             default:
                 print("❓ Unhandled type: \(parsedMsg.type)")
             }
@@ -382,6 +399,28 @@ class SocketClient: ObservableObject {
             let message = URLSessionWebSocketTask.Message.string(jsonString)
             webSocketTask?.send(message) { error in
                 if let error = error { print("❌ MCP Status Request Send Error: \(error)") }
+            }
+        }
+    }
+
+    func sendResetSession() {
+        let json: [String: String] = ["data_type": "reset_session"]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Reset Session Send Error: \(error)") }
+            }
+        }
+    }
+
+    func sendToolsRequest() {
+        let json: [String: String] = ["data_type": "tools_request"]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Tools Request Send Error: \(error)") }
             }
         }
     }

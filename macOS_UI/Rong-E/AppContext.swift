@@ -69,6 +69,7 @@ class AppContext: ObservableObject {
     @Published var isGoogleConnected: Bool = false
     @Published var hasRunStartupWorkflow: Bool = false
     @Published var startUpWorkFinished: Bool = false
+    @Published var hasBootAnimated: Bool = false
     
     @Published var currentSessionChatMessages: [ChatMessage] = []
     
@@ -132,6 +133,16 @@ class AppContext: ObservableObject {
             self.currentActivity = .idle
             self.reasoningSteps = [ReasoningStep(description: "Ready", status: .active)]
             self.cpuUsage = 0.05
+        }
+    }
+
+    func clearSession() {
+        withAnimation {
+            self.currentSessionChatMessages = []
+            self.reasoningSteps = [ReasoningStep(description: "Await input", status: .active)]
+            self.currentActivity = .idle
+            self.response = ""
+            self.isLoading = false
         }
     }
     struct ModeConfiguration: Identifiable, Codable, Hashable {

@@ -100,9 +100,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         # Sync MCP servers and get per-server results
                         results = await agent.sync_mcp_servers(agent_config)
 
-                        # Send final per-server statuses
+                        # Send final per-server statuses (includes permission_status)
                         final_statuses = [
-                            {"name": n, "status": r["status"], "error": r.get("error")}
+                            {
+                                "name": n,
+                                "status": r["status"],
+                                "error": r.get("error"),
+                                "permission_status": r.get("permission_status", "not_required")
+                            }
                             for n, r in results.items()
                         ]
                         await websocket.send_text(json.dumps({
@@ -140,6 +145,22 @@ async def websocket_endpoint(websocket: WebSocket):
                         "content": {"servers": status_list}
                     }))
                     continue  # Skip the rest of the loop
+                elif data["data_type"] == "reset_session":
+                    print("🔄 Received Session Reset Request")
+                    agent.reset_session()
+                    await websocket.send_text(json.dumps({
+                        "type": "session_reset",
+                        "content": "Session reset successfully."
+                    }))
+                    continue
+                elif data["data_type"] == "tools_request":
+                    print("🔧 Received Tools Request")
+                    tools_info = agent.get_active_tools_info()
+                    await websocket.send_text(json.dumps({
+                        "type": "active_tools",
+                        "content": {"tools": tools_info}
+                    }))
+                    continue
 
             # Normal message processing
             query, mode, base64_image = data["text"], data["mode"], data.get("base64_image")

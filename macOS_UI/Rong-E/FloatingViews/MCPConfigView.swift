@@ -282,6 +282,10 @@ struct ServerRowView: View {
         case .connected:
             Image(systemName: "server.rack")
                 .foregroundColor(.green)
+        case .connectedPermissionDenied:
+            Image(systemName: "server.rack")
+                .foregroundColor(.orange)
+                .help("Connected, but macOS permission was denied. Grant access in System Settings > Privacy & Security.")
         case .error(let msg):
             Image(systemName: "server.rack")
                 .foregroundColor(.red)

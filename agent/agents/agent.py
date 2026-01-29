@@ -1,6 +1,4 @@
 import os
-import json
-import asyncio
 from contextlib import AsyncExitStack
 from pathlib import Path
 import shutil
@@ -8,6 +6,7 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.tools import tool
+from datetime import datetime
 
 # Agent imports
 from agent.agents.google_agent import GoogleAgent
@@ -24,6 +23,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 load_dotenv()
+
 # 1. Define the Action Schema (The "payload" of the widget)
 class WidgetAction(BaseModel):
     url: Optional[str] = Field(None, description="Valid HTTPS URL for links or search results")
@@ -81,11 +81,21 @@ class RongEAgent:
         
         self.refresh_active_tools()
         
-        with open(os.path.join(PROMPTS_DIR, "system_prompt.txt"), "r") as f:
-            self.system_prompt = f.read()
+        # --- SYSTEM PROMPT & MESSAGES ---
+        self.create_system_prompt()
 
         self.messages = [SystemMessage(content=self.system_prompt)]
         self.max_iterations = 15
+
+    def create_system_prompt(self):
+        """Create a custom system prompt with additional instructions."""
+        with open(os.path.join(PROMPTS_DIR, "system_prompt.txt"), "r") as f:
+            base_prompt = f.read()
+        
+        custom_instructions = f'Current date and time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}.'
+        
+        full_prompt = f"{base_prompt}\n\n{custom_instructions}"
+        self.system_prompt = full_prompt
 
     async def authenticate_google(self, token_file: str = None, client_secrets_file: str = None):
         """Authenticate GoogleAgent"""
@@ -94,6 +104,30 @@ class RongEAgent:
     async def revoke_google_credentials(self):
         """Revoke Google Credentials"""
         await self.google_agent.revoke_credentials()
+
+    def reset_session(self):
+        """Reset conversation history to just the system prompt."""
+        self.messages = [SystemMessage(content=self.system_prompt)]
+        print("🔄 Session reset. Conversation history cleared.")
+
+    def get_active_tools_info(self) -> list:
+        """Return list of active tools with their source."""
+        tools_info = []
+        base_tool_names = {t.name for t in self.base_tools}
+        for t in self.tools:
+            name = t.name if hasattr(t, 'name') else str(t)
+            if name in base_tool_names:
+                tools_info.append({"name": name, "source": "base"})
+            else:
+                # Find which MCP server this tool belongs to
+                source = "mcp"
+                for server_name, server_data in self.active_mcp_servers.items():
+                    server_tool_names = {st.name for st in server_data["tools"]}
+                    if name in server_tool_names:
+                        source = server_name
+                        break
+                tools_info.append({"name": name, "source": source})
+        return tools_info
 
     def refresh_active_tools(self):
         """Aggregates Base Tools + Tools from all Active MCP Servers"""
@@ -197,6 +231,7 @@ class RongEAgent:
                 "stack": stack,
                 "tools": mcp_tools
             }
+
             return (True, None)
 
         except Exception as e:

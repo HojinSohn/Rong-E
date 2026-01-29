@@ -35,8 +35,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        // 5. Run startup workflow after a brief delay to ensure server is ready
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+        // 5. Run startup workflow after MCP servers are synced
+        coordinator.client.onMCPSyncResult = { [weak self] success, message in
+            print("🔧 MCP Sync Result: success=\(success), message=\(message ?? "nil")")
             self?.runStartupWorkflowIfNeeded()
         }
     }
@@ -56,12 +57,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Check if startup workflow has already run
         if appContext.startUpWorkFinished {
             print("✅ Startup workflow already completed")
-            return
-        }
-        
-        // Check if Google is connected
-        if !appContext.isGoogleConnected {
-            print("⚠️ Google not connected yet, startup workflow will run after connection")
             return
         }
         
