@@ -6,9 +6,6 @@ import Foundation
 
 
 enum Constants {
-    static let apiKey = "sk-123456789"
-    static let baseURL = "https://api.anthropic.com"
-    
     // You can also nest them for better organization
     enum UI {
         static let windowWidth: CGFloat = 800
@@ -29,9 +26,5 @@ enum Constants {
     enum System {
         static let maxRetries = 3
         static let timeout: TimeInterval = 30.0
-    }
-
-    enum Tools {
-        static let availableTools = ["web_search", "search_knowledge_base", "email", "calendar"]
     }
 }

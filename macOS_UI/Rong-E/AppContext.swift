@@ -47,8 +47,6 @@ struct ReasoningStep: Identifiable {
 
 class AppContext: ObservableObject {
     static let shared = AppContext()
-    // FIX 2: We can define simple defaults inline to satisfy the compiler immediately.
-    // This removes the need to set them in init() and fixes the "self used before init" error.@Published var currentModeId: Int = 1 
 
     // Helper to get the actual object
     var currentMode: ModeConfiguration {
@@ -72,6 +70,7 @@ class AppContext: ObservableObject {
     @Published var hasBootAnimated: Bool = false
     
     @Published var currentSessionChatMessages: [ChatMessage] = []
+    @Published var activeTools: [ActiveToolInfo] = []
     
     // We initialize these with placeholders, they get updated in init()
     @Published var overlayWidth: CGFloat = 0
@@ -80,11 +79,6 @@ class AppContext: ObservableObject {
     @Published var credentialsDirectory: URL = FileManager.default.temporaryDirectory // Placeholder
 
     // --- Agent State ---
-    // 1. System Vitals
-    @Published var cpuUsage: Double = 0.1
-    @Published var memoryUsage: String = "1.2 GB"
-    
-    // 2. Reasoning / Brain
     @Published var reasoningSteps: [ReasoningStep] = [
         ReasoningStep(description: "Await input", status: .active)
     ]
@@ -92,47 +86,10 @@ class AppContext: ObservableObject {
     // 3. Agent Activity / Hands (Drives the Handoff Widget)
     @Published var currentActivity: AgentActivityType = .idle
     
-    // Timer for simulating system vitals (Remove this in real app)
-    private var timer: AnyCancellable?
-    
-    // --- Simulation Logic (For Demo Purposes) ---
-    func startSimulation() {
-        // Update CPU randomly every second to look "alive"
-        timer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect().sink { _ in
-            withAnimation {
-                self.cpuUsage = Double.random(in: 0.1...0.8)
-            }
-        }
-    }
-    
-    // Call this when your LLM Agent starts working
-    func startCodingTask() {
-        withAnimation {
-            self.currentActivity = .coding(filename: "controller.py")
-            self.reasoningSteps = [
-                ReasoningStep(description: "Analyze User Request", status: .completed),
-                ReasoningStep(description: "Generate Controller Logic", status: .active),
-                ReasoningStep(description: "Write Unit Tests", status: .pending)
-            ]
-        }
-    }
-    
-    func startResearchTask() {
-        withAnimation {
-            self.currentActivity = .browsing(url: "https://apple.com/documentation")
-            self.reasoningSteps = [
-                ReasoningStep(description: "Parse Query", status: .completed),
-                ReasoningStep(description: "Search Documentation", status: .active),
-                ReasoningStep(description: "Summarize Findings", status: .pending)
-            ]
-        }
-    }
-    
     func setIdle() {
         withAnimation {
             self.currentActivity = .idle
             self.reasoningSteps = [ReasoningStep(description: "Ready", status: .active)]
-            self.cpuUsage = 0.05
         }
     }
 
@@ -157,7 +114,6 @@ class AppContext: ObservableObject {
     @Published var modes: [ModeConfiguration] = []
 
     private init() {
-        // 1. SETUP DEFAULT VALUES (Must be done before calling self methods)
         self.overlayWidth = 300 // Replace with Constants.UI.overlayWindow.compactWidth
         self.overlayHeight = 160 // Replace with Constants.UI.overlayWindow.compactHeight
         self.aiApiKey = "YOUR_API_KEY" // Replace with Constants.apiKey
@@ -166,20 +122,8 @@ class AppContext: ObservableObject {
              self.credentialsDirectory = supportDir
         }
         
-        // Set default modes here to avoid slow compilation of complex literals
-        self.modes = [
-            ModeConfiguration(id: 1, name: "Default", systemPrompt: "You are a helpful assistant.", enabledTools: [], isScreenshotEnabled: false),
-            ModeConfiguration(id: 2, name: "Researcher", systemPrompt: "You are a research assistant.", enabledTools: ["web_search", "search_knowledge_base"], isScreenshotEnabled: false),
-            ModeConfiguration(id: 3, name: "Email Assistant", systemPrompt: "You help with emails.", enabledTools: ["email"], isScreenshotEnabled: false),
-            ModeConfiguration(id: 4, name: "Scheduler", systemPrompt: "You manage calendars.", enabledTools: ["calendar"], isScreenshotEnabled: false),
-            ModeConfiguration(id: 5, name: "Screenshot Helper", systemPrompt: "You assist with screenshots.", enabledTools: [], isScreenshotEnabled: true)
-        ]
-        
-        // 2. NOW that all properties are set, 'self' is fully initialized.
-        // We can safely call methods that might use 'self' or overwrite values.
         loadSettings()
         setupAppTerminationObserver()
-        startSimulation()
     }
     
     private func setupAppTerminationObserver() {

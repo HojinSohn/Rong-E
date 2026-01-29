@@ -4,9 +4,6 @@ struct ModesSettingsView: View {
     @EnvironmentObject var context: AppContext
     @State private var selectedModeID: Int = 1
     
-    // Define the available tools in your system
-    let allTools = Constants.Tools.availableTools
-    
     var body: some View {
         HStack(spacing: 0) {
             // MARK: - Left Sidebar (Mode Selector)
@@ -99,12 +96,12 @@ struct ModesSettingsView: View {
                                 .foregroundColor(.gray)
                             
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 10)], spacing: 10) {
-                                ForEach(allTools, id: \.self) { tool in
+                                ForEach(context.activeTools) { tool in
                                     JarvisToolButton(
-                                        title: tool,
-                                        isSelected: context.modes[index].enabledTools.contains(tool)
+                                        title: tool.name,
+                                        isSelected: context.modes[index].enabledTools.contains(tool.name)
                                     ) {
-                                        toggleTool(tool, for: index)
+                                        toggleTool(tool.name, for: index)
                                     }
                                 }
                             }

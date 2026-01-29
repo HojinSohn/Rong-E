@@ -340,6 +340,10 @@ struct MainView: View {
             socketClient.sendToolsRequest()
         }
 
+        socketClient.onReceiveActiveTools = { tools in
+            appContext.activeTools = tools
+        }
+
         socketClient.onDisconnect = { errorText in
             withAnimation {
                 self.isProcessing = false
@@ -625,7 +629,6 @@ struct LeftColumnView: View {
     @EnvironmentObject var socketClient: SocketClient
     @ObservedObject var mcpConfigManager = MCPConfigManager.shared
     @State private var expandedStepIds: Set<UUID> = []
-    @State private var activeTools: [ActiveToolInfo] = []
 
     var body: some View {
         VStack(spacing: 12) {
@@ -733,7 +736,7 @@ struct LeftColumnView: View {
                         .foregroundStyle(.white.opacity(0.5))
                         .textCase(.uppercase)
                     Spacer()
-                    Text("\(activeTools.count)")
+                    Text("\(appContext.activeTools.count)")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(.cyan.opacity(0.7))
                 }
@@ -743,14 +746,14 @@ struct LeftColumnView: View {
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
-                        if activeTools.isEmpty {
+                        if appContext.activeTools.isEmpty {
                             Text("No tools loaded")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.white.opacity(0.3))
                                 .padding(.horizontal, 10)
                         } else {
                             // Group tools by source
-                            let grouped = Dictionary(grouping: activeTools, by: { $0.source })
+                            let grouped = Dictionary(grouping: appContext.activeTools, by: { $0.source })
                             let sortedKeys = grouped.keys.sorted { a, b in
                                 if a == "base" { return true }
                                 if b == "base" { return false }
@@ -792,9 +795,6 @@ struct LeftColumnView: View {
         .padding(.vertical, 12)
         .padding(.leading, 12)
         .onAppear {
-            socketClient.onReceiveActiveTools = { tools in
-                activeTools = tools
-            }
             socketClient.sendToolsRequest()
         }
     }
