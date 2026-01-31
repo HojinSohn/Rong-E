@@ -5,6 +5,9 @@ import shutil
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
+from langchain_anthropic import ChatAnthropic
 from langchain.tools import tool
 from datetime import datetime
 
@@ -47,13 +50,28 @@ class WidgetResponse(BaseModel):
         default_factory=list, 
         description="A list of 0 to 4 interactive widgets based on the conversation."
     )
+def _extract_text(content) -> str:
+    """Normalize ai_msg.content to a plain string.
+    Gemini/OpenAI return str, Anthropic returns list of content blocks."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts)
+    return str(content)
+
 class RongEAgent:
     def __init__(self):
         # 1. Initialize Components
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-lite",
-            temperature=0
-        )
+        self.current_provider = None
+        self.current_model = None
+        self.llm = None
+        self.llm_with_tools = None
 
         self.google_agent = GoogleAgent()
         self.auth_manager = AuthManager()
@@ -96,6 +114,46 @@ class RongEAgent:
         
         full_prompt = f"{base_prompt}\n\n{custom_instructions}"
         self.system_prompt = full_prompt
+
+    def set_llm(self, provider: str, model: str, api_key: str = None):
+        """Switch the LLM provider and model at runtime. Validates by sending a test message."""
+        if provider == "gemini":
+            kwargs = {"model": model, "temperature": 0}
+            if api_key:
+                kwargs["google_api_key"] = api_key
+            new_llm = ChatGoogleGenerativeAI(**kwargs)
+        elif provider == "openai":
+            kwargs = {"model": model, "temperature": 0}
+            if api_key:
+                kwargs["api_key"] = api_key
+            new_llm = ChatOpenAI(**kwargs)
+        elif provider == "ollama":
+            new_llm = ChatOllama(model=model, temperature=0)
+        elif provider == "anthropic":
+            kwargs = {"model": model, "temperature": 0}
+            if api_key:
+                kwargs["api_key"] = api_key
+            new_llm = ChatAnthropic(**kwargs)
+        else:
+            raise ValueError(f"Unknown LLM provider: {provider}")
+
+        # Validate by sending a test message
+        try:
+            new_llm.invoke("Say OK")
+        except Exception as e:
+            raise ValueError(f"Validation failed for {provider}/{model}: {e}")
+
+        # Apply the validated LLM
+        self.llm = new_llm
+        self.current_provider = provider
+        self.current_model = model
+
+        # Propagate LLM to sub-agents
+        self.google_agent.set_llm(new_llm)
+
+        # Rebind tools with the new LLM
+        self.refresh_active_tools()
+        print(f"🤖 LLM switched to {provider} / {model}")
 
     async def authenticate_google(self, token_file: str = None, client_secrets_file: str = None):
         """Authenticate GoogleAgent"""
@@ -146,8 +204,11 @@ class RongEAgent:
             # Handle LangChain StructuredTool names safely
             t_name = t.name if hasattr(t, 'name') else str(t)
             self.tool_map[t_name.lower()] = t
-        
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
+
+        if self.llm is not None:
+            self.llm_with_tools = self.llm.bind_tools(self.tools)
+        else:
+            self.llm_with_tools = None
         # print(f"🔄 State Synced: {len(self.tools)} tools active.")
 
     async def sync_mcp_servers(self, config: dict) -> dict:
@@ -256,6 +317,9 @@ class RongEAgent:
         Generates widgets using Structured Output.
         Returns a clean list of dictionaries, guaranteed to match the schema.
         """
+        if self.llm is None:
+            return []
+
         # --- 1. Prepare Context (Same as before) ---
         safe_text = (response_text[:2000] + '...') if len(response_text) > 2000 else response_text
         
@@ -308,6 +372,12 @@ class RongEAgent:
             return []
 
     async def _execute_run_loop(self, user_query, base64_image, callback):
+        if self.llm is None or self.llm_with_tools is None:
+            error_msg = "No LLM configured. Please set an LLM provider before sending commands."
+            if callback:
+                await callback("response", {"text": error_msg, "images": [], "widgets": []})
+            return {"text": error_msg, "images": [], "widgets": []}
+
         print(f"\nUser: {user_query}")
 
         if base64_image:
@@ -327,7 +397,7 @@ class RongEAgent:
                 self.messages.append(ai_msg)
 
                 if ai_msg.tool_calls:
-                    if callback: await callback("thought", ai_msg.content)
+                    if callback: await callback("thought", _extract_text(ai_msg.content))
 
                     for tool_call in ai_msg.tool_calls:
                         tool_name = tool_call["name"].lower()
@@ -360,14 +430,15 @@ class RongEAgent:
                             self.messages.append(ToolMessage(content=f"Error: Tool {tool_name} not found", tool_call_id=tool_call_id, name=tool_name))
                 else:
                     # Generate widgets using LLM
+                    response_text = _extract_text(ai_msg.content)
                     widgets = await self._generate_widgets_with_llm(
                         user_query,
-                        ai_msg.content,
+                        response_text,
                         tool_history
                     )
 
                     response_data = {
-                        "text": ai_msg.content,
+                        "text": response_text,
                         "images": [],
                         "widgets": widgets
                     }

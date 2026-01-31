@@ -221,46 +221,277 @@ struct JarvisTabButton: View {
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var context: AppContext
-    
+    @State private var llmStatusMessage: String?
+    @State private var llmStatusIsError: Bool = false
+    @State private var isVerifying: Bool = false
+
     var body: some View {
-        VStack(spacing: 20) {
-            
-            // Section 1: System
-            VStack(alignment: .leading, spacing: 10) {
-                Text("CORE CONFIGURATION")
-                    .font(.caption)
-                    .foregroundColor(.jarvisBlue.opacity(0.7))
-                    .tracking(1)
-                
-                JarvisToggle(title: "Launch Sequence (Login)", isOn: .constant(true))
-                JarvisToggle(title: "Audio Feedback", isOn: .constant(false))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 15) {
+
+                // Section 1: System
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("CORE CONFIGURATION")
+                        .font(.caption)
+                        .foregroundColor(.jarvisBlue.opacity(0.7))
+                        .tracking(1)
+
+                    JarvisToggle(title: "Launch Sequence (Login)", isOn: .constant(true))
+                    JarvisToggle(title: "Audio Feedback", isOn: .constant(false))
+                }
+                .modifier(JarvisPanel())
+
+                // Section 2: LLM Configuration
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("LLM CONFIGURATION")
+                        .font(.caption)
+                        .foregroundColor(.jarvisBlue.opacity(0.7))
+                        .tracking(1)
+
+                    // Provider Selector
+                    LLMProviderSelector(selectedProvider: $context.llmProvider, onSelect: { provider in
+                        context.llmModel = provider.defaultModel
+                        if !provider.requiresAPIKey {
+                            context.aiApiKey = ""
+                        }
+                        llmStatusMessage = nil
+                    })
+
+                    // Model Selector
+                    LLMModelSelector(
+                        selectedModel: $context.llmModel,
+                        suggestedModels: context.llmProvider.suggestedModels
+                    )
+
+                    // API Key
+                    if context.llmProvider.requiresAPIKey {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("API KEY")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(.gray)
+
+                            SecureField(context.llmProvider.apiKeyPlaceholder, text: $context.aiApiKey)
+                                .textFieldStyle(.plain)
+                                .padding(6)
+                                .font(.system(size: 12, design: .monospaced))
+                                .background(Color.black.opacity(0.5))
+                                .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
+                                .foregroundColor(.white)
+                        }
+                    } else {
+                        HStack(spacing: 4) {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 9))
+                                .foregroundColor(.jarvisBlue.opacity(0.7))
+                            Text("Ollama runs locally — no API key needed.")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(.gray)
+                        }
+                    }
+
+                    // Status Message
+                    if let status = llmStatusMessage {
+                        HStack(spacing: 5) {
+                            if isVerifying {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            } else {
+                                Image(systemName: llmStatusIsError ? "xmark.circle.fill" : "checkmark.circle.fill")
+                                    .foregroundColor(llmStatusIsError ? .red : .green)
+                                    .font(.system(size: 9))
+                            }
+                            Text(status)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(llmStatusIsError ? .red : .green)
+                        }
+                    }
+
+                    // SET LLM Button
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            applyLLMConfig()
+                        }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "cpu")
+                                Text("SET LLM")
+                            }
+                            .font(.system(size: 10, design: .monospaced))
+                            .fontWeight(.bold)
+                            .foregroundColor(.jarvisBlue)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color.jarvisBlue.opacity(0.2))
+                            .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isVerifying || (context.llmProvider.requiresAPIKey && context.aiApiKey.isEmpty))
+                    }
+                }
+                .modifier(JarvisPanel())
             }
-            .modifier(JarvisPanel())
-            
-            // Section 2: Integrations
-            VStack(alignment: .leading, spacing: 10) {
-                Text("EXTERNAL LINKS")
-                    .font(.caption)
-                    .foregroundColor(.jarvisBlue.opacity(0.7))
-                    .tracking(1)
-                
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("OPENAI API KEY")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.gray)
-                    
-                    TextField("", text: $context.aiApiKey)
-                        .textFieldStyle(.plain)
-                        .padding(8)
-                        .font(.system(.body, design: .monospaced))
-                        .background(Color.black.opacity(0.5))
-                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
-                        .foregroundColor(.white)
+        }
+        .onAppear {
+            setupLLMCallbacks()
+        }
+    }
+
+    private func setupLLMCallbacks() {
+        SocketClient.shared.onLLMSetResult = { success, message in
+            isVerifying = false
+            llmStatusIsError = !success
+            llmStatusMessage = message ?? (success ? "LLM configured" : "Failed to set LLM")
+        }
+    }
+
+    private func applyLLMConfig() {
+        // Validate
+        if context.llmProvider.requiresAPIKey && context.aiApiKey.trimmingCharacters(in: .whitespaces).isEmpty {
+            llmStatusMessage = "API key is required for \(context.llmProvider.displayName)"
+            llmStatusIsError = true
+            return
+        }
+
+        // Show verifying state
+        isVerifying = true
+        llmStatusMessage = "Verifying \(context.llmProvider.displayName) / \(context.llmModel)..."
+        llmStatusIsError = false
+
+        // Send to backend (backend will validate and respond)
+        SocketClient.shared.sendLLMConfig(
+            provider: context.llmProvider.rawValue,
+            model: context.llmModel,
+            apiKey: context.llmProvider.requiresAPIKey ? context.aiApiKey : nil
+        )
+
+        // Save settings
+        context.saveSettings()
+    }
+}
+
+// Extracted to reduce type-check complexity
+struct LLMProviderSelector: View {
+    @Binding var selectedProvider: LLMProvider
+    var onSelect: (LLMProvider) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(LLMProvider.allCases, id: \.self) { provider in
+                LLMProviderButton(
+                    provider: provider,
+                    isSelected: selectedProvider == provider
+                ) {
+                    selectedProvider = provider
+                    onSelect(provider)
                 }
             }
-            .modifier(JarvisPanel())
-            
-            Spacer()
+        }
+    }
+}
+
+struct LLMProviderButton: View {
+    let provider: LLMProvider
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(provider.displayName.uppercased())
+                .font(.system(size: 8, design: .monospaced))
+                .fontWeight(isSelected ? .bold : .regular)
+                .foregroundColor(isSelected ? .white : .gray)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.jarvisBlue.opacity(0.2) : Color.black.opacity(0.3))
+                .overlay(
+                    Rectangle()
+                        .stroke(isSelected ? Color.jarvisBlue : Color.white.opacity(0.1), lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct LLMModelSelector: View {
+    @Binding var selectedModel: String
+    let suggestedModels: [String]
+    @State private var isExpanded: Bool = false
+    @State private var customModel: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("MODEL")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.gray)
+
+            // Selected model display / dropdown toggle
+            Button(action: { withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() } }) {
+                HStack {
+                    Text(selectedModel.isEmpty ? "Select a model" : selectedModel)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(selectedModel.isEmpty ? .gray : .white)
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 8))
+                        .foregroundColor(.jarvisBlue)
+                }
+                .padding(6)
+                .background(Color.black.opacity(0.5))
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                VStack(spacing: 0) {
+                    // Suggested models
+                    ForEach(suggestedModels, id: \.self) { model in
+                        Button(action: {
+                            selectedModel = model
+                            withAnimation(.easeInOut(duration: 0.15)) { isExpanded = false }
+                        }) {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(selectedModel == model ? Color.jarvisBlue : Color.clear)
+                                    .overlay(Circle().stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
+                                    .frame(width: 6, height: 6)
+                                Text(model)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(selectedModel == model ? .white : .gray)
+                                Spacer()
+                            }
+                            .padding(.vertical, 5)
+                            .padding(.horizontal, 8)
+                            .background(selectedModel == model ? Color.jarvisBlue.opacity(0.1) : Color.clear)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // Custom model input
+                    HStack(spacing: 6) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 8))
+                            .foregroundColor(.jarvisBlue.opacity(0.6))
+                        TextField("Custom model...", text: $customModel, onCommit: {
+                            if !customModel.trimmingCharacters(in: .whitespaces).isEmpty {
+                                selectedModel = customModel
+                                customModel = ""
+                                withAnimation(.easeInOut(duration: 0.15)) { isExpanded = false }
+                            }
+                        })
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.white)
+                    }
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 8)
+                    .background(Color.black.opacity(0.3))
+                }
+                .background(Color.black.opacity(0.6))
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+            }
         }
     }
 }

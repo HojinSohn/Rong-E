@@ -14,12 +14,8 @@ from agent.settings.settings import PROMPTS_DIR
 # Should not share state with RongEAgent. Independent Agent for Google tasks.
 class GoogleAgent:
     def __init__(self):
-        # 1. Initialize LLM
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-lite",
-            temperature=0
-        )
-
+        # 1. LLM is set later via set_llm() — no API key required at startup
+        self.llm = None
         self.llm_with_tools = None
 
         self.auth_manager = AuthManager()
@@ -35,6 +31,11 @@ class GoogleAgent:
         
         self.messages = [SystemMessage(content=self.system_prompt)]
         self.max_iterations = 10
+
+    def set_llm(self, llm):
+        """Set the LLM instance for this agent."""
+        self.llm = llm
+        print("🤖 GoogleAgent LLM updated.")
 
     def is_authenticated(self) -> bool:
         """Check if authenticated with Google APIs"""
@@ -78,7 +79,10 @@ class GoogleAgent:
         for tool in google_tools:
             self.tools.append(tool)
             self.tool_map[tool.name.lower()] = tool
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        if self.llm is not None:
+            self.llm_with_tools = self.llm.bind_tools(self.tools)
+        else:
+            self.llm_with_tools = None
 
     def reset_tools(self):
         """Reset tools to default state"""
@@ -89,13 +93,16 @@ class GoogleAgent:
     async def run(self, task_description: str) -> str:
         """Runs the agent with the given task description. Task description is provided by the RongEAgent to perform Google-related tasks."""
         
+        if self.llm is None:
+            return "❌ No LLM configured. Please set an LLM provider before using Google tasks."
+
         if not self.connected:
             return "❌ Not authenticated with Google APIs."
         
         print("GoogleAgent: Starting task execution...")
         print(f"Task Description: {task_description}")
 
-        final_response = None
+        final_response = ''
 
         # 1. Reset message history and append new task
         self.messages = [SystemMessage(content=self.system_prompt)]
@@ -138,6 +145,7 @@ class GoogleAgent:
                             tool_call_id=tool_call_id,
                             name=tool_name
                         ))
+                        final_response += f"Tool {tool_name} output: {tool_output}\n"
                     else:
                         print(f"   > Error: Tool {tool_name} not found.")
                         self.messages.append(ToolMessage(
@@ -145,9 +153,10 @@ class GoogleAgent:
                             tool_call_id=tool_call_id,
                             name=tool_name
                         ))
+                        final_response += f"Tool {tool_name} not found.\n"
             else:
                 # Final Response - no more tool calls
-                final_response = ai_msg.content
+                final_response += ai_msg.content
                 break
         
         print("GoogleAgent: Task execution completed.")

@@ -145,6 +145,26 @@ async def websocket_endpoint(websocket: WebSocket):
                         "content": {"servers": status_list}
                     }))
                     continue  # Skip the rest of the loop
+                elif data["data_type"] == "set_llm":
+                    provider = data.get("provider", "gemini")
+                    model = data.get("model", "")
+                    api_key = data.get("api_key")
+                    print(f"🤖 Received Set LLM: provider={provider}, model={model}")
+                    try:
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(None, agent.set_llm, provider, model, api_key)
+                        await websocket.send_text(json.dumps({
+                            "type": "llm_set_success",
+                            "content": f"✅ LLM verified and set to {provider} / {model}"
+                        }))
+                    except Exception as e:
+                        print(f"❌ Set LLM Error: {e}")
+                        await websocket.send_text(json.dumps({
+                            "type": "llm_set_error",
+                            "content": f"❌ {str(e)}"
+                        }))
+                    continue
                 elif data["data_type"] == "reset_session":
                     print("🔄 Received Session Reset Request")
                     agent.reset_session()
@@ -161,6 +181,18 @@ async def websocket_endpoint(websocket: WebSocket):
                         "content": {"tools": tools_info}
                     }))
                     continue
+
+            # Guard: ensure LLM is configured before processing commands
+            if agent.llm is None:
+                await websocket.send_text(json.dumps({
+                    "type": "response",
+                    "content": {
+                        "text": "No LLM configured. Please set an LLM provider in Settings before sending messages.",
+                        "images": [],
+                        "widgets": []
+                    }
+                }))
+                continue
 
             # Normal message processing
             query, mode, base64_image = data["text"], data["mode"], data.get("base64_image")

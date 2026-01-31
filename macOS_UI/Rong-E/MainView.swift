@@ -693,10 +693,10 @@ struct LeftColumnView: View {
                 HStack {
                     Image(systemName: "sparkles")
                         .foregroundStyle(.yellow)
-                    Text("Gemini 2.5 Flash")
+                    Text(appContext.llmProvider.displayName)
                         .foregroundStyle(.white.opacity(0.9))
                     Spacer()
-                    Text("PRO")
+                    Text(appContext.llmModel)
                         .font(.system(size: 8, weight: .bold))
                         .padding(.horizontal, 4)
                         .padding(.vertical, 2)
@@ -1602,6 +1602,8 @@ struct HeaderView: View {
     @EnvironmentObject var socketClient: SocketClient
     @EnvironmentObject var themeManager: ThemeManager
 
+    @ObservedObject var configManager = MCPConfigManager.shared
+
     let toggleMinimized: () -> Void
     
     @State private var googleHovering = false
@@ -1720,6 +1722,7 @@ struct HeaderView: View {
             Button(action: {
                 appContext.clearSession()
                 socketClient.sendResetSession()
+                configManager.sendConfigToPython()
             }) {
                 ZStack {
                     Color.white.opacity(refreshHovering ? 0.25 : 0.15)

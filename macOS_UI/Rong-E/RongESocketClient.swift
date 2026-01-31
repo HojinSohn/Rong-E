@@ -34,7 +34,7 @@ struct AgentMessage: Codable {
         case "tool_result":
             let val = try container.decode(ToolResultContent.self, forKey: .content)
             content = .toolResult(val)
-        case "credentials_success", "error", "mcp_sync_success", "mcp_sync_error", "session_reset":
+        case "credentials_success", "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error":
             // Handle simple string content for status messages
             if let stringContent = try? container.decode(String.self, forKey: .content) {
                 content = .response(ResponseContent(text: stringContent, images: []))
@@ -197,6 +197,7 @@ class SocketClient: ObservableObject {
     var onMCPServerStatus: (([MCPServerStatusInfo]) -> Void)?
     var onSessionReset: (() -> Void)?
     var onReceiveActiveTools: (([ActiveToolInfo]) -> Void)?
+    var onLLMSetResult: ((Bool, String?) -> Void)?
 
     func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
@@ -352,6 +353,18 @@ class SocketClient: ObservableObject {
                 }
             case "session_reset":
                 self.onSessionReset?()
+            case "llm_set_success":
+                if case .response(let content) = parsedMsg.content {
+                    self.onLLMSetResult?(true, content.text)
+                } else {
+                    self.onLLMSetResult?(true, nil)
+                }
+            case "llm_set_error":
+                if case .response(let content) = parsedMsg.content {
+                    self.onLLMSetResult?(false, content.text)
+                } else {
+                    self.onLLMSetResult?(false, "Unknown error")
+                }
             default:
                 print("❓ Unhandled type: \(parsedMsg.type)")
             }
@@ -404,6 +417,11 @@ class SocketClient: ObservableObject {
     }
 
     func sendResetSession() {
+        if webSocketTask?.state != .running {
+            // Try to reconnect
+            print("⚠️ WebSocket not connected, attempting to reconnect...")
+            connect()
+        }
         let json: [String: String] = ["data_type": "reset_session"]
         if let jsonData = try? JSONEncoder().encode(json),
            let jsonString = String(data: jsonData, encoding: .utf8) {
@@ -412,6 +430,7 @@ class SocketClient: ObservableObject {
                 if let error = error { print("❌ Reset Session Send Error: \(error)") }
             }
         }
+        sendToolsRequest()  
     }
 
     func sendToolsRequest() {
@@ -421,6 +440,24 @@ class SocketClient: ObservableObject {
             let message = URLSessionWebSocketTask.Message.string(jsonString)
             webSocketTask?.send(message) { error in
                 if let error = error { print("❌ Tools Request Send Error: \(error)") }
+            }
+        }
+    }
+
+    func sendLLMConfig(provider: String, model: String, apiKey: String?) {
+        var json: [String: Any] = [
+            "data_type": "set_llm",
+            "provider": provider,
+            "model": model
+        ]
+        if let apiKey = apiKey {
+            json["api_key"] = apiKey
+        }
+        if let jsonData = try? JSONSerialization.data(withJSONObject: json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ LLM Config Send Error: \(error)") }
             }
         }
     }

@@ -45,6 +45,88 @@ struct ReasoningStep: Identifiable {
     }
 }
 
+enum LLMProvider: String, CaseIterable, Codable {
+    case gemini = "gemini"
+    case openai = "openai"
+    case ollama = "ollama"
+    case anthropic = "anthropic"
+
+    var displayName: String {
+        switch self {
+        case .gemini: return "Google Gemini"
+        case .openai: return "OpenAI"
+        case .ollama: return "Ollama"
+        case .anthropic: return "Anthropic"
+        }
+    }
+
+    var requiresAPIKey: Bool {
+        switch self {
+        case .ollama: return false
+        default: return true
+        }
+    }
+
+    var defaultModel: String {
+        switch self {
+        case .gemini: return "gemini-2.5-flash-lite"
+        case .openai: return "gpt-4o-mini"
+        case .ollama: return "llama3"
+        case .anthropic: return "claude-sonnet-4-20250514"
+        }
+    }
+
+    var apiKeyPlaceholder: String {
+        switch self {
+        case .gemini: return "Enter Google AI API key..."
+        case .openai: return "Enter OpenAI API key..."
+        case .ollama: return "No API key required"
+        case .anthropic: return "Enter Anthropic API key..."
+        }
+    }
+
+    var suggestedModels: [String] {
+        switch self {
+        case .gemini:
+            return [
+                "gemini-2.5-flash-lite",
+                "gemini-2.5-flash",
+                "gemini-2.5-pro",
+                "gemini-2.0-flash",
+                "gemini-1.5-pro"
+            ]
+        case .openai:
+            return [
+                "gpt-4o-mini",
+                "gpt-4o",
+                "gpt-4-turbo",
+                "gpt-3.5-turbo",
+                "o1-mini",
+                "o1"
+            ]
+        case .ollama:
+            return [
+                "llama3",
+                "llama3.1",
+                "llama3.2",
+                "mistral",
+                "codellama",
+                "gemma2",
+                "phi3",
+                "qwen2"
+            ]
+        case .anthropic:
+            return [
+                "claude-sonnet-4-20250514",
+                "claude-haiku-4-20250414",
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-haiku-20241022",
+                "claude-3-opus-20240229"
+            ]
+        }
+    }
+}
+
 class AppContext: ObservableObject {
     static let shared = AppContext()
 
@@ -71,6 +153,8 @@ class AppContext: ObservableObject {
     
     @Published var currentSessionChatMessages: [ChatMessage] = []
     @Published var activeTools: [ActiveToolInfo] = []
+    @Published var llmProvider: LLMProvider = .gemini
+    @Published var llmModel: String = "gemini-2.5-flash-lite"
     
     // We initialize these with placeholders, they get updated in init()
     @Published var overlayWidth: CGFloat = 0
@@ -146,6 +230,8 @@ class AppContext: ObservableObject {
             UserDefaults.standard.set(encodedModes, forKey: "modes")
         }
         UserDefaults.standard.set(aiApiKey, forKey: "aiApiKey")
+        UserDefaults.standard.set(llmProvider.rawValue, forKey: "llmProvider")
+        UserDefaults.standard.set(llmModel, forKey: "llmModel")
         UserDefaults.standard.set(startUpWorkFinished, forKey: "startUpWorkFinished")
     }
 
@@ -158,6 +244,13 @@ class AppContext: ObservableObject {
         }
         if let savedApiKey = UserDefaults.standard.string(forKey: "aiApiKey") {
             self.aiApiKey = savedApiKey
+        }
+        if let savedProvider = UserDefaults.standard.string(forKey: "llmProvider"),
+           let provider = LLMProvider(rawValue: savedProvider) {
+            self.llmProvider = provider
+        }
+        if let savedModel = UserDefaults.standard.string(forKey: "llmModel") {
+            self.llmModel = savedModel
         }
         if UserDefaults.standard.object(forKey: "startUpWorkFinished") != nil {
             self.startUpWorkFinished = UserDefaults.standard.bool(forKey: "startUpWorkFinished")

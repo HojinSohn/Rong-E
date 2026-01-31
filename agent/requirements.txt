@@ -1,4 +1,6 @@
 langchain-ollama
+langchain-openai
+langchain-anthropic
 langchain-core
 langchain-community
 gspread
