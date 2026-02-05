@@ -96,6 +96,17 @@ struct MainView: View {
         print("New minimizedMode: \(minimizedMode)")
     }
 
+    func toggleMessageView() {
+        if minimizedMode {
+            // Already minimized - expand back (toggleMinimized will hide the message view)
+            toggleMinimized()
+        } else {
+            // Currently expanded - minimize first, then show message view after animation
+            toggleMinimized()
+            self.setShowMinimizedMessageView(true)
+        }
+    }
+
     func toggleFullChatView() {
         withAnimation(.easeInOut(duration: 0.4)) {
             fullChatViewMode.toggle()
@@ -119,7 +130,7 @@ struct MainView: View {
             if isServerReady {
                 mainContent
             } else {
-                ServerLoadingView(serverStatus: pythonManager.serverStatus, isConnected: socketClient.isConnected)
+                AgentLoadingView(serverStatus: pythonManager.serverStatus, isConnected: socketClient.isConnected)
             }
         }
         .onAppear {
@@ -185,7 +196,7 @@ struct MainView: View {
                 // Content Layer (Header + Columns) — removed from layout when minimized
                 if !minimizedMode {
                     VStack(spacing: 0) {
-                        HeaderView(toggleMinimized: toggleMinimized)
+                        HeaderView(toggleMinimized: toggleMinimized, toggleMessageView: toggleMessageView)
                             .padding(.top, 20)
                             .padding(.horizontal, 24)
                             .opacity(showColumns ? 1 : 0) // Stagger entry
@@ -271,7 +282,7 @@ struct MainView: View {
             }
             .overlay(alignment: .bottom) {
                 if showMinimizedMessageView {
-                    MinimizedMessageView(inputText: $inputText, showMinimizedMessageView: $showMinimizedMessageView, onSubmit: submitQuery)
+                    MinimizedMessageView(inputText: $inputText, showMinimizedMessageView: $showMinimizedMessageView, onSubmit: submitQuery, toggleMessageView: toggleMessageView)
                         .environmentObject(appContext)
                         .offset(y: -110)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1241,6 +1252,7 @@ struct MinimizedMessageView: View {
     @Binding var inputText: String
     @Binding var showMinimizedMessageView: Bool
     var onSubmit: () -> Void
+    var toggleMessageView: () -> Void
 
     @EnvironmentObject var appContext: AppContext
     
@@ -1262,6 +1274,21 @@ struct MinimizedMessageView: View {
                     .shadow(color: hudCyan.opacity(0.5), radius: 5)
                 
                 Spacer()
+
+                Button(action: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        toggleMessageView()
+                    }
+                }) {
+                    Image(systemName: "rectangle.compress.vertical")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(hudCyan)
+                        .padding(8)
+                        .background(Color.black.opacity(0.01)) // Almost invisible tap area
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(hudCyan.opacity(0.5), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
                 
                 Button(action: {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -1659,12 +1686,15 @@ struct HeaderView: View {
     @ObservedObject var configManager = MCPConfigManager.shared
 
     let toggleMinimized: () -> Void
+
+    let toggleMessageView: () -> Void
     
     @State private var googleHovering = false
     @State private var workflowHovering = false
     @State private var settingsHovering = false
     @State private var refreshHovering = false
     @State private var shrinkHovering = false
+    @State private var chatMinimizeHovering = false
 
     var body: some View {
         HStack {
@@ -1804,6 +1834,36 @@ struct HeaderView: View {
             .contentShape(Rectangle())
             .zIndex(10)
 
+            // Minimized Chat View Button
+            Button(action: {
+                toggleMessageView()
+            }) {
+                ZStack {
+                    Color.white.opacity(chatMinimizeHovering ? 0.25 : 0.15)
+                        .cornerRadius(8)
+                    
+                    Image(systemName: "rectangle.compress.vertical")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 32, height: 32)
+                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .scaleEffect(chatMinimizeHovering ? 1.1 : 1.0)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    chatMinimizeHovering = hovering
+                }
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .contentShape(Rectangle())
+            .zIndex(10)
+
             // Shrink Button
             Button(action: {
                 toggleMinimized()
@@ -1906,107 +1966,124 @@ extension NSTextField {
 }
 
 // MARK: - Server Loading View
-struct ServerLoadingView: View {
+struct AgentLoadingView: View {
     let serverStatus: PythonProcessManager.ServerStatus
     let isConnected: Bool
 
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+    // MARK: - Computed Styles
+    
+    // Logic to determine the color of the Orb based on state
+    var statusColor: Color {
+        switch serverStatus {
+        case .running: return isConnected ? Color(red: 0.2, green: 1.0, blue: 0.4) : Color(red: 0.2, green: 0.85, blue: 1.0)
+        case .error: return Color(red: 1.0, green: 0.3, blue: 0.3)
+        case .stopping: return Color.orange
+        default: return Color(red: 0.2, green: 0.85, blue: 1.0) // Your default Light Blue
+        }
+    }
 
     var statusMessage: String {
         switch serverStatus {
-        case .stopped:
-            return "INITIALIZING..."
-        case .starting:
-            return "STARTING AGENT..."
-        case .running:
-            // Server is running but check WebSocket connection
-            return isConnected ? "ONLINE" : "CONNECTING..."
-        case .stopping:
-            return "SHUTTING DOWN..."
-        case .error(let msg):
-            return "ERROR: \(msg)"
+        case .stopped: return "SYSTEM INITIALIZING"
+        case .starting: return "BOOTING CORE"
+        case .running: return isConnected ? "SYSTEM ONLINE" : "CONNECTING"
+        case .stopping: return "SHUTTING DOWN"
+        case .error(let msg): return "ERR: \(msg.prefix(12))"
         }
     }
-
-    var isLoading: Bool {
+    
+    // Stop the outer rotation if we are just sitting in "Online" or "Error" state
+    var isAnimating: Bool {
         serverStatus == .starting || serverStatus == .stopped || (serverStatus == .running && !isConnected)
     }
 
-    @State private var glowPulse = false
-
     var body: some View {
         ZStack {
-            // Layer 1: Outer glow pulse
-            RoundedRectangle(cornerRadius: 24)
-                .fill(
-                    RadialGradient(
-                        colors: [hudCyan.opacity(glowPulse ? 0.3 : 0.1), Color.clear],
-                        center: .center,
-                        startRadius: 50,
-                        endRadius: 150
-                    )
+            // MARK: - Dark Transparent Glass Container
+            RoundedRectangle(cornerRadius: 30)
+                .fill(Color.black.opacity(0.2)) // More transparent tint
+                .background(.ultraThinMaterial.opacity(0.5))  // Lighter blur effect
+                .clipShape(RoundedRectangle(cornerRadius: 30))
+                .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 10)
+                // Subtle border matching the status color
+                .overlay(
+                    RoundedRectangle(cornerRadius: 30)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    statusColor.opacity(0.3),
+                                    statusColor.opacity(0.05),
+                                    statusColor.opacity(0.0)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
                 )
-                .frame(width: 220, height: 280)
-                .blur(radius: 20)
-                .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: glowPulse)
 
-            VStack(spacing: 24) {
-                // Animated Core Ring
+            VStack(spacing: 25) {
+                // 1. The Glossy Orb (Your Design)
                 RongERing()
-                    .scaleEffect(1.2)
+                    .frame(width: 110, height: 110)
+                    .shadow(color: statusColor.opacity(0.8), radius: 80)
 
-                // Status Text
+                // 2. Status Information
                 VStack(spacing: 8) {
                     Text("RONG-E AGENT")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundStyle(hudCyan)
-                        .shadow(color: hudCyan.opacity(0.8), radius: 8)
-
-                    Text(statusMessage)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .tracking(2)
                         .foregroundStyle(.white.opacity(0.8))
 
-                    // Loading dots animation
-                    if isLoading {
-                        LoadingDotsView()
+                    // Status Line with Dots
+                    HStack(spacing: 8) {
+                        Text(statusMessage)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(statusColor)
+                            .shadow(color: statusColor.opacity(0.5), radius: 6)
+
+                        if isAnimating {
+                            ModernLoadingDots(color: statusColor)
+                        }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(statusColor.opacity(0.1))
+                            .overlay(Capsule().stroke(statusColor.opacity(0.2), lineWidth: 0.5))
+                    )
                 }
             }
+            .padding(.vertical, 30)
         }
-        .frame(width: 220, height: 280)
-        .onAppear {
-            glowPulse = true
-        }
+        .frame(width: 240, height: 300)
     }
 }
 
-// MARK: - Loading Dots Animation
-struct LoadingDotsView: View {
-    @State private var animationPhase = 0
-
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+// MARK: - Helper Components
+struct ModernLoadingDots: View {
+    let color: Color
+    @State private var isAnimating = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(0..<3, id: \.self) { index in
+        HStack(spacing: 3) {
+            ForEach(0..<3) { index in
                 Circle()
-                    .fill(hudCyan)
-                    .frame(width: 6, height: 6)
-                    .opacity(animationPhase == index ? 1.0 : 0.3)
-                    .scaleEffect(animationPhase == index ? 1.2 : 1.0)
-                    .shadow(color: animationPhase == index ? hudCyan : .clear, radius: 4)
+                    .fill(color)
+                    .frame(width: 3, height: 3)
+                    .scaleEffect(isAnimating ? 1.0 : 0.5)
+                    .opacity(isAnimating ? 1.0 : 0.3)
+                    .animation(
+                        .easeInOut(duration: 0.6)
+                        .repeatForever()
+                        .delay(Double(index) * 0.2),
+                        value: isAnimating
+                    )
             }
         }
         .onAppear {
-            startAnimation()
-        }
-    }
-
-    private func startAnimation() {
-        Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                animationPhase = (animationPhase + 1) % 3
-            }
+            isAnimating = true
         }
     }
 }
