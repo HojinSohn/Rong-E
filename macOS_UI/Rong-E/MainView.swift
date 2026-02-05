@@ -36,7 +36,6 @@ struct MainView: View {
     @EnvironmentObject var workflowManager: WorkflowManager
     @EnvironmentObject var googleAuthManager: GoogleAuthManager
     @EnvironmentObject var socketClient: SocketClient
-    @EnvironmentObject var themeManager: ThemeManager
 
     func toggleMinimized() {
         print("🔽 Toggling Minimized Mode")
@@ -172,11 +171,10 @@ struct MainView: View {
                         }
                         .padding(24)
                         .background(
-                            
+
                             RongERing()
                                 .scaleEffect(2.5)
                                 .blur(radius: 10)
-                                .environmentObject(themeManager)
                                 .allowsHitTesting(false)
                         )
                     }
@@ -184,7 +182,6 @@ struct MainView: View {
                 } else {
                     RongERing()
                         .scaleEffect(0.6)
-                        .environmentObject(themeManager)
                 }
             }
             // MARK: - Frame Animation Logic
@@ -319,11 +316,10 @@ struct MainView: View {
                 let randomY = CGFloat.random(in: 100...500)
                 windowCoordinator.openDynamicWindow(id: imageData.url, view: AnyView(
                     ImageView(imageData: imageData, windowID: imageData.url)
-                    .environmentObject(themeManager)
                     .environmentObject(windowCoordinator)
                     .frame(width: 600, height: 400)
                     .padding()
-                    .background(themeManager.current.background)
+                    .background(Color.black.opacity(0.6))
                     .cornerRadius(12)
                     .shadow(radius: 10)
                 ), size: CGSize(width: 600, height: 400), location: CGPoint(x: randomX, y: randomY))
@@ -1097,10 +1093,6 @@ struct InputAreaView: View {
 }
 
 struct RongERing: View {
-    // We can keep ThemeManager if you need it for other things, 
-    // but here we define specific light blue colors for the glow effect.
-    @EnvironmentObject var themeManager: ThemeManager 
-    
     @State private var pulse = false
     @State private var rotate = false
     
@@ -1600,7 +1592,6 @@ struct HeaderView: View {
     @EnvironmentObject var workflowManager: WorkflowManager
     @EnvironmentObject var googleAuthManager: GoogleAuthManager
     @EnvironmentObject var socketClient: SocketClient
-    @EnvironmentObject var themeManager: ThemeManager
 
     @ObservedObject var configManager = MCPConfigManager.shared
 

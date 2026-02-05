@@ -70,8 +70,7 @@ struct VisualEffectBlur: NSViewRepresentable {
 struct SettingsView: View {
     @EnvironmentObject var coordinator: WindowCoordinator
     @EnvironmentObject var context: AppContext
-    @EnvironmentObject var themeManager: ThemeManager
-    
+
     let windowID: String
     
     // Custom Tab Selection
@@ -141,21 +140,19 @@ struct SettingsView: View {
                 // Custom Tab Bar (Replacing standard TabView for styling control)
                 HStack(spacing: 0) {
                     JarvisTabButton(icon: "gearshape", title: "SYS", isSelected: selectedTab == 0) { selectedTab = 0 }
-                    JarvisTabButton(icon: "paintbrush", title: "VIS", isSelected: selectedTab == 1) { selectedTab = 1 }
-                    JarvisTabButton(icon: "slider.horizontal.3", title: "MOD", isSelected: selectedTab == 2) { selectedTab = 2 }
-                    JarvisTabButton(icon: "server.rack", title: "MCP", isSelected: selectedTab == 3) { selectedTab = 3 }
-                    JarvisTabButton(icon: "info.circle", title: "DAT", isSelected: selectedTab == 4) { selectedTab = 4 }
+                    JarvisTabButton(icon: "slider.horizontal.3", title: "MOD", isSelected: selectedTab == 1) { selectedTab = 1 }
+                    JarvisTabButton(icon: "server.rack", title: "MCP", isSelected: selectedTab == 2) { selectedTab = 2 }
+                    JarvisTabButton(icon: "info.circle", title: "DAT", isSelected: selectedTab == 3) { selectedTab = 3 }
                 }
                 .padding(.vertical, 10)
-                
+
                 // View Switcher
                 Group {
                     switch selectedTab {
                     case 0: GeneralSettingsView()
-                    case 1: AppearanceSettingsView()
-                    case 2: ModesSettingsView() // Placeholder or your actual view
-                    case 3: MCPSettingsView()
-                    case 4: AboutSettingsView()
+                    case 1: ModesSettingsView()
+                    case 2: MCPSettingsView()
+                    case 3: AboutSettingsView()
                     default: GeneralSettingsView()
                     }
                 }
@@ -496,38 +493,6 @@ struct LLMModelSelector: View {
     }
 }
 
-struct AppearanceSettingsView: View {
-    @EnvironmentObject var themeManager: ThemeManager
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("INTERFACE PROTOCOL")
-                .font(.caption)
-                .foregroundColor(.jarvisBlue.opacity(0.7))
-                .tracking(1)
-            
-            HStack(spacing: 15) {
-                ThemeButton(title: "DARK", isSelected: themeManager.current.name == "Dark") { themeManager.switchToDark() }
-                ThemeButton(title: "LIGHT", isSelected: themeManager.current.name == "Light") { themeManager.switchToLight() }
-                ThemeButton(title: "CYBER", isSelected: themeManager.current.name == "Cyberpunk") { themeManager.switchToCyberpunk() }
-            }
-            
-            Spacer()
-            
-            // Decorative Data Visualization
-            HStack {
-                ForEach(0..<15) { i in
-                    Rectangle()
-                        .fill(Color.jarvisBlue.opacity(Double.random(in: 0.1...0.8)))
-                        .frame(width: 4, height: CGFloat.random(in: 10...30))
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-        .modifier(JarvisPanel())
-    }
-}
-
 // MARK: - MCP Settings View
 struct MCPSettingsView: View {
     @ObservedObject var configManager = MCPConfigManager.shared
@@ -611,7 +576,13 @@ struct MCPSettingsView: View {
                 MCPActionButton(icon: "doc.badge.plus", title: "IMPORT") {
                     showFileImporter = true
                 }
-                MCPActionButton(icon: "doc.on.clipboard", title: "PASTE") {
+                MCPActionButton(icon: "doc.on.clipboard", title: "EDIT") {
+                    // Pre-populate with current config
+                    if let config = configManager.currentConfig {
+                        jsonPasteText = config.toJSONString()
+                    } else {
+                        jsonPasteText = "{\n  \"mcpServers\": {\n    \n  }\n}"
+                    }
                     showJSONPasteSheet = true
                 }
                 MCPActionButton(icon: "plus.circle", title: "ADD") {
@@ -880,22 +851,26 @@ struct MCPJSONPasteSheet: View {
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("PASTE MCP CONFIG")
+                Text("EDIT MCP CONFIG")
                     .font(.system(.headline, design: .monospaced))
                     .foregroundColor(.jarvisBlue)
                     .tracking(2)
 
+                Text("Edit the JSON below to add or modify MCP servers")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.gray)
+
                 TextEditor(text: $jsonText)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.white)
                     .scrollContentBackground(.hidden)
                     .background(Color.black.opacity(0.5))
                     .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
-                    .frame(minHeight: 150)
+                    .frame(minHeight: 200)
 
                 Text("FORMAT: {\"mcpServers\": {\"name\": {\"command\": \"...\", \"args\": [...]}}}")
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(.gray)
+                    .foregroundColor(.gray.opacity(0.7))
 
                 HStack {
                     Spacer()
@@ -907,7 +882,7 @@ struct MCPJSONPasteSheet: View {
                         .overlay(Rectangle().stroke(Color.gray.opacity(0.5), lineWidth: 1))
                         .buttonStyle(.plain)
 
-                    Button("IMPORT") {
+                    Button("APPLY") {
                         onSubmit()
                         dismiss()
                     }
@@ -923,7 +898,7 @@ struct MCPJSONPasteSheet: View {
             }
             .padding(24)
         }
-        .frame(width: 500, height: 350)
+        .frame(width: 550, height: 420)
     }
 }
 
@@ -1043,31 +1018,3 @@ struct JarvisToggle: View {
     }
 }
 
-// Updated Theme Button
-struct ThemeButton: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 11, design: .monospaced))
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                // Fix 1: Give unselected buttons a very faint background
-                .background(isSelected ? Color.jarvisBlue.opacity(0.2) : Color.white.opacity(0.05))
-                .foregroundColor(isSelected ? .jarvisBlue : .gray)
-                .overlay(
-                    Rectangle()
-                        // Fix 2: Ensure unselected buttons have a faint border too
-                        .stroke(isSelected ? Color.jarvisBlue : Color.white.opacity(0.1), lineWidth: 1)
-                )
-                .modifier(JarvisGlow(active: isSelected))
-                // Fix 3: Critical for clicking custom shapes
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}

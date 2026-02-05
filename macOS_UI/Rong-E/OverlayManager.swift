@@ -93,16 +93,14 @@ class OverlayWindow: NSPanel {
 class WindowCoordinator: ObservableObject {
     let appContext: AppContext
     let client: SocketClient
-    let themeManager: ThemeManager
     let googleAuthManager: GoogleAuthManager
     let workflowManager: WorkflowManager
-    
+
     static let shared = WindowCoordinator()
 
     private init() {
         self.appContext = AppContext.shared
         self.client = SocketClient.shared
-        self.themeManager = ThemeManager.shared
         self.googleAuthManager = GoogleAuthManager.shared
         self.workflowManager = WorkflowManager.shared
     }
@@ -329,7 +327,6 @@ class MainWindowController: BaseOverlayController<AnyView> {
         let view = MainView()
             .environmentObject(coordinator.appContext)
             .environmentObject(coordinator.client)
-            .environmentObject(coordinator.themeManager)
             .environmentObject(coordinator.googleAuthManager)
             .environmentObject(coordinator)
         
@@ -372,7 +369,6 @@ class DynamicWindowController: BaseOverlayController<AnyView> {
         let wiredView = view
             .environmentObject(coordinator.appContext)
             .environmentObject(coordinator.client)
-            .environmentObject(coordinator.themeManager)
             .environmentObject(coordinator.googleAuthManager)
             .environmentObject(coordinator)
         

@@ -8,7 +8,6 @@ struct PermissionWaitingView: View {
     let size: CGSize
     
     @State private var pulseAnimation = false
-    @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var coordinator: WindowCoordinator
     
     var body: some View {

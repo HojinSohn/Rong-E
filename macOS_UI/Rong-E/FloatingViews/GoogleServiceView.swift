@@ -12,7 +12,6 @@ struct SpreadsheetConfig: Identifiable, Codable {
 }
 
 struct GoogleServiceView: View {
-    @EnvironmentObject var theme: ThemeManager
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var coordinator: WindowCoordinator
     @EnvironmentObject var googleAuthManager: GoogleAuthManager

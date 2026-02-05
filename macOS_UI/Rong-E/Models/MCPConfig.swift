@@ -74,6 +74,17 @@ struct MCPConfig: Codable {
         }
         return MCPConfig(mcpServers: mcpServers)
     }
+
+    /// Convert to formatted JSON string for display/editing
+    func toJSONString() -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(self),
+              let jsonString = String(data: data, encoding: .utf8) else {
+            return "{\"mcpServers\": {}}"
+        }
+        return jsonString
+    }
 }
 
 // MARK: - Validation
