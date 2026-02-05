@@ -229,10 +229,39 @@ class AppContext: ObservableObject {
         if let encodedModes = try? encoder.encode(modes) {
             UserDefaults.standard.set(encodedModes, forKey: "modes")
         }
-        UserDefaults.standard.set(aiApiKey, forKey: "aiApiKey")
+        // Save API key for the current provider
+        saveApiKeyForProvider(llmProvider, apiKey: aiApiKey)
         UserDefaults.standard.set(llmProvider.rawValue, forKey: "llmProvider")
         UserDefaults.standard.set(llmModel, forKey: "llmModel")
         UserDefaults.standard.set(startUpWorkFinished, forKey: "startUpWorkFinished")
+    }
+
+    /// Save API key for a specific provider
+    func saveApiKeyForProvider(_ provider: LLMProvider, apiKey: String) {
+        let key = "apiKey_\(provider.rawValue)"
+        UserDefaults.standard.set(apiKey, forKey: key)
+        print("💾 Saved API key for \(provider.displayName)")
+    }
+
+    /// Load API key for a specific provider
+    func loadApiKeyForProvider(_ provider: LLMProvider) -> String {
+        let key = "apiKey_\(provider.rawValue)"
+        return UserDefaults.standard.string(forKey: key) ?? ""
+    }
+
+    /// Switch to a new provider and load its saved API key
+    func switchProvider(to provider: LLMProvider) {
+        // Save current API key for the current provider before switching
+        saveApiKeyForProvider(llmProvider, apiKey: aiApiKey)
+
+        // Switch provider
+        llmProvider = provider
+        llmModel = provider.defaultModel
+
+        // Load the API key for the new provider
+        aiApiKey = loadApiKeyForProvider(provider)
+
+        saveSettings()
     }
 
     func loadSettings() {
@@ -242,13 +271,14 @@ class AppContext: ObservableObject {
            let decodedModes = try? decoder.decode([ModeConfiguration].self, from: savedModesData) {
             self.modes = decodedModes
         }
-        if let savedApiKey = UserDefaults.standard.string(forKey: "aiApiKey") {
-            self.aiApiKey = savedApiKey
-        }
+        // Load provider first, then load API key for that provider
         if let savedProvider = UserDefaults.standard.string(forKey: "llmProvider"),
            let provider = LLMProvider(rawValue: savedProvider) {
             self.llmProvider = provider
         }
+        // Load API key for the current provider
+        self.aiApiKey = loadApiKeyForProvider(llmProvider)
+
         if let savedModel = UserDefaults.standard.string(forKey: "llmModel") {
             self.llmModel = savedModel
         }

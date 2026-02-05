@@ -247,10 +247,8 @@ struct GeneralSettingsView: View {
 
                     // Provider Selector
                     LLMProviderSelector(selectedProvider: $context.llmProvider, onSelect: { provider in
-                        context.llmModel = provider.defaultModel
-                        if !provider.requiresAPIKey {
-                            context.aiApiKey = ""
-                        }
+                        // Use switchProvider to properly save/load API keys per provider
+                        context.switchProvider(to: provider)
                         llmStatusMessage = nil
                     })
 

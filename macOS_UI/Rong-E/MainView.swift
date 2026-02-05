@@ -11,6 +11,9 @@ struct MainView: View {
     @State private var showMinimizedMessageView = false
     @State private var onCoreHover = false
 
+    // 2. Server Loading State
+    @ObservedObject private var pythonManager = PythonProcessManager.shared
+
     // 3. Permission & Screenshot State
     @State private var waitingForPermission = false
     @State private var pendingQuery: String? = nil
@@ -36,6 +39,11 @@ struct MainView: View {
     @EnvironmentObject var workflowManager: WorkflowManager
     @EnvironmentObject var googleAuthManager: GoogleAuthManager
     @EnvironmentObject var socketClient: SocketClient
+
+    // Computed property to check if server is ready (process running AND WebSocket connected)
+    private var isServerReady: Bool {
+        pythonManager.serverStatus == .running && socketClient.isConnected
+    }
 
     func toggleMinimized() {
         print("🔽 Toggling Minimized Mode")
@@ -107,12 +115,38 @@ struct MainView: View {
     }
 
     var body: some View {
+        Group {
+            if isServerReady {
+                mainContent
+            } else {
+                ServerLoadingView(serverStatus: pythonManager.serverStatus, isConnected: socketClient.isConnected)
+            }
+        }
+        .onAppear {
+            // Initialize connections and auth
+            setUpConnection()
+
+            // Only toggle minimized when server is ready
+            if isServerReady {
+                toggleMinimized()
+            }
+        }
+        .onChange(of: socketClient.isConnected) { isConnected in
+            // Trigger main content animations when WebSocket connects (and server is running)
+            if isConnected && pythonManager.serverStatus == .running {
+                toggleMinimized()
+            }
+        }
+    }
+
+    // MARK: - Main Content View
+    private var mainContent: some View {
         ZStack(alignment: .bottom) { // Align bottom to help with positioning
             // --- CLOCK LAYER ---
             // Fades out when minimized
             VStack(spacing: 0) { // 1. Remove spacing between Time and Greeting
                 Spacer().frame(height: 80) // Top Spacer for better vertical alignment
-                
+
                 // Time Display (Dynamic)
                 Text(Date(), style: .time)
                     .font(.system(size: 42, weight: .semibold, design: .default))
@@ -122,14 +156,14 @@ struct MainView: View {
                 Text("Good \(getGreeting()), Hojin!") // Good Morning/Afternoon/Evening Greeting
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
-                
+
                 Spacer()
             }
             .frame(width: 800, height: 520)
             .zIndex(1)
             .opacity(minimizedMode ? 0 : 1)
             // Adjust offset to keep it visually balanced with the new smaller size
-            .offset(y: fullChatViewMode ? 0 : 40) 
+            .offset(y: fullChatViewMode ? 0 : 40)
             .opacity(fullChatViewMode ? 0 : 1)
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: fullChatViewMode)
             .allowsHitTesting(false)
@@ -155,12 +189,12 @@ struct MainView: View {
                             .padding(.top, 20)
                             .padding(.horizontal, 24)
                             .opacity(showColumns ? 1 : 0) // Stagger entry
-                        
+
                         HStack(alignment: .top, spacing: 16) {
                             LeftColumnView()
                                 .offset(x: showColumns ? 0 : -100)
                                 .opacity(showColumns ? 1 : 0)
-                            
+
                             MainColumnView(
                                 inputText: $inputText,
                                 fullChatViewMode: $fullChatViewMode,
@@ -219,7 +253,7 @@ struct MainView: View {
             )
             // Corner radius becomes 40 (half of 80) to make a perfect circle
             .cornerRadius(40)
-            
+
             // Restore on Tap
             .onTapGesture {
                 if minimizedMode {
@@ -243,12 +277,6 @@ struct MainView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-        }
-        .onAppear {
-            // Initialize connections and auth
-            setUpConnection()
-            
-            toggleMinimized() // Use this to trigger the initial animations
         }
     }
 
@@ -1132,14 +1160,7 @@ struct RongERing: View {
     
     var body: some View {
         ZStack {
-            // 1. Outer Ambient Glow (The "Atmosphere")
-            Circle()
-                .fill(lightBlueGlow.opacity(pulse ? 0.4 : 0.1))
-                .frame(width: 130, height: 130)
-                .blur(radius: 20)
-                .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: pulse)
-            
-            // 2. Rotating Outer Ring (With Angular Gradient for motion effect)
+            // 1. Rotating Outer Ring (With Angular Gradient for motion effect)
             Circle()
                 .trim(from: 0.0, to: 0.75) // Not a full circle makes rotation visible
                 .stroke(
@@ -1152,13 +1173,13 @@ struct RongERing: View {
                 .frame(width: 110, height: 110)
                 .rotationEffect(.degrees(rotate ? 360 : 0))
                 .animation(.linear(duration: 3).repeatForever(autoreverses: false), value: rotate)
-            
-            // 3. Static Thin Ring
+
+            // 2. Static Thin Ring
             Circle()
                 .stroke(lightBlueGlow.opacity(0.3), lineWidth: 1)
                 .frame(width: 95, height: 95)
-            
-            // 4. Main Button Orb
+
+            // 3. Main Button Orb
             Circle()
                 .fill(
                     RadialGradient(
@@ -1177,8 +1198,8 @@ struct RongERing: View {
                 .shadow(color: lightBlueGlow.opacity(0.8), radius: pulse ? 25 : 15)
                 .shadow(color: deepBlue.opacity(0.5), radius: 5)
                 .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: pulse)
-            
-            // 5. Glossy Reflection (Top Left) - Makes it look like glass/button
+
+            // 4. Glossy Reflection (Top Left) - Makes it look like glass/button
             Circle()
                 .trim(from: 0.6, to: 0.9)
                 .stroke(Color.white.opacity(0.6), style: StrokeStyle(lineWidth: 3, lineCap: .round))
@@ -1348,21 +1369,24 @@ struct MinimizedMessageView: View {
 struct MessageView: View {
     @EnvironmentObject var appContext: AppContext
     @Binding var fullChatViewMode: Bool
-    
+
     // State
     @State private var systemLogs: [String] = []
-    
-    // RongE Themed Boot Sequence
-    private let bootLogs: [String] = [
-        "INTERFACE INITIALIZED",
-        "LOADING: INTAKE PIPELINE...",
-        "LOADING: RETRIEVAL CORE...",
-        "LOADING: VISION MODULES...",
-        "ESTABLISHING SECURE LINK...",
-        "CONNECTION: STABLE",
-        "MODEL: GEMINI 2.5 FLASH LITE",
-        "STATUS: ONLINE"
-    ]
+    @State private var bootAnimationId = UUID() // Used to re-trigger boot animation
+
+    // RongE Themed Boot Sequence (computed to include current model)
+    private var bootLogs: [String] {
+        [
+            "INTERFACE INITIALIZED",
+            "LOADING: INTAKE PIPELINE...",
+            "LOADING: RETRIEVAL CORE...",
+            "LOADING: VISION MODULES...",
+            "ESTABLISHING SECURE LINK...",
+            "CONNECTION: STABLE",
+            "MODEL: \(appContext.llmProvider.displayName.uppercased()) / \(appContext.llmModel.uppercased())",
+            "STATUS: ONLINE"
+        ]
+    }
     
     var body: some View {
         ZStack {
@@ -1402,13 +1426,22 @@ struct MessageView: View {
                 }
                 .frame(maxHeight: fullChatViewMode ? 450 : 300)
                 // Auto-scroll logic
-                .onChange(of: appContext.currentSessionChatMessages.count) { _ in
-                    scrollToBottom(proxy, useLastMessage: true)
+                .onChange(of: appContext.currentSessionChatMessages.count) { newCount in
+                    if newCount == 0 {
+                        // Session was cleared - reset and re-animate boot logs
+                        Task { @MainActor in
+                            systemLogs = []
+                            appContext.hasBootAnimated = false
+                            bootAnimationId = UUID() // Trigger re-animation
+                        }
+                    } else {
+                        scrollToBottom(proxy, useLastMessage: true)
+                    }
                 }
                 .onChange(of: systemLogs.count) { _ in
                     scrollToBottom(proxy, useLastMessage: false)
                 }
-                .task { await animateBootLogs(proxy: proxy) }
+                .task(id: bootAnimationId) { await animateBootLogs(proxy: proxy) }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -1869,5 +1902,111 @@ extension NSTextField {
     open override var focusRingType: NSFocusRingType {
         get { .none }
         set { }
+    }
+}
+
+// MARK: - Server Loading View
+struct ServerLoadingView: View {
+    let serverStatus: PythonProcessManager.ServerStatus
+    let isConnected: Bool
+
+    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+
+    var statusMessage: String {
+        switch serverStatus {
+        case .stopped:
+            return "INITIALIZING..."
+        case .starting:
+            return "STARTING AGENT..."
+        case .running:
+            // Server is running but check WebSocket connection
+            return isConnected ? "ONLINE" : "CONNECTING..."
+        case .stopping:
+            return "SHUTTING DOWN..."
+        case .error(let msg):
+            return "ERROR: \(msg)"
+        }
+    }
+
+    var isLoading: Bool {
+        serverStatus == .starting || serverStatus == .stopped || (serverStatus == .running && !isConnected)
+    }
+
+    @State private var glowPulse = false
+
+    var body: some View {
+        ZStack {
+            // Layer 1: Outer glow pulse
+            RoundedRectangle(cornerRadius: 24)
+                .fill(
+                    RadialGradient(
+                        colors: [hudCyan.opacity(glowPulse ? 0.3 : 0.1), Color.clear],
+                        center: .center,
+                        startRadius: 50,
+                        endRadius: 150
+                    )
+                )
+                .frame(width: 220, height: 280)
+                .blur(radius: 20)
+                .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: glowPulse)
+
+            VStack(spacing: 24) {
+                // Animated Core Ring
+                RongERing()
+                    .scaleEffect(1.2)
+
+                // Status Text
+                VStack(spacing: 8) {
+                    Text("RONG-E AGENT")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(hudCyan)
+                        .shadow(color: hudCyan.opacity(0.8), radius: 8)
+
+                    Text(statusMessage)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.8))
+
+                    // Loading dots animation
+                    if isLoading {
+                        LoadingDotsView()
+                    }
+                }
+            }
+        }
+        .frame(width: 220, height: 280)
+        .onAppear {
+            glowPulse = true
+        }
+    }
+}
+
+// MARK: - Loading Dots Animation
+struct LoadingDotsView: View {
+    @State private var animationPhase = 0
+
+    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(hudCyan)
+                    .frame(width: 6, height: 6)
+                    .opacity(animationPhase == index ? 1.0 : 0.3)
+                    .scaleEffect(animationPhase == index ? 1.2 : 1.0)
+                    .shadow(color: animationPhase == index ? hudCyan : .clear, radius: 4)
+            }
+        }
+        .onAppear {
+            startAnimation()
+        }
+    }
+
+    private func startAnimation() {
+        Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                animationPhase = (animationPhase + 1) % 3
+            }
+        }
     }
 }

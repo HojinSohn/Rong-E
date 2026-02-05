@@ -22,15 +22,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.coordinator.client.connect()
         }
 
-        // 4. Auto-sync MCP config when WebSocket first connects
+        // 4. Auto-sync MCP config and LLM config when WebSocket first connects
         coordinator.client.$isConnected
             .removeDuplicates()
             .filter { $0 == true }
             .first()
-            .sink { _ in
-                print("🔧 Auto-syncing MCP config on connection...")
+            .sink { [weak self] _ in
+                print("🔧 Auto-syncing configs on connection...")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    // Sync MCP config
                     MCPConfigManager.shared.sendConfigToPython()
+
+                    // Sync LLM config with saved provider/model/API key
+                    self?.sendSavedLLMConfig()
                 }
             }
             .store(in: &cancellables)
@@ -43,9 +47,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Save settings before quitting
+        AppContext.shared.saveSettings()
+
         // Stop the server when app quits
         print("🛑 Stopping Rong-E agent server...")
         pythonManager.stopServer()
+    }
+
+    /// Send the saved LLM configuration to the Python backend
+    private func sendSavedLLMConfig() {
+        let context = AppContext.shared
+        let provider = context.llmProvider
+        let model = context.llmModel
+        let apiKey = context.aiApiKey
+
+        // Only send if we have a valid API key (or provider doesn't require one)
+        if provider.requiresAPIKey && apiKey.isEmpty {
+            print("⚠️ Skipping LLM config sync - no API key saved for \(provider.displayName)")
+            return
+        }
+
+        print("🤖 Sending saved LLM config: \(provider.displayName) / \(model)")
+        coordinator.client.sendLLMConfig(
+            provider: provider.rawValue,
+            model: model,
+            apiKey: provider.requiresAPIKey ? apiKey : nil
+        )
     }
     
     private func runStartupWorkflowIfNeeded() {

@@ -114,8 +114,8 @@ class PythonProcessManager: ObservableObject {
 
         // 1. Check in app bundle Resources
         if let resourcePath = Bundle.main.resourcePath {
-            searchPaths.append("\(resourcePath)/Rong-E_agent/Rong-E_agent")
-            searchPaths.append("\(resourcePath)/Rong-E_agent")
+            searchPaths.append("\(resourcePath)/ronge_agent/ronge_agent")
+            searchPaths.append("\(resourcePath)/ronge_agent")
         }
 
         // 2. Check relative to app bundle (for development)
@@ -124,15 +124,15 @@ class PythonProcessManager: ObservableObject {
             var url = URL(fileURLWithPath: bundlePath)
             for _ in 0..<5 {
                 url = url.deletingLastPathComponent()
-                searchPaths.append(url.appendingPathComponent("agent/dist/Rong-E_agent/Rong-E_agent").path)
-                searchPaths.append(url.appendingPathComponent("agent/dist/Rong-E_agent").path)
+                searchPaths.append(url.appendingPathComponent("agent/dist/ronge_agent/ronge_agent").path)
+                searchPaths.append(url.appendingPathComponent("agent/dist/ronge_agent").path)
             }
         }
 
         // 3. Check common development paths
         if let home = ProcessInfo.processInfo.environment["HOME"] {
-            searchPaths.append("\(home)/Echo/agent/dist/Rong-E_agent/Rong-E_agent")
-            searchPaths.append("\(home)/Echo/agent/dist/Rong-E_agent")
+            searchPaths.append("\(home)/Echo/agent/dist/ronge_agent/ronge_agent")
+            searchPaths.append("\(home)/Echo/agent/dist/ronge_agent")
         }
 
         // Find first existing executable
@@ -163,8 +163,6 @@ class PythonProcessManager: ObservableObject {
     /// Starts the Python backend server
     func startServer() {
         
-        return // Disabled for now
-
         guard !isRunning else {
             print("⚠️ Python server is already running")
             return
