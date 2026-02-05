@@ -1004,14 +1004,17 @@ struct MainColumnView: View {
 struct InputAreaView: View {
     @Binding var inputText: String
     var onSubmit: () -> Void
-    
+
+    // Track hasText separately to avoid animation recalculation on every keystroke
+    @State private var hasText: Bool = false
+
     // Aesthetic Constants
     private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
     private let hudDark = Color.black.opacity(0.8)
 
     var body: some View {
         HStack(spacing: 16) {
-            
+
             // MARK: - Text Field Container
             HStack(spacing: 10) {
                 // Tech decor: Blinking cursor prompt or static icon
@@ -1019,7 +1022,7 @@ struct InputAreaView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(hudCyan)
                     .shadow(color: hudCyan, radius: 4)
-                
+
                 TextField("COMMAND...", text: $inputText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14, weight: .medium, design: .monospaced)) // Tech font
@@ -1038,11 +1041,11 @@ struct InputAreaView: View {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(.ultraThinMaterial)
                         .opacity(0.1)
-                    
+
                     // 2. Dark Fill
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.black.opacity(0.6))
-                    
+
                     // 3. Glowing Border
                     RoundedRectangle(cornerRadius: 12)
                         .strokeBorder(
@@ -1056,39 +1059,66 @@ struct InputAreaView: View {
                         .shadow(color: hudCyan.opacity(0.5), radius: 8, x: 0, y: 0)
                 }
             )
-            
+
             // MARK: - Action Button (Reactor Core Style)
-            Button(action: onSubmit) {
-                ZStack {
-                    // Outer Ring
-                    Circle()
-                        .stroke(hudCyan.opacity(0.3), lineWidth: 2)
-                        .frame(width: 50, height: 50)
-                    
-                    // Rotating/Active Ring (Visual flair)
+            InputActionButton(hasText: hasText, hudCyan: hudCyan, onSubmit: onSubmit)
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 10)
+        .onChange(of: inputText.isEmpty) { isEmpty in
+            // Only update hasText when empty state changes, not on every keystroke
+            if hasText == isEmpty {
+                hasText = !isEmpty
+            }
+        }
+    }
+}
+
+// Separate button view to isolate animation from text input
+struct InputActionButton: View {
+    let hasText: Bool
+    let hudCyan: Color
+    let onSubmit: () -> Void
+
+    var body: some View {
+        Button(action: onSubmit) {
+            ZStack {
+                // Outer Ring
+                Circle()
+                    .stroke(hudCyan.opacity(0.3), lineWidth: 2)
+                    .frame(width: 50, height: 50)
+
+                // Rotating/Active Ring - uses TimelineView for smooth, performant animation
+                if hasText {
+                    TimelineView(.animation) { timeline in
+                        let seconds = timeline.date.timeIntervalSinceReferenceDate
+                        let rotation = seconds.truncatingRemainder(dividingBy: 2) * 180 // 180 deg/sec
+                        Circle()
+                            .trim(from: 0, to: 0.7)
+                            .stroke(hudCyan, style: StrokeStyle(lineWidth: 2, lineCap: .butt))
+                            .frame(width: 50, height: 50)
+                            .rotationEffect(.degrees(rotation))
+                    }
+                } else {
                     Circle()
                         .trim(from: 0, to: 0.7)
                         .stroke(hudCyan, style: StrokeStyle(lineWidth: 2, lineCap: .butt))
                         .frame(width: 50, height: 50)
-                        .rotationEffect(.degrees(inputText.isEmpty ? 0 : 360))
-                        .animation(inputText.isEmpty ? .default : .linear(duration: 2).repeatForever(autoreverses: false), value: inputText.isEmpty)
-                    
-                    // Inner Core
-                    Circle()
-                        .fill(inputText.isEmpty ? Color.clear : hudCyan.opacity(0.2))
-                        .frame(width: 40, height: 40)
-                    
-                    // Icon
-                    Image(systemName: inputText.isEmpty ? "mic.fill" : "arrow.up")
-                        .font(.system(size: 18, weight: .bold, design: .monospaced))
-                        .foregroundStyle(hudCyan)
-                        .shadow(color: hudCyan, radius: inputText.isEmpty ? 0 : 10)
                 }
+
+                // Inner Core
+                Circle()
+                    .fill(hasText ? hudCyan.opacity(0.2) : Color.clear)
+                    .frame(width: 40, height: 40)
+
+                // Icon
+                Image(systemName: hasText ? "arrow.up" : "mic.fill")
+                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                    .foregroundStyle(hudCyan)
+                    .shadow(color: hudCyan, radius: hasText ? 10 : 0)
             }
-            .buttonStyle(.plain)
         }
-        .padding(.horizontal)
-        .padding(.bottom, 10)
+        .buttonStyle(.plain)
     }
 }
 
