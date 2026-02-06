@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from langchain_core.messages import SystemMessage
 from agent.agents.agent import RongEAgent
 from agent.models.mcp_config import validate_mcp_config, MCPConfig
 import uvicorn
@@ -179,6 +180,27 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_text(json.dumps({
                         "type": "active_tools",
                         "content": {"tools": tools_info}
+                    }))
+                    continue
+                elif data["data_type"] == "get_sheet_tabs":
+                    spreadsheet_id = data.get("spreadsheet_id", "")
+                    print(f"📊 Received Sheet Tabs Request for: {spreadsheet_id}")
+                    result = agent.auth_manager.get_sheet_tabs(spreadsheet_id)
+                    await websocket.send_text(json.dumps({
+                        "type": "sheet_tabs_result",
+                        "content": result
+                    }))
+                    continue
+                elif data["data_type"] == "sync_spreadsheets":
+                    configs = data.get("configs", [])
+                    print(f"📊 Received Spreadsheet Configs: {len(configs)} sheet(s)")
+                    agent.auth_manager.set_spreadsheet_configs(configs)
+                    # Refresh the agent's system prompt to include spreadsheet context
+                    agent.create_system_prompt()
+                    agent.messages[0] = SystemMessage(content=agent.system_prompt)
+                    await websocket.send_text(json.dumps({
+                        "type": "spreadsheets_synced",
+                        "content": f"✅ Synced {len(configs)} spreadsheet(s)"
                     }))
                     continue
 

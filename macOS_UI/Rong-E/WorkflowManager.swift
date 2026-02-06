@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 struct WorkflowTask: Identifiable, Codable, Hashable {
     var id = UUID()
@@ -59,6 +60,19 @@ class WorkflowManager: ObservableObject {
     
     func delete(at offsets: IndexSet) {
         tasks.remove(atOffsets: offsets)
+        reorderTasks()
         saveTasks()
+    }
+
+    func move(from source: IndexSet, to destination: Int) {
+        tasks.move(fromOffsets: source, toOffset: destination)
+        reorderTasks()
+        saveTasks()
+    }
+
+    private func reorderTasks() {
+        for (index, _) in tasks.enumerated() {
+            tasks[index].order = index
+        }
     }
 }

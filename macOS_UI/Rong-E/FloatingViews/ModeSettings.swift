@@ -8,13 +8,25 @@ struct ModesSettingsView: View {
         HStack(spacing: 0) {
             // MARK: - Left Sidebar (Mode Selector)
             VStack(alignment: .leading, spacing: 0) {
-                Text("AVAILABLE MODES")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.jarvisBlue.opacity(0.6))
-                    .padding(.horizontal, 15)
-                    .padding(.top, 15)
-                    .padding(.bottom, 10)
-                
+                HStack {
+                    Text("AVAILABLE MODES")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.jarvisBlue.opacity(0.6))
+                    Spacer()
+                    Button(action: {
+                        let newMode = context.createNewMode()
+                        selectedModeID = newMode.id
+                    }) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10))
+                            .foregroundColor(.jarvisBlue)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 15)
+                .padding(.top, 15)
+                .padding(.bottom, 10)
+
                 ScrollView {
                     VStack(spacing: 5) {
                         ForEach(context.modes, id: \.id) { mode in
@@ -51,6 +63,24 @@ struct ModesSettingsView: View {
                                 .bold()
                                 .foregroundColor(.jarvisBlue)
                             Spacer()
+
+                            // Delete button (only show if more than 1 mode)
+                            if context.modes.count > 1 {
+                                Button(action: {
+                                    let modeId = context.modes[index].id
+                                    // Select another mode before deleting
+                                    if let nextMode = context.modes.first(where: { $0.id != modeId }) {
+                                        selectedModeID = nextMode.id
+                                    }
+                                    context.deleteMode(id: modeId)
+                                }) {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.red.opacity(0.7))
+                                }
+                                .buttonStyle(.plain)
+                            }
+
                             Image(systemName: "slider.horizontal.3")
                                 .foregroundColor(.jarvisBlue.opacity(0.5))
                         }

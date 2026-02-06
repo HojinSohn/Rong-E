@@ -129,19 +129,6 @@ enum LLMProvider: String, CaseIterable, Codable {
 
 class AppContext: ObservableObject {
     static let shared = AppContext()
-
-    // Helper to get the actual object
-    var currentMode: ModeConfiguration {
-        modes.first { $0.id == currentModeId } ?? (modes.first ?? ModeConfiguration(id: 0, name: "Fallback", systemPrompt: "", enabledTools: [], isScreenshotEnabled: false))
-    }
-
-    // Helper to toggle the setting for the ACTIVE mode
-    func toggleCurrentModeVision() {
-        if let index = modes.firstIndex(where: { $0.id == currentModeId }) {
-            modes[index].isScreenshotEnabled.toggle()
-            saveSettings() // Persist the change
-        }
-    }
     @Published var currentModeId: Int = 1
     @Published var response: String = ""
     @Published var isLoading: Bool = false
@@ -194,7 +181,6 @@ class AppContext: ObservableObject {
         var isScreenshotEnabled: Bool
     }
 
-    // Initialize as empty to keep compile time fast
     @Published var modes: [ModeConfiguration] = []
 
     private init() {
@@ -210,6 +196,50 @@ class AppContext: ObservableObject {
         setupAppTerminationObserver()
     }
     
+
+    // Helper to get the actual object
+    var currentMode: ModeConfiguration {
+        modes.first { $0.id == currentModeId } ?? (modes.first ?? ModeConfiguration(id: 0, name: "Fallback", systemPrompt: "", enabledTools: [], isScreenshotEnabled: false))
+    }
+
+    // Helper to toggle the setting for the ACTIVE mode
+    func toggleCurrentModeVision() {
+        if let index = modes.firstIndex(where: { $0.id == currentModeId }) {
+            modes[index].isScreenshotEnabled.toggle()
+            saveSettings() // Persist the change
+        }
+    }
+
+    func addMode(_ mode: ModeConfiguration) {
+        modes.append(mode)
+        saveSettings()
+    }
+
+    func createNewMode() -> ModeConfiguration {
+        let nextId = (modes.map { $0.id }.max() ?? 0) + 1
+        let newMode = ModeConfiguration(
+            id: nextId,
+            name: "New Mode",
+            systemPrompt: "",
+            enabledTools: [],
+            isScreenshotEnabled: false
+        )
+        modes.append(newMode)
+        saveSettings()
+        return newMode
+    }
+
+    func deleteMode(id: Int) {
+        // Don't delete if it's the last mode
+        guard modes.count > 1 else { return }
+        modes.removeAll { $0.id == id }
+        // If we deleted the current mode, switch to the first available
+        if currentModeId == id {
+            currentModeId = modes.first?.id ?? 1
+        }
+        saveSettings()
+    }
+
     private func setupAppTerminationObserver() {
         NotificationCenter.default.addObserver(
             self,
@@ -267,9 +297,17 @@ class AppContext: ObservableObject {
     func loadSettings() {
         print("📂 Loading settings...")
         let decoder = JSONDecoder()
-        if let savedModesData = UserDefaults.standard.data(forKey: "modes"),
-           let decodedModes = try? decoder.decode([ModeConfiguration].self, from: savedModesData) {
+        if let savedModesData: Data = UserDefaults.standard.data(forKey: "modes"),
+           let decodedModes = try? decoder.decode([ModeConfiguration].self, from: savedModesData),
+           !decodedModes.isEmpty {
             self.modes = decodedModes
+        } else {
+            // Initialize with default modes
+            self.modes = [
+                ModeConfiguration(id: 1, name: "General", systemPrompt: "", enabledTools: [], isScreenshotEnabled: false),
+                ModeConfiguration(id: 2, name: "Coding", systemPrompt: "You are a coding assistant. Help with programming tasks.", enabledTools: [], isScreenshotEnabled: false),
+                ModeConfiguration(id: 3, name: "Research", systemPrompt: "You are a research assistant. Help find and summarize information.", enabledTools: [], isScreenshotEnabled: false)
+            ]
         }
         // Load provider first, then load API key for that provider
         if let savedProvider = UserDefaults.standard.string(forKey: "llmProvider"),

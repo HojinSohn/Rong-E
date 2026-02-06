@@ -160,8 +160,18 @@ class PythonProcessManager: ObservableObject {
 
     // MARK: - Public Methods
 
-    /// Starts the Python backend server
+    // Development helper to simulate running state
+    func devPythonRun() {
+        DispatchQueue.main.async {
+            self.isRunning = true
+            self.serverStatus = .running
+        }
+    } //  
+
+    // Starts the Python backend server
     func startServer() {
+        devPythonRun()
+        return
         
         guard !isRunning else {
             print("⚠️ Python server is already running")
@@ -224,10 +234,37 @@ class PythonProcessManager: ObservableObject {
         environment["PYTHONUNBUFFERED"] = "1" // Real-time output
         environment["PYTHONDONTWRITEBYTECODE"] = "1" // Don't create .pyc files
 
-        // Load API key from UserDefaults or environment
-        if let apiKey = UserDefaults.standard.string(forKey: "GOOGLE_API_KEY"),
-           !apiKey.isEmpty {
-            environment["GOOGLE_API_KEY"] = apiKey
+        // Expand PATH to include common Node.js/npm locations (needed for MCP servers)
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        var extraPaths: [String] = []
+
+        // nvm - find all installed node versions
+        let nvmVersionsDir = "\(homeDir)/.nvm/versions/node"
+        if let nvmContents = try? FileManager.default.contentsOfDirectory(atPath: nvmVersionsDir) {
+            for version in nvmContents {
+                let binPath = "\(nvmVersionsDir)/\(version)/bin"
+                if FileManager.default.fileExists(atPath: binPath) {
+                    extraPaths.append(binPath)
+                }
+            }
+        }
+
+        // Other common paths
+        let commonPaths = [
+            "/opt/homebrew/bin",      // Homebrew Apple Silicon
+            "/usr/local/bin",         // Homebrew Intel / standard
+            "\(homeDir)/.local/bin",  // pipx, etc.
+            "/opt/local/bin"          // MacPorts
+        ]
+        for path in commonPaths {
+            if FileManager.default.fileExists(atPath: path) {
+                extraPaths.append(path)
+            }
+        }
+
+        if !extraPaths.isEmpty {
+            let currentPath = environment["PATH"] ?? ""
+            environment["PATH"] = extraPaths.joined(separator: ":") + ":" + currentPath
         }
 
         newProcess.environment = environment

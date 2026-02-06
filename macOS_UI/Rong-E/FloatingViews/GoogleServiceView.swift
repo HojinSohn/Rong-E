@@ -1,16 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// --- Models ---
-struct SpreadsheetConfig: Identifiable, Codable {
-    let id = UUID()
-    var alias: String
-    var url: String
-    var sheetID: String
-    var selectedTab: String
-    var description: String
-}
-
 struct GoogleServiceView: View {
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var coordinator: WindowCoordinator
@@ -20,7 +10,7 @@ struct GoogleServiceView: View {
     
     @State private var isShowingFilePicker = false
     @State private var isShowingAddSheet = false
-    @State private var savedSheets: [SpreadsheetConfig] = []
+    @StateObject var sheetManager = SpreadsheetConfigManager.shared
     @State private var currentSelectedFileName: String = "NO_DATA"
 
     var connectionStatus: ConnectionStatus {
@@ -148,7 +138,7 @@ struct GoogleServiceView: View {
         }
         .sheet(isPresented: $isShowingAddSheet) {
             AddSheetModal(isPresented: $isShowingAddSheet) { newSheet in
-                savedSheets.append(newSheet)
+                sheetManager.addConfig(newSheet)
             }
         }
     }
@@ -258,7 +248,7 @@ struct GoogleServiceView: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.red.opacity(0.8))
                     .padding(.top, 10)
-            } else if savedSheets.isEmpty {
+            } else if sheetManager.configs.isEmpty {
                 VStack(spacing: 5) {
                     Text("NO DATA STREAMS FOUND")
                         .font(.system(size: 12, design: .monospaced))
@@ -273,8 +263,10 @@ struct GoogleServiceView: View {
                 .border(Color.white.opacity(0.05), width: 1)
             } else {
                 VStack(spacing: 8) {
-                    ForEach(savedSheets) { sheet in
-                        ResourceRow(sheet: sheet)
+                    ForEach(sheetManager.configs) { sheet in
+                        ResourceRow(sheet: sheet, onDelete: {
+                            sheetManager.removeConfig(sheet)
+                        })
                     }
                 }
             }
@@ -287,7 +279,8 @@ struct GoogleServiceView: View {
 
 struct ResourceRow: View {
     let sheet: SpreadsheetConfig
-    
+    var onDelete: (() -> Void)?
+
     var body: some View {
         HStack {
             // Icon Block
@@ -296,19 +289,19 @@ struct ResourceRow: View {
                     .fill(Color.green.opacity(0.1))
                     .frame(width: 40, height: 40)
                     .border(Color.green.opacity(0.3), width: 1)
-                
+
                 Image(systemName: "tablecells.fill")
                     .foregroundColor(.green)
                     .font(.system(size: 16))
             }
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(sheet.alias.uppercased())
                         .font(.system(size: 12, design: .monospaced))
                         .fontWeight(.bold)
                         .foregroundColor(.white)
-                    
+
                     Text("// \(sheet.selectedTab.uppercased())")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(.green.opacity(0.7))
@@ -319,7 +312,17 @@ struct ResourceRow: View {
                     .lineLimit(1)
             }
             Spacer()
-            
+
+            // Delete button
+            if let onDelete = onDelete {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .foregroundColor(.red.opacity(0.7))
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(BorderlessButtonStyle())
+            }
+
             // Status light
             Circle()
                 .fill(Color.green)
@@ -337,21 +340,35 @@ struct ResourceRow: View {
 struct AddSheetModal: View {
     @Binding var isPresented: Bool
     var onSave: (SpreadsheetConfig) -> Void
-    
+
     @State private var urlInput = ""
     @State private var aliasInput = ""
     @State private var descriptionInput = ""
     @State private var selectedTab = ""
-    
+
     @State private var isVerifying = false
     @State private var foundTabs: [String] = []
     @State private var extractedID: String? = nil
-    
+    @State private var sheetTitle: String? = nil
+    @State private var errorMessage: String? = nil
+
+    // Extract spreadsheet ID from Google Sheets URL
+    // Format: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/...
+    private func extractSpreadsheetId(from url: String) -> String? {
+        let pattern = #"spreadsheets/d/([a-zA-Z0-9-_]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)),
+              let range = Range(match.range(at: 1), in: url) else {
+            return nil
+        }
+        return String(url[range])
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             TechGridBackground()
-            
+
             VStack(spacing: 0) {
                 // Modal Header
                 HStack {
@@ -364,20 +381,20 @@ struct AddSheetModal: View {
                 .padding()
                 .background(Color.jarvisBlue.opacity(0.1))
                 .overlay(Rectangle().frame(height: 1).foregroundColor(.jarvisBlue.opacity(0.3)), alignment: .bottom)
-                
+
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        
+
                         // 1. URL Input
                         VStack(alignment: .leading, spacing: 8) {
                             Text("TARGET URL (G-SHEETS)")
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundColor(.gray)
-                            
+
                             HStack {
                                 JarvisTextField(text: $urlInput)
-                                
-                                Button(action: { simulateVerify() }) {
+
+                                Button(action: { verifySheet() }) {
                                     Text(isVerifying ? "SCANNING..." : "VERIFY")
                                         .font(.system(size: 10, design: .monospaced))
                                         .fontWeight(.bold)
@@ -392,30 +409,49 @@ struct AddSheetModal: View {
                                 .disabled(urlInput.isEmpty || isVerifying)
                             }
                         }
-                        
+
+                        // Status messages
                         if isVerifying {
-                             HStack {
-                                 Text("ESTABLISHING LINK...")
-                                     .font(.system(size: 10, design: .monospaced))
-                                     .foregroundColor(.jarvisBlue)
-                                 Spacer()
-                                 // Simple text animation placeholder
-                                 Text(">>>")
-                                     .font(.system(size: 10, design: .monospaced))
-                                     .foregroundColor(.jarvisBlue)
-                             }
+                            HStack {
+                                Text("ESTABLISHING LINK...")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.jarvisBlue)
+                                Spacer()
+                                Text(">>>")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.jarvisBlue)
+                            }
                         }
-                        
+
+                        if let error = errorMessage {
+                            Text("ERROR: \(error.uppercased())")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.red)
+                        }
+
                         // 2. Details (Hidden until verified)
                         if let _ = extractedID {
                             VStack(alignment: .leading, spacing: 15) {
-                                
+
+                                // Show sheet title
+                                if let title = sheetTitle {
+                                    HStack {
+                                        Text("LINKED TO:")
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(.gray)
+                                        Text(title.uppercased())
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.green)
+                                    }
+                                }
+
                                 // Tab Selector
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("SELECT DATA WORKSHEET")
+                                    Text("SELECT DATA WORKSHEET (\(foundTabs.count) FOUND)")
                                         .font(.system(size: 10, design: .monospaced))
                                         .foregroundColor(.gray)
-                                    
+
                                     Picker("", selection: $selectedTab) {
                                         ForEach(foundTabs, id: \.self) { tab in
                                             Text(tab).tag(tab)
@@ -427,7 +463,7 @@ struct AddSheetModal: View {
                                     .background(Color.black.opacity(0.4))
                                     .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
                                 }
-                                
+
                                 // Alias
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("SYSTEM ALIAS")
@@ -435,7 +471,7 @@ struct AddSheetModal: View {
                                         .foregroundColor(.gray)
                                     JarvisTextField(text: $aliasInput)
                                 }
-                                
+
                                 // Description
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("CONTEXTUAL USAGE")
@@ -449,7 +485,7 @@ struct AddSheetModal: View {
                     }
                     .padding(20)
                 }
-                
+
                 // 3. Actions (Fixed at bottom)
                 HStack {
                     Button("CANCEL") { isPresented = false }
@@ -457,9 +493,9 @@ struct AddSheetModal: View {
                         .foregroundColor(.gray)
                         .buttonStyle(BorderlessButtonStyle())
                         .keyboardShortcut(.cancelAction)
-                    
+
                     Spacer()
-                    
+
                     Button(action: {
                         let newSheet = SpreadsheetConfig(
                             alias: aliasInput,
@@ -491,18 +527,50 @@ struct AddSheetModal: View {
         }
         .frame(width: 450, height: 550)
         .border(Color.jarvisBlue.opacity(0.5))
+        .onAppear {
+            setupSheetTabsCallback()
+        }
     }
-    
-    func simulateVerify() {
-        withAnimation { isVerifying = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+
+    private func setupSheetTabsCallback() {
+        SocketClient.shared.onSheetTabsResult = { success, titleOrError, tabs in
             withAnimation {
-                self.extractedID = "1BxiMWs_MOCK_ID_12345"
-                self.foundTabs = ["SUMMARY", "DATA_Q1", "DATA_Q2", "LOGS"]
-                self.selectedTab = "SUMMARY"
-                self.aliasInput = "PROJECT_BUDGET_ALPHA"
                 self.isVerifying = false
+                if success {
+                    self.sheetTitle = titleOrError
+                    self.foundTabs = tabs ?? []
+                    self.selectedTab = tabs?.first ?? ""
+                    // Use sheet title as default alias (sanitized)
+                    if let title = titleOrError {
+                        self.aliasInput = title
+                            .uppercased()
+                            .replacingOccurrences(of: " ", with: "_")
+                            .prefix(30)
+                            .description
+                    }
+                    self.errorMessage = nil
+                } else {
+                    self.errorMessage = titleOrError ?? "Unknown error"
+                    self.extractedID = nil
+                    self.foundTabs = []
+                }
             }
         }
+    }
+
+    private func verifySheet() {
+        errorMessage = nil
+
+        // Extract ID from URL
+        guard let spreadsheetId = extractSpreadsheetId(from: urlInput) else {
+            errorMessage = "Invalid Google Sheets URL"
+            return
+        }
+
+        withAnimation { isVerifying = true }
+        extractedID = spreadsheetId
+
+        // Send request to Python backend
+        SocketClient.shared.sendGetSheetTabs(spreadsheetId: spreadsheetId)
     }
 }

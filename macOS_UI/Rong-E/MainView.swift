@@ -130,7 +130,14 @@ struct MainView: View {
             if isServerReady {
                 mainContent
             } else {
-                AgentLoadingView(serverStatus: pythonManager.serverStatus, isConnected: socketClient.isConnected)
+                AgentLoadingView(
+                    serverStatus: pythonManager.serverStatus,
+                    isConnected: socketClient.isConnected,
+                    connectionFailed: socketClient.connectionFailed,
+                    onRetry: {
+                        socketClient.retryConnection()
+                    }
+                )
             }
         }
         .onAppear {
@@ -344,7 +351,7 @@ struct MainView: View {
                 }
             }
         }
-        
+
         socketClient.onReceiveResponse = { responseText in
             finishProcessing(response: responseText)
         }
@@ -1969,11 +1976,16 @@ extension NSTextField {
 struct AgentLoadingView: View {
     let serverStatus: PythonProcessManager.ServerStatus
     let isConnected: Bool
+    let connectionFailed: Bool
+    var onRetry: (() -> Void)?
 
     // MARK: - Computed Styles
-    
+
     // Logic to determine the color of the Orb based on state
     var statusColor: Color {
+        if connectionFailed {
+            return Color(red: 1.0, green: 0.3, blue: 0.3) // Red for failed
+        }
         switch serverStatus {
         case .running: return isConnected ? Color(red: 0.2, green: 1.0, blue: 0.4) : Color(red: 0.2, green: 0.85, blue: 1.0)
         case .error: return Color(red: 1.0, green: 0.3, blue: 0.3)
@@ -1983,6 +1995,9 @@ struct AgentLoadingView: View {
     }
 
     var statusMessage: String {
+        if connectionFailed {
+            return "CONNECTION FAILED"
+        }
         switch serverStatus {
         case .stopped: return "SYSTEM INITIALIZING"
         case .starting: return "BOOTING CORE"
@@ -1991,10 +2006,11 @@ struct AgentLoadingView: View {
         case .error(let msg): return "ERR: \(msg.prefix(12))"
         }
     }
-    
+
     // Stop the outer rotation if we are just sitting in "Online" or "Error" state
     var isAnimating: Bool {
-        serverStatus == .starting || serverStatus == .stopped || (serverStatus == .running && !isConnected)
+        if connectionFailed { return false }
+        return serverStatus == .starting || serverStatus == .stopped || (serverStatus == .running && !isConnected)
     }
 
     var body: some View {
@@ -2027,6 +2043,7 @@ struct AgentLoadingView: View {
                 RongERing()
                     .frame(width: 110, height: 110)
                     .shadow(color: statusColor.opacity(0.8), radius: 80)
+                    
 
                 // 2. Status Information
                 VStack(spacing: 8) {
@@ -2053,6 +2070,31 @@ struct AgentLoadingView: View {
                             .fill(statusColor.opacity(0.1))
                             .overlay(Capsule().stroke(statusColor.opacity(0.2), lineWidth: 0.5))
                     )
+
+                    // Retry button when connection fails
+                    if connectionFailed {
+                        Button(action: {
+                            onRetry?()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text("RETRY")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .tracking(1)
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule()
+                                    .fill(Color(red: 0.2, green: 0.85, blue: 1.0).opacity(0.3))
+                                    .overlay(Capsule().stroke(Color(red: 0.2, green: 0.85, blue: 1.0).opacity(0.5), lineWidth: 1))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                    }
                 }
             }
             .padding(.vertical, 30)

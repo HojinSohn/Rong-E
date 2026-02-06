@@ -1,7 +1,10 @@
 import os
+import glob
+import asyncio
 from contextlib import AsyncExitStack
 from pathlib import Path
 import shutil
+from sys import executable
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -73,8 +76,9 @@ class RongEAgent:
         self.llm = None
         self.llm_with_tools = None
 
-        self.google_agent = GoogleAgent()
+        # Single shared auth_manager for the entire session
         self.auth_manager = AuthManager()
+        self.google_agent = GoogleAgent(auth_manager=self.auth_manager)
         
         # 2. Define the Google Tool (Closure with access to self)
         @tool
@@ -85,8 +89,19 @@ class RongEAgent:
             """
             if not self.google_agent.is_authenticated():
                 return "❌ Google APIs not authenticated. Please ask the user to authenticate first."
-            
-            return await self.google_agent.run(task_description)
+
+            current_date_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            # Include spreadsheet context if available
+            spreadsheet_context = self.auth_manager.get_spreadsheet_context()
+
+            context_parts = [task_description, f"Current date and time: {current_date_time}."]
+            if spreadsheet_context:
+                context_parts.append(spreadsheet_context)
+
+            full_task_description = "\n\n".join(context_parts)
+
+            return await self.google_agent.run(full_task_description)
 
         # 3. Load Base Tools and Append Google Tool
         self.base_tools = get_tools() 
@@ -109,11 +124,17 @@ class RongEAgent:
         """Create a custom system prompt with additional instructions."""
         with open(os.path.join(PROMPTS_DIR, "system_prompt.txt"), "r") as f:
             base_prompt = f.read()
-        
+
         custom_instructions = f'Current date and time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}.'
-        
-        full_prompt = f"{base_prompt}\n\n{custom_instructions}"
-        self.system_prompt = full_prompt
+
+        # Include spreadsheet context if available
+        spreadsheet_context = self.auth_manager.get_spreadsheet_context()
+
+        parts = [base_prompt, custom_instructions]
+        if spreadsheet_context:
+            parts.append(spreadsheet_context)
+
+        self.system_prompt = "\n\n".join(parts)
 
     def set_llm(self, provider: str, model: str, api_key: str = None):
         """Switch the LLM provider and model at runtime. Validates by sending a test message."""
@@ -227,11 +248,14 @@ class RongEAgent:
 
         results = {}
 
-        # 2. Handle Removals
+        # 2. Handle Removals (with error protection)
         for name in to_remove:
             print(f"🔻 Stopping MCP Server: {name}")
             server_data = self.active_mcp_servers.pop(name)
-            await server_data["stack"].aclose()
+            try:
+                await asyncio.shield(server_data["stack"].aclose())
+            except Exception as e:
+                print(f"⚠️ Error closing {name}: {e}")
 
         # 3. Handle Additions
         for name in to_add:
@@ -265,6 +289,9 @@ class RongEAgent:
     async def _start_single_server(self, name: str, config: dict) -> tuple[bool, str | None]:
         """Helper to start a single server and store its state. Returns (success, error_msg)."""
         stack = AsyncExitStack()
+        success = False
+        error_msg = None
+
         try:
             command = config.get("command")
             args = config.get("args", [])
@@ -272,33 +299,63 @@ class RongEAgent:
 
             full_env = os.environ.copy()
             full_env.update(env)
-            executable = shutil.which(command) or command
+
+            # Expand PATH to include common Node.js/npm locations (for macOS app bundles)
+            home = os.path.expanduser("~")
+            extra_paths = [
+                f"{home}/.nvm/versions/node/*/bin",  # nvm
+                "/opt/homebrew/bin",                  # Homebrew Apple Silicon
+                "/usr/local/bin",                     # Homebrew Intel / standard
+                f"{home}/.local/bin",                 # pipx, etc.
+                "/opt/local/bin",                     # MacPorts
+            ]
+            # Resolve glob patterns and filter existing paths
+            expanded_paths = []
+            for p in extra_paths:
+                if '*' in p:
+                    expanded_paths.extend(glob.glob(p))
+                elif os.path.isdir(p):
+                    expanded_paths.append(p)
+
+            if expanded_paths:
+                current_path = full_env.get("PATH", "")
+                full_env["PATH"] = ":".join(expanded_paths) + ":" + current_path
+
+            executable = shutil.which(command, path=full_env.get("PATH")) or command
 
             server_params = StdioServerParameters(command=executable, args=args, env=full_env)
 
-            # Enter context
+            # 2. Enter contexts within the same task
             stdio_transport = await stack.enter_async_context(stdio_client(server_params))
             read, write = stdio_transport
-            session = await stack.enter_async_context(ClientSession(read, write))
+            
+            # 3. Use a reasonable timeout for initialization to prevent hanging
+            async with asyncio.timeout(10): 
+                session = await stack.enter_async_context(ClientSession(read, write))
+                await session.initialize()
 
-            await session.initialize()
-
-            # Load Tools
             mcp_tools = await load_mcp_tools(session)
 
-            # STORE IN STATE
             self.active_mcp_servers[name] = {
                 "session": session,
                 "stack": stack,
                 "tools": mcp_tools
             }
+            success = True
 
-            return (True, None)
-
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             print(f"❌ Failed to start {name}: {e}")
-            await stack.aclose()
-            return (False, str(e))
+            error_msg = str(e)
+            # 4. Do NOT call stack.aclose() here. Let the finally block handle it 
+            # to ensure the exit stack is unwound in the correct task context.
+            success = False
+        
+        finally:
+            if not success:
+                # Only clean up if we didn't successfully register the server
+                await stack.aclose()
+
+        return (success, error_msg)
 
     async def shutdown_all_servers(self):
         """Full cleanup"""

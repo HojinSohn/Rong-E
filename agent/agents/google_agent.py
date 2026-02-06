@@ -11,14 +11,14 @@ from agent.settings.settings import PROMPTS_DIR
 
 # Google Agent Class
 # Simplified agent focused on Google API interactions
-# Should not share state with RongEAgent. Independent Agent for Google tasks.
 class GoogleAgent:
-    def __init__(self):
+    def __init__(self, auth_manager: AuthManager = None):
         # 1. LLM is set later via set_llm() — no API key required at startup
         self.llm = None
         self.llm_with_tools = None
 
-        self.auth_manager = AuthManager()
+        # Use shared auth_manager if provided, otherwise create new one
+        self.auth_manager = auth_manager if auth_manager else AuthManager()
 
         self.connected = False
 

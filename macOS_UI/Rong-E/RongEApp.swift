@@ -22,7 +22,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.coordinator.client.connect()
         }
 
-        // 4. Auto-sync MCP config and LLM config when WebSocket first connects
+        // 4. Auto-sync configs when WebSocket first connects
         coordinator.client.$isConnected
             .removeDuplicates()
             .filter { $0 == true }
@@ -30,21 +30,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in
                 print("🔧 Auto-syncing configs on connection...")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    // Set up Google Auth first (checks for existing credentials)
+                    GoogleAuthManager.shared.startupCheck()
+
                     // Sync MCP config
                     MCPConfigManager.shared.sendConfigToPython()
 
                     // Sync LLM config with saved provider/model/API key
                     self?.sendSavedLLMConfig()
+
+                    // Sync saved spreadsheet configs
+                    SpreadsheetConfigManager.shared.syncToPython()
                 }
             }
             .store(in: &cancellables)
 
-        // 5. Run startup workflow after MCP servers are synced
+        // 5. Run startup workflow after MCP servers are synced (one-time only)
         coordinator.client.onMCPSyncResult = { [weak self] success, message in
             print("🔧 MCP Sync Result: success=\(success), message=\(message ?? "nil")")
+            // Clear callback after first run so manual syncs don't re-trigger startup
+            self?.coordinator.client.onMCPSyncResult = nil
             self?.runStartupWorkflowIfNeeded()
         }
     }
+
 
     func applicationWillTerminate(_ notification: Notification) {
         // Save settings before quitting

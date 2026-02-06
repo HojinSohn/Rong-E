@@ -184,7 +184,8 @@ class SocketClient: ObservableObject {
     private var webSocketTask: URLSessionWebSocketTask?
     private let decoder = JSONDecoder()
     @Published var isConnected: Bool = false
-    
+    @Published var connectionFailed: Bool = false
+
     var onReceiveThought: ((String) -> Void)?
     var onReceiveResponse: ((String) -> Void)?
     var onReceiveToolCall: ((ToolCallContent) -> Void)?
@@ -198,6 +199,7 @@ class SocketClient: ObservableObject {
     var onSessionReset: (() -> Void)?
     var onReceiveActiveTools: (([ActiveToolInfo]) -> Void)?
     var onLLMSetResult: ((Bool, String?) -> Void)?
+    var onSheetTabsResult: ((Bool, String?, [String]?) -> Void)?  // (success, title/error, tabs)
 
     func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
@@ -209,6 +211,14 @@ class SocketClient: ObservableObject {
 
     func connect() {
         if webSocketTask?.state == .running { return }
+        connectionFailed = false
+        connectWithRetry(maxRetries: 10, delay: 1.0)
+    }
+
+    func retryConnection() {
+        connectionFailed = false
+        isConnected = false
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
         connectWithRetry(maxRetries: 10, delay: 1.0)
     }
 
@@ -235,6 +245,7 @@ class SocketClient: ObservableObject {
             } else {
                 print("❌ WebSocket failed to connect after \(maxRetries) attempts")
                 self.isConnected = false
+                self.connectionFailed = true
             }
         }
     }
@@ -293,6 +304,25 @@ class SocketClient: ObservableObject {
            let toolsContent = try? JSONDecoder().decode(ActiveToolsContent.self, from: contentData) {
             DispatchQueue.main.async { [weak self] in
                 self?.onReceiveActiveTools?(toolsContent.tools)
+            }
+            return
+        }
+
+        // Handle sheet_tabs_result specially (content is an object)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let type = json["type"] as? String,
+           type == "sheet_tabs_result",
+           let contentObj = json["content"] as? [String: Any] {
+            DispatchQueue.main.async { [weak self] in
+                let success = contentObj["success"] as? Bool ?? false
+                if success {
+                    let title = contentObj["title"] as? String
+                    let tabs = contentObj["tabs"] as? [String]
+                    self?.onSheetTabsResult?(true, title, tabs)
+                } else {
+                    let error = contentObj["error"] as? String ?? "Unknown error"
+                    self?.onSheetTabsResult?(false, error, nil)
+                }
             }
             return
         }
@@ -477,6 +507,48 @@ class SocketClient: ObservableObject {
                 if let error = error {
                     print("❌ MCP Config Send Error: \(error)")
                 }
+            }
+        }
+    }
+
+    func sendGetSheetTabs(spreadsheetId: String) {
+        let json: [String: String] = [
+            "data_type": "get_sheet_tabs",
+            "spreadsheet_id": spreadsheetId
+        ]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Requesting sheet tabs for: \(spreadsheetId)")
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Get Sheet Tabs Send Error: \(error)") }
+            }
+        }
+    }
+
+    func sendSpreadsheetConfigs(_ configs: [SpreadsheetConfig]) {
+        // Convert to JSON-serializable format
+        let configDicts: [[String: String]] = configs.map { config in
+            [
+                "alias": config.alias,
+                "url": config.url,
+                "sheetID": config.sheetID,
+                "selectedTab": config.selectedTab,
+                "description": config.description
+            ]
+        }
+
+        let json: [String: Any] = [
+            "data_type": "sync_spreadsheets",
+            "configs": configDicts
+        ]
+
+        if let jsonData = try? JSONSerialization.data(withJSONObject: json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Syncing \(configs.count) spreadsheet config(s)")
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Spreadsheet Sync Send Error: \(error)") }
             }
         }
     }

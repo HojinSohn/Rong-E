@@ -91,12 +91,14 @@ class AuthManager():
     Manages Google API authentication and provides toolkits for Gmail, Calendar, and Sheets.
     """
     _current_credentials = None  # Class variable to store credentials for the tool
-    
+
     def __init__(self):
         self.credentials = None
         self.gmail_toolkit = None
         self.calendar_toolkit = None
         self.sheets_toolkit = None
+        # Stored spreadsheet configurations from the UI
+        self.spreadsheet_configs: list[dict] = []
 
     def check_connected(self) -> bool:
         """
@@ -187,3 +189,55 @@ class AuthManager():
         all_tools.extend(self.get_calendar_tools())
         all_tools.append(manage_spreadsheet)  # Use the standalone function
         return all_tools
+
+    def get_sheet_tabs(self, spreadsheet_id: str) -> dict:
+        """
+        Fetches the list of sheet/tab names from a Google Spreadsheet.
+        Returns: {"success": True, "title": str, "tabs": [str]} or {"success": False, "error": str}
+        """
+        if self.credentials is None:
+            return {"success": False, "error": "Not authenticated with Google"}
+
+        try:
+            service = build_sheets_service(credentials=self.credentials)
+            spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+
+            title = spreadsheet.get('properties', {}).get('title', 'Untitled')
+            sheets = spreadsheet.get('sheets', [])
+            tabs = [sheet.get('properties', {}).get('title', 'Sheet') for sheet in sheets]
+
+            return {
+                "success": True,
+                "title": title,
+                "tabs": tabs
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def set_spreadsheet_configs(self, configs: list[dict]):
+        """
+        Store spreadsheet configurations from the UI.
+        Each config should have: alias, url, sheetID, selectedTab, description
+        """
+        self.spreadsheet_configs = configs
+        print(f"📊 Stored {len(configs)} spreadsheet configuration(s)")
+
+    def get_spreadsheet_context(self) -> str:
+        """
+        Returns a formatted string of available spreadsheets for inclusion in agent context.
+        """
+        if not self.spreadsheet_configs:
+            return ""
+
+        lines = ["### Available Google Spreadsheets", "The user has configured the following spreadsheets for quick access:"]
+        for config in self.spreadsheet_configs:
+            alias = config.get("alias", "Unknown")
+            sheet_id = config.get("sheetID", "")
+            tab = config.get("selectedTab", "Sheet1")
+            description = config.get("description", "")
+            lines.append(f"- **{alias}**: ID=`{sheet_id}`, Tab=`{tab}`")
+            if description:
+                lines.append(f"  Description: {description}")
+
+        lines.append("\nWhen the user refers to a spreadsheet by alias, use the corresponding spreadsheet_id and tab name.")
+        return "\n".join(lines)

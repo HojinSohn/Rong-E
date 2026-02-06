@@ -33,21 +33,42 @@ struct WorkflowSettingsView: View {
             // Task List
             List {
                 ForEach(manager.tasks) { task in
-                    HStack {
+                    HStack(spacing: 12) {
+                        // Drag handle
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundColor(.gray)
+                            .font(.caption)
+
                         Toggle("", isOn: Binding(
                             get: { task.isEnabled },
                             set: { _ in manager.toggle(task) }
                         ))
                         .labelsHidden()
                         .toggleStyle(SwitchToggleStyle(tint: .blue))
-                        
+
                         Text(task.prompt)
                             .foregroundColor(task.isEnabled ? .white : .gray)
                             .strikethrough(!task.isEnabled)
+                            .lineLimit(2)
+
+                        Spacer()
+
+                        // Delete button
+                        Button(action: {
+                            if let index = manager.tasks.firstIndex(where: { $0.id == task.id }) {
+                                manager.delete(at: IndexSet(integer: index))
+                            }
+                        }) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red.opacity(0.7))
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
                     }
                     .listRowBackground(Color.white.opacity(0.05))
                 }
                 .onDelete(perform: manager.delete)
+                .onMove(perform: manager.move)
             }
             .frame(height: 200)
             .scrollContentBackground(.hidden)
