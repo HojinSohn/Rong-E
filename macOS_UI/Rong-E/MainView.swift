@@ -320,14 +320,12 @@ struct MainView: View {
         print("🔌 Setting up Socket Listeners")
 
         socketClient.onReceiveThought = { thoughtText in
-            withAnimation {
-                self.isProcessing = true
-                self.activeTool = thoughtText.uppercased()
+            self.isProcessing = true
+            self.activeTool = thoughtText.uppercased()
 
-                self.appContext.reasoningSteps.append(
-                    ReasoningStep(description: thoughtText, status: .active)
-                )
-            }
+            self.appContext.reasoningSteps.append(
+                ReasoningStep(description: thoughtText, status: .active)
+            )
         }
 
         socketClient.onReceiveToolCall = { toolCallContent in
@@ -949,81 +947,90 @@ struct ReasoningStepRow: View {
     }
 }
 
+// MARK: - Mode Bar (isolated to avoid re-rendering input on appContext changes)
+struct ModeBarView: View {
+    @Binding var fullChatViewMode: Bool
+    @EnvironmentObject var appContext: AppContext
+
+    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+
+    var body: some View {
+        HStack {
+            // Mode Indicator
+            Text("\(appContext.modes.first(where: { $0.id == Int(appContext.currentMode.id) })?.name ?? "Default Mode") MODE")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.6))
+            Spacer()
+
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    appContext.toggleCurrentModeVision()
+                }
+            }) {
+                HStack(spacing: 4) {
+                    ZStack {
+                        Rectangle()
+                            .stroke(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3), lineWidth: 0.8)
+                            .frame(width: 10, height: 10)
+
+                        if appContext.currentMode.isScreenshotEnabled {
+                            Rectangle()
+                                .fill(hudCyan)
+                                .frame(width: 5, height: 5)
+                                .shadow(color: hudCyan, radius: 3)
+                        }
+                    }
+
+                    Text(appContext.currentMode.isScreenshotEnabled ? "VISION: ON" : "VISION: OFF")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.5))
+
+                    Image(systemName: "viewfinder")
+                        .font(.system(size: 8))
+                        .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3))
+                }
+                .padding(.vertical, 3)
+                .padding(.horizontal, 6)
+                .background(appContext.currentMode.isScreenshotEnabled ? hudCyan.opacity(0.1) : Color.clear)
+                .cornerRadius(3)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    fullChatViewMode.toggle()
+                }
+            }) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(hudCyan.opacity(0.5), lineWidth: 0.8)
+                        .background(Color.black.opacity(0.1))
+                        .frame(width: 26, height: 26)
+
+                    Image(systemName: fullChatViewMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(hudCyan)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(height: 30)
+        .padding(10)
+    }
+}
+
 // MARK: - Main Column (Chat & Response)
 struct MainColumnView: View {
     // Pass state from MainView
     @Binding var inputText: String
     @Binding var fullChatViewMode: Bool
 
-    @EnvironmentObject var appContext: AppContext
     var onSubmit: () -> Void
-    
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                // Mode Indicator
-                Text("\(appContext.modes.first(where: { $0.id == Int(appContext.currentMode.id) })?.name ?? "Default Mode") MODE")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
-                Spacer()
+            ModeBarView(fullChatViewMode: $fullChatViewMode)
 
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        appContext.toggleCurrentModeVision()
-                    }
-                }) {
-                    HStack(spacing: 4) {
-                        ZStack {
-                            Rectangle()
-                                .stroke(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3), lineWidth: 0.8)
-                                .frame(width: 10, height: 10)
-                            
-                            if appContext.currentMode.isScreenshotEnabled {
-                                Rectangle()
-                                    .fill(hudCyan)
-                                    .frame(width: 5, height: 5)
-                                    .shadow(color: hudCyan, radius: 3)
-                            }
-                        }
-                        
-                        Text(appContext.currentMode.isScreenshotEnabled ? "VISION: ON" : "VISION: OFF")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.5))
-                        
-                        Image(systemName: "viewfinder")
-                            .font(.system(size: 8))
-                            .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3))
-                    }
-                    .padding(.vertical, 3)
-                    .padding(.horizontal, 6)
-                    .background(appContext.currentMode.isScreenshotEnabled ? hudCyan.opacity(0.1) : Color.clear)
-                    .cornerRadius(3)
-                }
-                .buttonStyle(.plain)
-
-                Button(action: {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        fullChatViewMode.toggle()
-                    }
-                }) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(hudCyan.opacity(0.5), lineWidth: 0.8)
-                            .background(Color.black.opacity(0.1))
-                            .frame(width: 26, height: 26)
-                        
-                        Image(systemName: fullChatViewMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(hudCyan)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(height: 30) // Placeholder for potential header content
-            .padding(10)
-            
             Spacer()
                 .frame(height: fullChatViewMode ? 10 : 80)
 
@@ -1035,7 +1042,7 @@ struct MainColumnView: View {
 
             Spacer()
                 .frame(height: 5)
-            
+
             // 4. Input Field (Bottom)
             InputAreaView(inputText: $inputText, onSubmit: onSubmit)
                 .padding(.bottom, 10)

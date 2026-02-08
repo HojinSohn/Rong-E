@@ -16,7 +16,7 @@ from datetime import datetime
 
 # Agent imports
 from agent.agents.google_agent import GoogleAgent
-from agent.tools import get_tools
+from agent.tools import get_tools, get_memory_content
 from agent.services.google_service import AuthManager
 from agent.settings.settings import PROMPTS_DIR
 
@@ -130,9 +130,22 @@ class RongEAgent:
         # Include spreadsheet context if available
         spreadsheet_context = self.auth_manager.get_spreadsheet_context()
 
+        # Include persistent memory if available
+        memory_content = get_memory_content()
+        memory_section = ""
+        if memory_content:
+            memory_section = f"""### Persistent Memory
+The following is your persistent memory containing important information about the user:
+
+{memory_content}
+
+Use this information to provide personalized assistance. Update memory when you learn important new facts about the user."""
+
         parts = [base_prompt, custom_instructions]
         if spreadsheet_context:
             parts.append(spreadsheet_context)
+        if memory_section:
+            parts.append(memory_section)
 
         self.system_prompt = "\n\n".join(parts)
 

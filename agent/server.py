@@ -203,6 +203,35 @@ async def websocket_endpoint(websocket: WebSocket):
                         "content": f"✅ Synced {len(configs)} spreadsheet(s)"
                     }))
                     continue
+                elif data["data_type"] == "get_memory":
+                    print("🧠 Received Memory Read Request")
+                    from agent.tools import get_memory_content
+                    content = get_memory_content()
+                    await websocket.send_text(json.dumps({
+                        "type": "memory_content",
+                        "content": content
+                    }))
+                    continue
+                elif data["data_type"] == "save_memory":
+                    content = data.get("content", "")
+                    print(f"🧠 Received Memory Save Request ({len(content)} chars)")
+                    from agent.settings.settings import MEMORY_FILE
+                    try:
+                        with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+                            f.write(content)
+                        # Refresh agent's system prompt with new memory
+                        agent.create_system_prompt()
+                        agent.messages[0] = SystemMessage(content=agent.system_prompt)
+                        await websocket.send_text(json.dumps({
+                            "type": "memory_saved",
+                            "content": "✅ Memory saved successfully"
+                        }))
+                    except Exception as e:
+                        await websocket.send_text(json.dumps({
+                            "type": "memory_error",
+                            "content": f"❌ Error saving memory: {str(e)}"
+                        }))
+                    continue
 
             # Guard: ensure LLM is configured before processing commands
             if agent.llm is None:

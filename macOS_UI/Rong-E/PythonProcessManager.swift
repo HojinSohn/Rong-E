@@ -170,8 +170,8 @@ class PythonProcessManager: ObservableObject {
 
     // Starts the Python backend server
     func startServer() {
-        devPythonRun()
-        return
+        // devPythonRun()
+        // return
         
         guard !isRunning else {
             print("⚠️ Python server is already running")

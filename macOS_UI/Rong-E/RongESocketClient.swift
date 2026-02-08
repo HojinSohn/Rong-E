@@ -200,6 +200,8 @@ class SocketClient: ObservableObject {
     var onReceiveActiveTools: (([ActiveToolInfo]) -> Void)?
     var onLLMSetResult: ((Bool, String?) -> Void)?
     var onSheetTabsResult: ((Bool, String?, [String]?) -> Void)?  // (success, title/error, tabs)
+    var onMemoryContent: ((String) -> Void)?
+    var onMemorySaved: ((Bool, String) -> Void)?  // (success, message)
 
     func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
@@ -323,6 +325,28 @@ class SocketClient: ObservableObject {
                     let error = contentObj["error"] as? String ?? "Unknown error"
                     self?.onSheetTabsResult?(false, error, nil)
                 }
+            }
+            return
+        }
+
+        // Handle memory_content (string content)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let type = json["type"] as? String,
+           type == "memory_content",
+           let content = json["content"] as? String {
+            DispatchQueue.main.async { [weak self] in
+                self?.onMemoryContent?(content)
+            }
+            return
+        }
+
+        // Handle memory_saved (string content)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let type = json["type"] as? String,
+           type == "memory_saved",
+           let content = json["content"] as? String {
+            DispatchQueue.main.async { [weak self] in
+                self?.onMemorySaved?(true, content)
             }
             return
         }
@@ -549,6 +573,33 @@ class SocketClient: ObservableObject {
             let message = URLSessionWebSocketTask.Message.string(jsonString)
             webSocketTask?.send(message) { error in
                 if let error = error { print("❌ Spreadsheet Sync Send Error: \(error)") }
+            }
+        }
+    }
+
+    func requestMemory() {
+        let json: [String: String] = ["data_type": "get_memory"]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Requesting memory content")
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Memory Request Send Error: \(error)") }
+            }
+        }
+    }
+
+    func saveMemory(content: String) {
+        let json: [String: String] = [
+            "data_type": "save_memory",
+            "content": content
+        ]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Saving memory (\(content.count) chars)")
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Memory Save Send Error: \(error)") }
             }
         }
     }

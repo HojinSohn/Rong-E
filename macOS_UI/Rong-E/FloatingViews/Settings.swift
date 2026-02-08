@@ -142,7 +142,8 @@ struct SettingsView: View {
                     JarvisTabButton(icon: "gearshape", title: "SYS", isSelected: selectedTab == 0) { selectedTab = 0 }
                     JarvisTabButton(icon: "slider.horizontal.3", title: "MOD", isSelected: selectedTab == 1) { selectedTab = 1 }
                     JarvisTabButton(icon: "server.rack", title: "MCP", isSelected: selectedTab == 2) { selectedTab = 2 }
-                    JarvisTabButton(icon: "info.circle", title: "DAT", isSelected: selectedTab == 3) { selectedTab = 3 }
+                    JarvisTabButton(icon: "brain", title: "MEM", isSelected: selectedTab == 3) { selectedTab = 3 }
+                    JarvisTabButton(icon: "info.circle", title: "DAT", isSelected: selectedTab == 4) { selectedTab = 4 }
                 }
                 .padding(.vertical, 10)
 
@@ -152,7 +153,8 @@ struct SettingsView: View {
                     case 0: GeneralSettingsView()
                     case 1: ModesSettingsView()
                     case 2: MCPSettingsView()
-                    case 3: AboutSettingsView()
+                    case 3: MemorySettingsView()
+                    case 4: AboutSettingsView()
                     default: GeneralSettingsView()
                     }
                 }
@@ -919,6 +921,167 @@ struct MCPTextField: View {
                 .background(Color.black.opacity(0.5))
                 .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
         }
+    }
+}
+
+// MARK: - Memory Settings View
+struct MemorySettingsView: View {
+    @State private var memoryContent: String = ""
+    @State private var isLoading: Bool = true
+    @State private var isSaving: Bool = false
+    @State private var statusMessage: String?
+    @State private var statusIsError: Bool = false
+    @State private var hasChanges: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            // Header
+            HStack {
+                Text("PERSISTENT MEMORY")
+                    .font(.caption)
+                    .foregroundColor(.jarvisBlue.opacity(0.7))
+                    .tracking(1)
+
+                Spacer()
+
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                if hasChanges {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 6, height: 6)
+                        .help("Unsaved changes")
+                }
+            }
+
+            Text("Store important information that persists across conversations. The agent will use this context automatically.")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.gray)
+
+            // Memory Editor
+            TextEditor(text: $memoryContent)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.white)
+                .scrollContentBackground(.hidden)
+                .background(Color.black.opacity(0.5))
+                .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+                .frame(minHeight: 200)
+                .onChange(of: memoryContent) { _ in
+                    hasChanges = true
+                }
+
+            // Status Message
+            if let status = statusMessage {
+                HStack(spacing: 5) {
+                    if isSaving {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else {
+                        Image(systemName: statusIsError ? "xmark.circle.fill" : "checkmark.circle.fill")
+                            .foregroundColor(statusIsError ? .red : .green)
+                            .font(.system(size: 9))
+                    }
+                    Text(status)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(statusIsError ? .red : .green)
+                }
+            }
+
+            // Action Buttons
+            HStack {
+                Button(action: loadMemory) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("RELOAD")
+                    }
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.jarvisBlue.opacity(0.8))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.black.opacity(0.3))
+                    .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(isLoading)
+
+                Button(action: clearMemory) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "trash")
+                        Text("CLEAR")
+                    }
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.red.opacity(0.8))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.black.opacity(0.3))
+                    .overlay(Rectangle().stroke(Color.red.opacity(0.3), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(memoryContent.isEmpty)
+
+                Spacer()
+
+                Button(action: saveMemory) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.down")
+                        Text("SAVE")
+                    }
+                    .font(.system(size: 10, design: .monospaced))
+                    .fontWeight(.bold)
+                    .foregroundColor(.jarvisBlue)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(Color.jarvisBlue.opacity(0.2))
+                    .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(isSaving || !hasChanges)
+            }
+        }
+        .modifier(JarvisPanel())
+        .onAppear {
+            setupCallbacks()
+            loadMemory()
+        }
+    }
+
+    private func setupCallbacks() {
+        SocketClient.shared.onMemoryContent = { content in
+            isLoading = false
+            memoryContent = content
+            hasChanges = false
+            statusMessage = nil
+        }
+
+        SocketClient.shared.onMemorySaved = { success, message in
+            isSaving = false
+            statusIsError = !success
+            statusMessage = message
+            if success {
+                hasChanges = false
+            }
+        }
+    }
+
+    private func loadMemory() {
+        isLoading = true
+        statusMessage = nil
+        SocketClient.shared.requestMemory()
+    }
+
+    private func saveMemory() {
+        isSaving = true
+        statusMessage = "Saving memory..."
+        statusIsError = false
+        SocketClient.shared.saveMemory(content: memoryContent)
+    }
+
+    private func clearMemory() {
+        memoryContent = ""
+        hasChanges = true
     }
 }
 
