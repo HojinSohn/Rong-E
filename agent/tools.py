@@ -2,12 +2,10 @@ import datetime
 import os
 import platform
 from langchain_core.tools import tool
-from langchain_community.tools import DuckDuckGoSearchRun
 import subprocess
 from typing import List
 from agent.models.model import (
     JobApplicationSchema,
-    WebSearchSchema,
     ListDirectorySchema,
     ReadFileSchema,
     CollectFilesSchema,
@@ -16,22 +14,10 @@ from agent.models.model import (
 )
 from agent.settings.settings import MEMORY_FILE
 
-search = DuckDuckGoSearchRun()
-
-@tool("web_search", description="Useful for searching the internet for current events or facts.", args_schema=WebSearchSchema)
-def web_search(query: str):
-    """Useful for searching the internet for current events or facts."""
-    return search.run(query)
-
 @tool("get_current_date_time", description="Returns the current local date and time.")
 def get_current_date_time():
     """Returns the current local date and time."""
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-@tool("pwd", description="Returns the current working directory.")
-def pwd():
-    """Returns the current working directory."""
-    return os.getcwd()
 
 @tool("open_application", description="Opens a specified application on the system.", args_schema=OpenApplicationSchema)
 def open_application(app_name: str):
@@ -159,8 +145,6 @@ def get_tools():
     """
     existing_tools = [
         get_current_date_time,
-        web_search,
-        pwd,
         open_application,
         read_memory,
         save_to_memory,
@@ -178,7 +162,6 @@ def get_tool_map():
     """
     tool_map = {
         "get_current_date_time": get_current_date_time,
-        "web_search": web_search,
         "open_application": open_application,
         "read_memory": read_memory,
         "save_to_memory": save_to_memory,
