@@ -129,12 +129,6 @@ class PythonProcessManager: ObservableObject {
             }
         }
 
-        // 3. Check common development paths
-        if let home = ProcessInfo.processInfo.environment["HOME"] {
-            searchPaths.append("\(home)/Echo/agent/dist/ronge_agent/ronge_agent")
-            searchPaths.append("\(home)/Echo/agent/dist/ronge_agent")
-        }
-
         // Find first existing executable
         for path in searchPaths {
             print("🔍 Checking for executable at: \(path)")

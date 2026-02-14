@@ -111,7 +111,6 @@ HIDDEN_IMPORTS = [
     "agent.tools",
     "agent.services",
     "agent.services.google_service",
-    "agent.services.rag",
     "agent.models",
     "agent.models.mcp_config"
 ]

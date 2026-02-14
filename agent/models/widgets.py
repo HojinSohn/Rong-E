@@ -1,5 +1,5 @@
 """
-Widget Protocol for JARVIS AI Assistant
+Widget Protocol for Rong-E AI Assistant
 ========================================
 
 This module defines the widget data structures that can be sent from the

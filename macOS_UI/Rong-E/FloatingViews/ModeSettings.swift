@@ -119,23 +119,7 @@ struct ModesSettingsView: View {
                                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.jarvisBlue.opacity(0.2), lineWidth: 1))
                         }
                         
-                        // Section 4: Tools Selection
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("ACTIVE TOOL MODULES")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.gray)
-                            
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 10)], spacing: 10) {
-                                ForEach(context.activeTools) { tool in
-                                    JarvisToolButton(
-                                        title: tool.name,
-                                        isSelected: context.modes[index].enabledTools.contains(tool.name)
-                                    ) {
-                                        toggleTool(tool.name, for: index)
-                                    }
-                                }
-                            }
-                        }
+
                     }
                     .padding(20)
                 } else {
@@ -156,14 +140,6 @@ struct ModesSettingsView: View {
         }
     }
     
-    // Helper Logic
-    func toggleTool(_ tool: String, for index: Int) {
-        if context.modes[index].enabledTools.contains(tool) {
-            context.modes[index].enabledTools.remove(tool)
-        } else {
-            context.modes[index].enabledTools.insert(tool)
-        }
-    }
 }
 
 // MARK: - Components
@@ -248,43 +224,3 @@ struct JarvisTextEditor: View {
     }
 }
 
-struct JarvisToolButton: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                // Technical status indicator
-                ZStack {
-                    Circle()
-                        .stroke(isSelected ? Color.jarvisBlue : Color.gray, lineWidth: 1)
-                        .frame(width: 8, height: 8)
-                    
-                    if isSelected {
-                        Circle()
-                            .fill(Color.jarvisBlue)
-                            .frame(width: 4, height: 4)
-                    }
-                }
-                
-                Text(title.uppercased())
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(isSelected ? .white : .gray)
-                
-                Spacer()
-            }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 8)
-            .background(isSelected ? Color.jarvisBlue.opacity(0.15) : Color.white.opacity(0.03))
-            .overlay(
-                RoundedRectangle(cornerRadius: 2)
-                    .stroke(isSelected ? Color.jarvisBlue.opacity(0.6) : Color.white.opacity(0.1), lineWidth: 1)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .modifier(JarvisGlow(active: isSelected))
-    }
-}

@@ -1658,34 +1658,10 @@ struct RongEAvatarIcon: View {
     }
 }
 
-/// Background Mesh/Grid
+/// Background
 struct RongEBackground: View {
     var body: some View {
-        ZStack {
-            Color(red: 0.08, green: 0.10, blue: 0.14) // Lighter sci-fi blue
-
-            // Grid Lines
-            GeometryReader { geo in
-                Path { path in
-                    let step: CGFloat = 40
-                    for y in stride(from: 0, to: geo.size.height, by: step) {
-                        path.move(to: CGPoint(x: 0, y: y))
-                        path.addLine(to: CGPoint(x: geo.size.width, y: y))
-                    }
-                }
-                .stroke(Color.cyan.opacity(0.03), lineWidth: 1)
-            }
-
-            // Vignette
-            RadialGradient(
-                colors: [.clear, .black.opacity(0.4)],
-                center: .center,
-                startRadius: 100,
-                endRadius: 400
-            )
-        }
-        .ignoresSafeArea()
-        .opacity(0.5)
+        Color.gray.opacity(0.06)
     }
 }
 

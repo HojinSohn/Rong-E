@@ -177,7 +177,6 @@ class AppContext: ObservableObject {
         var id: Int
         var name: String
         var systemPrompt: String
-        var enabledTools: Set<String>
         var isScreenshotEnabled: Bool
     }
 
@@ -199,7 +198,7 @@ class AppContext: ObservableObject {
 
     // Helper to get the actual object
     var currentMode: ModeConfiguration {
-        modes.first { $0.id == currentModeId } ?? (modes.first ?? ModeConfiguration(id: 0, name: "Fallback", systemPrompt: "", enabledTools: [], isScreenshotEnabled: false))
+        modes.first { $0.id == currentModeId } ?? (modes.first ?? ModeConfiguration(id: 0, name: "Fallback", systemPrompt: "", isScreenshotEnabled: false))
     }
 
     // Helper to toggle the setting for the ACTIVE mode
@@ -221,7 +220,6 @@ class AppContext: ObservableObject {
             id: nextId,
             name: "New Mode",
             systemPrompt: "",
-            enabledTools: [],
             isScreenshotEnabled: false
         )
         modes.append(newMode)
@@ -304,9 +302,9 @@ class AppContext: ObservableObject {
         } else {
             // Initialize with default modes
             self.modes = [
-                ModeConfiguration(id: 1, name: "General", systemPrompt: "", enabledTools: [], isScreenshotEnabled: false),
-                ModeConfiguration(id: 2, name: "Coding", systemPrompt: "You are a coding assistant. Help with programming tasks.", enabledTools: [], isScreenshotEnabled: false),
-                ModeConfiguration(id: 3, name: "Research", systemPrompt: "You are a research assistant. Help find and summarize information.", enabledTools: [], isScreenshotEnabled: false)
+                ModeConfiguration(id: 1, name: "General", systemPrompt: "You are a helpful general-purpose AI assistant. Assist with a wide range of tasks including answering questions, brainstorming, writing, and problem-solving.", isScreenshotEnabled: false),
+                ModeConfiguration(id: 2, name: "Coding", systemPrompt: "You are a coding assistant. Help with programming tasks.", isScreenshotEnabled: false),
+                ModeConfiguration(id: 3, name: "Research", systemPrompt: "You are a research assistant. Help find and summarize information.", isScreenshotEnabled: false)
             ]
         }
         // Load provider first, then load API key for that provider
