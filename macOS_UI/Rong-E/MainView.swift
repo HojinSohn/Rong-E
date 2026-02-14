@@ -502,7 +502,6 @@ struct MainView: View {
 
             appContext.response = response
             inputMode = false
-            fullChatViewMode = true
         }
     }
 
@@ -594,6 +593,15 @@ struct MinimizedControlsView: View {
                 angle: 45,
                 radius: radius,
                 hudCyan: hudCyan
+            )
+
+            // Far Right: Quit (+90°)
+            OrbiterButton(
+                icon: "xmark",
+                action: { NSApplication.shared.terminate(nil) },
+                angle: 90,
+                radius: radius,
+                hudCyan: Color.red
             )
         }
         .frame(height: 100)
@@ -1685,6 +1693,7 @@ struct HeaderView: View {
     @State private var refreshHovering = false
     @State private var shrinkHovering = false
     @State private var chatMinimizeHovering = false
+    @State private var quitHovering = false
 
     var body: some View {
         HStack {
@@ -1874,6 +1883,36 @@ struct HeaderView: View {
             .onHover { hovering in
                 withAnimation(.easeInOut(duration: 0.2)) {
                     shrinkHovering = hovering
+                }
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .contentShape(Rectangle())
+            .zIndex(10)
+
+            // Quit Button
+            Button(action: {
+                NSApplication.shared.terminate(nil)
+            }) {
+                ZStack {
+                    Color.red.opacity(quitHovering ? 0.6 : 0.4)
+                        .cornerRadius(8)
+
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 32, height: 32)
+                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .scaleEffect(quitHovering ? 1.1 : 1.0)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    quitHovering = hovering
                 }
                 if hovering {
                     NSCursor.pointingHand.push()

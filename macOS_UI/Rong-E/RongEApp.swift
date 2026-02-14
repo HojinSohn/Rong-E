@@ -120,11 +120,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Combine all tasks into one mega prompt
         let taskPrompts = enabledTasks.map { "• \($0.prompt)" }.joined(separator: "\n")
         let megaPrompt = """
-        Morning Briefing - Please perform these tasks:
-        
+        You are a startup briefing agent. Perform the tasks below and produce one concise briefing.
+        Tasks:
         \(taskPrompts)
         
-        Provide a structured summary with bullet points and emojis.
+        Output:
+        - Short, spoken-style sections
+        - Bullet points
+        - Light, relevant emojis
+        - Do not mention the tasks
+        - Only show the final briefing
         """
 
         print("📝 Mega Prompt:\n\(megaPrompt)")

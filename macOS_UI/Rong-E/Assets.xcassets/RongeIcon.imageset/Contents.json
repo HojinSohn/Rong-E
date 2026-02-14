@@ -1,17 +1,17 @@
 {
   "images" : [
     {
-      "filename" : "Rong-E-Icon.png",
+      "filename" : "mac-256.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "Rong-E-Icon 1.png",
+      "filename" : "mac-512.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "Rong-E-Icon 2.png",
+      "filename" : "mac-1024.png",
       "idiom" : "universal",
       "scale" : "3x"
     }
