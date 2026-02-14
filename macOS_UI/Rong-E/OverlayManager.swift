@@ -130,17 +130,8 @@ class WindowCoordinator: ObservableObject {
             let controller = MainWindowController()
             controllers["main"] = controller
         }
-        // move the window to bottom center of the screen
-        let screen = NSScreen.main?.frame ?? .zero
-        let width: CGFloat = Constants.UI.windowWidth
-        let height: CGFloat = Constants.UI.windowHeight
-        let newOrigin = NSPoint(
-            x: screen.midX - (width / 2),
-            y: 100 // 100 points from bottom
-        )
-        controllers["main"]?.window?.setFrameOrigin(newOrigin)
-        // disable window dragging when minimized
-        controllers["main"]?.window?.isMovableByWindowBackground = false
+        // Keep window at current position — no repositioning
+        controllers["main"]?.window?.isMovableByWindowBackground = true
         controllers["main"]?.showWindow(nil)
         controllers["main"]?.window?.orderFrontRegardless()
     }
