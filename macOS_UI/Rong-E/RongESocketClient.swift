@@ -214,14 +214,14 @@ class SocketClient: ObservableObject {
     func connect() {
         if webSocketTask?.state == .running { return }
         connectionFailed = false
-        connectWithRetry(maxRetries: 10, delay: 1.0)
+        connectWithRetry(maxRetries: 30, delay: 1.0)
     }
 
     func retryConnection() {
         connectionFailed = false
         isConnected = false
         webSocketTask?.cancel(with: .goingAway, reason: nil)
-        connectWithRetry(maxRetries: 10, delay: 1.0)
+        connectWithRetry(maxRetries: 30, delay: 1.0)
     }
 
     private func connectWithRetry(maxRetries: Int, delay: TimeInterval, attempt: Int = 0) {
