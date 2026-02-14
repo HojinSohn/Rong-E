@@ -120,12 +120,22 @@ class RongEAgent:
         self.messages = [SystemMessage(content=self.system_prompt)]
         self.max_iterations = 15
 
-    def create_system_prompt(self):
+    def create_system_prompt(self, mode_system_prompt=None, user_name=None):
         """Create a custom system prompt with additional instructions."""
         with open(os.path.join(PROMPTS_DIR, "system_prompt.txt"), "r") as f:
             base_prompt = f.read()
 
+        # Substitute user name placeholder
+        if user_name:
+            base_prompt = base_prompt.replace("{user_name}", user_name)
+        else:
+            base_prompt = base_prompt.replace("{user_name}", "User")
+
         custom_instructions = f'Current date and time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}.'
+
+        # Include mode-specific system prompt from the UI
+        if mode_system_prompt:
+            custom_instructions += f'\n\nAdditional mode instructions: {mode_system_prompt}'
 
         # Include spreadsheet context if available
         spreadsheet_context = self.auth_manager.get_spreadsheet_context()
@@ -148,6 +158,12 @@ Use this information to provide personalized assistance. Update memory when you 
             parts.append(memory_section)
 
         self.system_prompt = "\n\n".join(parts)
+
+    def update_system_prompt(self, mode_system_prompt=None, user_name=None):
+        """Update the system prompt and refresh the first message."""
+        self.create_system_prompt(mode_system_prompt=mode_system_prompt, user_name=user_name)
+        if self.messages:
+            self.messages[0] = SystemMessage(content=self.system_prompt)
 
     def set_llm(self, provider: str, model: str, api_key: str = None):
         """Switch the LLM provider and model at runtime. Validates by sending a test message."""

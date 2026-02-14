@@ -27,7 +27,6 @@ struct MainView: View {
     @State private var shouldAnimateResponse = true
 
     // 5. Processing State
-    @State private var isListening = false
     @State private var isProcessing = false
     @State private var activeTool: String? = nil
     @State private var expandedStepIds: Set<UUID> = []
@@ -171,7 +170,7 @@ struct MainView: View {
                     .foregroundStyle(.white)
                     .shadow(color: .white, radius: 10)
 
-                Text("Good \(getGreeting()), Hojin!") // Good Morning/Afternoon/Evening Greeting
+                Text("Good \(getGreeting()), \(appContext.userName.components(separatedBy: " ").first ?? appContext.userName)!") // Good Morning/Afternoon/Evening Greeting
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
 
@@ -189,10 +188,8 @@ struct MainView: View {
             // Keep the HUD visible when minimized without laying out the large content
             if showMinimizedButtons {
                 MinimizedControlsView(
-                    isListening: isListening,
                     minimizedMode: minimizedMode,
                     toggleMinimized: toggleMinimized,
-                    toggleListening: toggleListening,
                     toggleMessages: { setShowMinimizedMessageView(!showMinimizedMessageView) },
                     onHoverChange: setShowMinimizedButtons
                 )
@@ -437,7 +434,9 @@ struct MainView: View {
                 }
             }
 
-            socketClient.sendMessageWithImage(query, mode: selectedMode, base64Image: base64Image)
+            let modeSystemPrompt = appContext.currentMode.systemPrompt.isEmpty ? nil : appContext.currentMode.systemPrompt
+            let userName = appContext.userName.isEmpty ? nil : appContext.userName
+            socketClient.sendMessageWithImage(query, mode: selectedMode, base64Image: base64Image, systemPrompt: modeSystemPrompt, userName: userName)
             
             self.activeTool = "WS_STREAM"
 
@@ -476,7 +475,9 @@ struct MainView: View {
                     pendingQuery = nil
                     pendingMode = nil
                     waitingForPermission = false
-                    socketClient.sendMessage(query, mode: mode)
+                    let modeSystemPrompt = appContext.currentMode.systemPrompt.isEmpty ? nil : appContext.currentMode.systemPrompt
+                    let userName = appContext.userName.isEmpty ? nil : appContext.userName
+                    socketClient.sendMessage(query, mode: mode, systemPrompt: modeSystemPrompt, userName: userName)
 
                     // close overlay
                     windowCoordinator.closePermissionWaitingOverlay()
@@ -518,32 +519,19 @@ struct MainView: View {
         // append user message to chat history
         appContext.currentSessionChatMessages.append(ChatMessage(role: "user", content: query))
 
+        let modeSystemPrompt = appContext.currentMode.systemPrompt.isEmpty ? nil : appContext.currentMode.systemPrompt
+        let userName = appContext.userName.isEmpty ? nil : appContext.userName
+
         if appContext.modes.first(where: { $0.name == appContext.modes.first(where: { $0.id == Int(currentMode.suffix(1)) })?.name })?.isScreenshotEnabled == true {
             print("📸 Screenshot tool is enabled for this mode. Capturing screenshot...")
             captureAndSendWithScreenshot(query: query, selectedMode: selectedMode)
         } else {
             print("ℹ️ Screenshot tool is NOT enabled for this mode. Sending query without screenshot.")
-            socketClient.sendMessage(query, mode: selectedMode)
+            socketClient.sendMessage(query, mode: selectedMode, systemPrompt: modeSystemPrompt, userName: userName)
             self.activeTool = "WS_STREAM"
         }
     }
 
-    private func toggleListening() {
-        withAnimation {
-            if isListening {
-                isListening = false
-                isProcessing = true
-                appContext.response = ""
-                socketClient.sendMessage("Hello (Voice Input)", mode: currentMode.lowercased())
-            } else {
-                isListening = true
-                isProcessing = false
-                inputMode = false
-                shouldAnimateResponse = true
-                appContext.response = "Listening..."
-            }
-        }
-    }
 }
 
 // MARK: - Helper for Glass Tint
@@ -554,17 +542,15 @@ extension View {
 }
 
 struct MinimizedControlsView: View {
-    let isListening: Bool
     let minimizedMode: Bool
     let toggleMinimized: () -> Void
-    let toggleListening: () -> Void
     let toggleMessages: () -> Void
     let onHoverChange: (Bool) -> Void
-    
+
     // Configuration
-    private let radius: CGFloat = 70 
+    private let radius: CGFloat = 70
     private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
-    
+
     var body: some View {
         ZStack {
             // Left: Messages (-45°)
@@ -576,30 +562,20 @@ struct MinimizedControlsView: View {
                 hudCyan: hudCyan
             )
 
-            // Center: Mic (0°)
+            // Center: Minimize (0°)
             OrbiterButton(
-                icon: isListening ? "mic.fill" : "mic.slash.fill",
-                action: toggleListening,
-                isActive: isListening,
+                icon: minimizedMode ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left",
+                action: toggleMinimized,
                 angle: 0,
                 radius: radius,
                 hudCyan: hudCyan
             )
 
-            // Right: Minimize (+45°)
-            OrbiterButton(
-                icon: minimizedMode ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left",
-                action: toggleMinimized,
-                angle: 45,
-                radius: radius,
-                hudCyan: hudCyan
-            )
-
-            // Far Right: Quit (+90°)
+            // Right: Quit (+45°)
             OrbiterButton(
                 icon: "xmark",
                 action: { NSApplication.shared.terminate(nil) },
-                angle: 90,
+                angle: 45,
                 radius: radius,
                 hudCyan: Color.red
             )
@@ -1173,7 +1149,7 @@ struct InputActionButton: View {
                     .frame(width: 40, height: 40)
 
                 // Icon
-                Image(systemName: hasText ? "arrow.up" : "mic.fill")
+                Image(systemName: "arrow.up")
                     .font(.system(size: 18, weight: .bold, design: .monospaced))
                     .foregroundStyle(hudCyan)
                     .shadow(color: hudCyan, radius: hasText ? 10 : 0)

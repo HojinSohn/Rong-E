@@ -235,8 +235,22 @@ struct GeneralSettingsView: View {
                         .foregroundColor(.jarvisBlue.opacity(0.7))
                         .tracking(1)
 
-                    JarvisToggle(title: "Launch Sequence (Login)", isOn: .constant(true))
-                    JarvisToggle(title: "Audio Feedback", isOn: .constant(false))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("USER NAME")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.gray)
+
+                        TextField("Enter your name...", text: $context.userName)
+                            .textFieldStyle(.plain)
+                            .padding(6)
+                            .font(.system(size: 12, design: .monospaced))
+                            .background(Color.black.opacity(0.5))
+                            .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
+                            .foregroundColor(.white)
+                            .onChange(of: context.userName) { _ in
+                                context.saveSettings()
+                            }
+                    }
                 }
                 .modifier(JarvisPanel())
 

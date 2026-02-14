@@ -167,6 +167,8 @@ struct ChatPayload: Codable {
     let text: String
     let mode: String
     let base64_image: String?
+    let system_prompt: String?
+    let user_name: String?
 }
 
 // MARK: - Socket Client
@@ -425,12 +427,12 @@ class SocketClient: ObservableObject {
         }
     }
 
-    func sendMessage(_ text: String, mode: String) {
-        sendMessageWithImage(text, mode: mode, base64Image: nil)
+    func sendMessage(_ text: String, mode: String, systemPrompt: String? = nil, userName: String? = nil) {
+        sendMessageWithImage(text, mode: mode, base64Image: nil, systemPrompt: systemPrompt, userName: userName)
     }
 
-    func sendMessageWithImage(_ text: String, mode: String, base64Image: String? = nil) {
-        let payload = ChatPayload(text: text, mode: mode, base64_image: base64Image)
+    func sendMessageWithImage(_ text: String, mode: String, base64Image: String? = nil, systemPrompt: String? = nil, userName: String? = nil) {
+        let payload = ChatPayload(text: text, mode: mode, base64_image: base64Image, system_prompt: systemPrompt, user_name: userName)
         if let jsonData = try? JSONEncoder().encode(payload),
            let jsonString = String(data: jsonData, encoding: .utf8) {
             if webSocketTask?.state != .running {

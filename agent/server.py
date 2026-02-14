@@ -247,8 +247,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # Normal message processing
             query, mode, base64_image = data["text"], data["mode"], data.get("base64_image")
+            mode_system_prompt = data.get("system_prompt")
+            user_name = data.get("user_name")
             print(f"Processing Query: {query} in Mode: {mode}")
-            print(f"Base64 Image Present: {'Yes' if base64_image else 'No'}")  
+            print(f"Base64 Image Present: {'Yes' if base64_image else 'No'}")
+
+            # Update system prompt if mode prompt or user name changed
+            agent.update_system_prompt(mode_system_prompt=mode_system_prompt, user_name=user_name)  
             
             # Callback function to stream responses
             # content can be:

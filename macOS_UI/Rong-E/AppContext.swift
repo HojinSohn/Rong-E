@@ -142,6 +142,7 @@ class AppContext: ObservableObject {
     @Published var activeTools: [ActiveToolInfo] = []
     @Published var llmProvider: LLMProvider = .gemini
     @Published var llmModel: String = "gemini-2.5-flash-lite"
+    @Published var userName: String = NSFullUserName()
     
     // We initialize these with placeholders, they get updated in init()
     @Published var overlayWidth: CGFloat = 0
@@ -262,6 +263,7 @@ class AppContext: ObservableObject {
         UserDefaults.standard.set(llmProvider.rawValue, forKey: "llmProvider")
         UserDefaults.standard.set(llmModel, forKey: "llmModel")
         UserDefaults.standard.set(startUpWorkFinished, forKey: "startUpWorkFinished")
+        UserDefaults.standard.set(userName, forKey: "userName")
     }
 
     /// Save API key for a specific provider
@@ -320,6 +322,9 @@ class AppContext: ObservableObject {
         }
         if UserDefaults.standard.object(forKey: "startUpWorkFinished") != nil {
             self.startUpWorkFinished = UserDefaults.standard.bool(forKey: "startUpWorkFinished")
+        }
+        if let savedUserName = UserDefaults.standard.string(forKey: "userName"), !savedUserName.isEmpty {
+            self.userName = savedUserName
         }
     }
     
