@@ -1,24 +1,41 @@
 import SwiftUI
 import Combine
 
-struct ChatMessage: Identifiable, Hashable {
-    var id = UUID()
+// MARK: - ChatMessage Model
+struct ChatMessage: Identifiable, Equatable {
+    let id = UUID()
     let role: String
     let content: String
-    var widgets: [ChatWidgetData]?
-
+    let widgets: [ChatWidgetData]?
+    
+    // 1. Change from 'AttributedString?' to 'AttributedString' (Non-optional)
+    let attributedContent: AttributedString
+    
     init(role: String, content: String, widgets: [ChatWidgetData]? = nil) {
         self.role = role
         self.content = content
         self.widgets = widgets
+        
+        // Parse markdown while preserving newlines
+        // Split by newlines, parse each line as markdown, then rejoin with line breaks
+        let lines = content.components(separatedBy: "\n")
+        var result = AttributedString()
+        for (index, line) in lines.enumerated() {
+            if let parsed = try? AttributedString(markdown: line.isEmpty ? " " : line) {
+                result.append(parsed)
+            } else {
+                result.append(AttributedString(line))
+            }
+            if index < lines.count - 1 {
+                result.append(AttributedString("\n"))
+            }
+        }
+        self.attributedContent = result
     }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-
+    
+    // Manual Equatable Conformance (Fast check)
     static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
-        lhs.id == rhs.id
+        return lhs.id == rhs.id && lhs.content == rhs.content
     }
 }
 
@@ -152,7 +169,7 @@ class AppContext: ObservableObject {
 
     // --- Agent State ---
     @Published var reasoningSteps: [ReasoningStep] = [
-        ReasoningStep(description: "Await input", status: .active)
+        ReasoningStep(description: "Starting up", status: .active)
     ]
     
     // 3. Agent Activity / Hands (Drives the Handoff Widget)
@@ -161,7 +178,12 @@ class AppContext: ObservableObject {
     func setIdle() {
         withAnimation {
             self.currentActivity = .idle
-            self.reasoningSteps = [ReasoningStep(description: "Ready", status: .active)]
+            for i in reasoningSteps.indices {
+                if reasoningSteps[i].status == .active {
+                    reasoningSteps[i].status = .completed
+                }
+            }
+            reasoningSteps.append(ReasoningStep(description: "Ready", status: .active))
         }
     }
 

@@ -16,11 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 2. Safe to show window now that AppKit is ready
         coordinator.showMainOverlay()
 
-        // 3. Connect WebSocket after server has time to start (with retry)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            print("🔌 Auto-connecting WebSocket...")
-            self.coordinator.client.connect()
-        }
+        // WebSocket connection is handled automatically by SocketClient.shared init()
 
         // 4. Auto-sync configs when WebSocket first connects
         coordinator.client.$isConnected

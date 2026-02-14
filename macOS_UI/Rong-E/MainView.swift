@@ -152,6 +152,13 @@ struct MainView: View {
             // Trigger main content animations when WebSocket connects (and server is running)
             if isConnected && pythonManager.serverStatus == .running {
                 toggleMinimized()
+                // Transition from "Starting up" to "Await input"
+                for i in appContext.reasoningSteps.indices {
+                    if appContext.reasoningSteps[i].status == .active {
+                        appContext.reasoningSteps[i].status = .completed
+                    }
+                }
+                appContext.reasoningSteps.append(ReasoningStep(description: "Await input", status: .active))
             }
         }
     }
@@ -503,18 +510,34 @@ struct MainView: View {
 
             appContext.response = response
             inputMode = false
+
+            // Mark active steps completed, append await input
+            for i in appContext.reasoningSteps.indices {
+                if appContext.reasoningSteps[i].status == .active {
+                    appContext.reasoningSteps[i].status = .completed
+                }
+            }
+            appContext.reasoningSteps.append(ReasoningStep(description: "Await input", status: .active))
         }
     }
 
     private func submitQuery() {
         guard !inputText.isEmpty else { return }
-        
+
         let query = inputText
-        let selectedMode = currentMode.lowercased()
+        let selectedMode = appContext.currentMode.name.lowercased()
         inputText = ""
         isProcessing = true
         inputMode = false
         appContext.response = ""
+
+        // Mark previous active steps as completed, keep history
+        for i in appContext.reasoningSteps.indices {
+            if appContext.reasoningSteps[i].status == .active {
+                appContext.reasoningSteps[i].status = .completed
+            }
+        }
+        appContext.reasoningSteps.append(ReasoningStep(description: "Processing query", status: .active))
 
         // append user message to chat history
         appContext.currentSessionChatMessages.append(ChatMessage(role: "user", content: query))
@@ -940,10 +963,32 @@ struct ModeBarView: View {
 
     var body: some View {
         HStack {
-            // Mode Indicator
-            Text("\(appContext.modes.first(where: { $0.id == Int(appContext.currentMode.id) })?.name ?? "Default Mode") MODE")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.6))
+            // Mode Selector
+            Menu {
+                ForEach(appContext.modes) { mode in
+                    Button(action: {
+                        appContext.currentModeId = mode.id
+                        appContext.saveSettings()
+                    }) {
+                        if mode.id == appContext.currentModeId {
+                            Label(mode.name, systemImage: "checkmark")
+                        } else {
+                            Text(mode.name)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("\(appContext.currentMode.name.uppercased()) MODE")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
             Spacer()
 
             Button(action: {
@@ -1042,6 +1087,8 @@ struct InputAreaView: View {
     @Binding var inputText: String
     var onSubmit: () -> Void
 
+    @State private var localText: String = "" // Local, fast state
+
     // Track hasText separately to avoid animation recalculation on every keystroke
     @State private var hasText: Bool = false
 
@@ -1060,25 +1107,25 @@ struct InputAreaView: View {
                     .foregroundStyle(hudCyan)
                     .shadow(color: hudCyan, radius: 4)
 
-                TextField("COMMAND...", text: $inputText)
+                TextField("COMMAND...", text: $localText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14, weight: .medium, design: .monospaced)) // Tech font
                     .foregroundStyle(.white)
                     .accentColor(hudCyan)
                     .submitLabel(.send)
                     .onSubmit {
+                        inputText = localText
                         onSubmit()
+                        localText = ""
+                    }
+                    .onAppear {
+                        localText = inputText
                     }
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 20)
             .background(
                 ZStack {
-                    // 1. Dark Glass Background
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.ultraThinMaterial)
-                        .opacity(0.1)
-
                     // 2. Dark Fill
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.black.opacity(0.6))
@@ -1098,14 +1145,24 @@ struct InputAreaView: View {
             )
 
             // MARK: - Action Button (Reactor Core Style)
-            InputActionButton(hasText: hasText, hudCyan: hudCyan, onSubmit: onSubmit)
+            InputActionButton(hasText: hasText, hudCyan: hudCyan, onSubmit: {
+                inputText = localText
+                onSubmit()
+                localText = ""
+            })
         }
         .padding(.horizontal)
         .padding(.bottom, 10)
-        .onChange(of: inputText.isEmpty) { isEmpty in
+        .onChange(of: localText.isEmpty) { isEmpty in
             // Only update hasText when empty state changes, not on every keystroke
             if hasText == isEmpty {
                 hasText = !isEmpty
+            }
+        }
+        .onChange(of: inputText) { newValue in
+            // Sync from parent (e.g. when cleared after submit)
+            if newValue != localText {
+                localText = newValue
             }
         }
     }
@@ -1227,22 +1284,98 @@ struct ChatView: View {
     @EnvironmentObject var appContext: AppContext
     @Binding var fullChatViewMode: Bool
     
-    // Theme Colors
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // MARK: - Logs / Content
-            MessageView(fullChatViewMode: $fullChatViewMode)
-                .environmentObject(appContext)
-                .background(Color.clear) // Completely clear background for messages
-                .cornerRadius(8)
+            
+            // We pass the raw array of messages here.
+            // This allows the Equatable check to stop updates if the array hasn't changed.
+            EquatabeChatList(
+                messages: appContext.currentSessionChatMessages,
+                fullChatViewMode: fullChatViewMode
+            )
+            .environmentObject(appContext) // Pass env object down for assets/theme
+            .background(Color.clear)
+            .cornerRadius(8)
             
         }
         .scaleEffect(fullChatViewMode ? 1.0 : 0.98)
         .opacity(fullChatViewMode ? 1.0 : 0.95)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: fullChatViewMode)
-        .transition(.scale.combined(with: .opacity))
+    }
+}
+
+// MARK: - Equatable Chat List (Performance Fix)
+struct EquatabeChatList: View, Equatable {
+    let messages: [ChatMessage]
+    let fullChatViewMode: Bool
+    
+    // Custom Equality Check
+    static func == (lhs: EquatabeChatList, rhs: EquatabeChatList) -> Bool {
+        // Only redraw if the message count changes, the last message ID changes, or view mode toggles
+        return lhs.messages.count == rhs.messages.count &&
+               lhs.messages.last?.id == rhs.messages.last?.id &&
+               lhs.fullChatViewMode == rhs.fullChatViewMode
+    }
+    
+    var body: some View {
+        MessageListContent(messages: messages, fullChatViewMode: fullChatViewMode)
+    }
+}
+
+// Isolate the actual ScrollView logic here
+struct MessageListContent: View {
+    let messages: [ChatMessage]
+    let fullChatViewMode: Bool
+    @EnvironmentObject var appContext: AppContext
+    
+    @State private var systemLogs: [String] = []
+    
+    var body: some View {
+        ZStack {
+            RongEBackground()
+            
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        
+                        // System Logs
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(systemLogs, id: \.self) { log in
+                                Text(">> \(log)")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(.cyan.opacity(0.7))
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 10)
+                        
+                        // Dynamic Chat Stream
+                        ForEach(messages) { message in
+                            RongEMessageRow(message: message)
+                                .id(message.id)
+                        }
+                        
+                        Color.clear.frame(height: 20).id("bottom")
+                    }
+                    .padding(.vertical)
+                }
+                // Determine height based on mode
+                .frame(maxHeight: fullChatViewMode ? 450 : 300)
+                .onChange(of: messages.count) { _ in
+                    scrollToBottom(proxy)
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            withAnimation {
+                proxy.scrollTo("bottom", anchor: .top)
+            }
+        }
     }
 }
 
@@ -1318,9 +1451,31 @@ struct MinimizedMessageView: View {
             
             // MARK: - Mode & Vision Controls
             HStack {
-                Text("MODE: \(appContext.currentMode.name.uppercased())")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.5))
+                Menu {
+                    ForEach(appContext.modes) { mode in
+                        Button(action: {
+                            appContext.currentModeId = mode.id
+                            appContext.saveSettings()
+                        }) {
+                            if mode.id == appContext.currentModeId {
+                                Label(mode.name, systemImage: "checkmark")
+                            } else {
+                                Text(mode.name)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("MODE: \(appContext.currentMode.name.uppercased())")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.5))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 7))
+                            .foregroundStyle(Color.white.opacity(0.3))
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
                 
                 Spacer()
                 
@@ -1421,7 +1576,7 @@ struct MessageView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        
+
                         // 2. HUD Initialization Logs (Styled as System Alerts)
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(systemLogs, id: \.self) { log in
@@ -1437,14 +1592,14 @@ struct MessageView: View {
                         
                         // 3. Dynamic Chat Stream
                         ForEach(appContext.currentSessionChatMessages) { message in
-                            RongEMessageRow(message: message)
+                            EquatableView(content: RongEMessageRow(message: message))
                                 .id(message.id)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
 
                         // Spacer for bottom scroll
                         Color.clear
-                            .frame(height: 20)
+                            .frame(height: 1)
                             .id("bottom")
                     }
                     .padding(.vertical)
@@ -1474,15 +1629,12 @@ struct MessageView: View {
 
     @MainActor
     private func scrollToBottom(_ proxy: ScrollViewProxy, useLastMessage: Bool = false) {
-        // Delay slightly to ensure layout is complete before scrolling
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation(.easeOut(duration: 0.3)) {
-                if useLastMessage, let lastMessage = appContext.currentSessionChatMessages.last {
-                    // Scroll to last message first, then to bottom for extra padding
-                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+        // Double dispatch to ensure SwiftUI has fully laid out new content
+        DispatchQueue.main.async {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
                 }
-                // Always scroll to the bottom spacer to ensure we're at the very end
-                proxy.scrollTo("bottom", anchor: .top)
             }
         }
     }
@@ -1505,25 +1657,16 @@ struct MessageView: View {
 }
 
 // MARK: - RongE Message Row
-struct RongEMessageRow: View {
+struct RongEMessageRow: View, Equatable {
     let message: ChatMessage
     var isUser: Bool { message.role == "user" }
 
-    private func parseMarkdown(_ text: String) -> AttributedString {
-        // Replace single newlines with double spaces + newline for markdown
-        let markdownText = text.replacingOccurrences(of: "\n", with: "  \n")
-        
-        // Try to parse as markdown, fallback to plain text if it fails
-        if let attributed = try? AttributedString(markdown: markdownText) {
-            return attributed
-        } else {
-            return AttributedString(text)
-        }
+    static func == (lhs: RongEMessageRow, rhs: RongEMessageRow) -> Bool {
+        lhs.message.id == rhs.message.id
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            
             // AI Avatar / Decorator
             if !isUser {
                 // Rong-E Icon
@@ -1541,29 +1684,21 @@ struct RongEMessageRow: View {
             } else {
                 Spacer()
             }
-            
-            // Message Bubble
             VStack(alignment: isUser ? .trailing : .leading, spacing: 8) {
+                // ... (Header Label code remains the same) ...
                 // Header Label
                 Text(isUser ? "COMMAND INPUT" : "SYSTEM RESPONSE")
                     .font(.system(size: 8, weight: .bold))
                     .tracking(1.5)
                     .foregroundStyle(isUser ? Color.orange.opacity(0.8) : Color.cyan.opacity(0.8))
 
-                // Content
-                VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
-                    ForEach(message.content.components(separatedBy: "\n"), id: \.self) { line in
-                        if let attributed = try? AttributedString(markdown: line.isEmpty ? " " : line) {
-                            Text(attributed)
-                                .font(.system(size: 14, weight: .regular, design: .default))
-                                .foregroundStyle(.white)
-                        }
-                    }
-                }
-                .padding(12)
-                .background(
-                    HUDGlassPanel(isAccent: isUser)
-                )
+
+                // USE THE CACHED ATTRIBUTED STRING
+                Text(message.attributedContent) 
+                    .font(.system(size: 14, weight: .regular, design: .default))
+                    .foregroundStyle(.white)
+                    .padding(12)
+                    .background(HUDGlassPanel(isAccent: isUser))
 
                 // Widgets (if present)
                 if let widgets = message.widgets, !widgets.isEmpty {
@@ -1572,7 +1707,7 @@ struct RongEMessageRow: View {
                 }
             }
             .frame(maxWidth: 280, alignment: isUser ? .trailing : .leading)
-            
+
             // User Decorator (Right side)
             if isUser {
                 Circle()
