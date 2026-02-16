@@ -184,6 +184,7 @@ class SocketClient: ObservableObject {
     }
 
     private var webSocketTask: URLSessionWebSocketTask?
+    private var urlSession: URLSession?
     private let decoder = JSONDecoder()
     @Published var isConnected: Bool = false
     @Published var connectionFailed: Bool = false
@@ -228,7 +229,9 @@ class SocketClient: ObservableObject {
 
     private func connectWithRetry(maxRetries: Int, delay: TimeInterval, attempt: Int = 0) {
         let url = URL(string: "ws://127.0.0.1:8000/ws")!
+        urlSession?.invalidateAndCancel()
         let session = URLSession(configuration: .default)
+        urlSession = session
         webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
 
@@ -256,6 +259,8 @@ class SocketClient: ObservableObject {
     
     func disconnect() {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
+        urlSession?.invalidateAndCancel()
+        urlSession = nil
         DispatchQueue.main.async { self.isConnected = false }
     }
 

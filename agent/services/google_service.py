@@ -171,13 +171,35 @@ class AuthManager():
                 access_tools.append(tool)
         return access_tools
 
-    # Give full access to calendar tools
+    # Give full access to calendar tools (with JSON string arg fix)
     def get_calendar_tools(self):
         access_tools = []
         toolkit = self.get_calendar_toolkit()
-        for tool in toolkit.get_tools():
-            access_tools.append(tool)
+        for t in toolkit.get_tools():
+            access_tools.append(t)
         return access_tools
+
+    @staticmethod
+    def _wrap_tool_with_json_fix(t):
+        """Wrap a tool so that any string arg that looks like JSON gets parsed into a dict/list."""
+        original_run = t._run
+
+        def patched_run(*args, **kwargs):
+            fixed_kwargs = {}
+            for k, v in kwargs.items():
+                if isinstance(v, str):
+                    try:
+                        parsed = json.loads(v)
+                        if isinstance(parsed, (dict, list)):
+                            fixed_kwargs[k] = parsed
+                            continue
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                fixed_kwargs[k] = v
+            return original_run(*args, **fixed_kwargs)
+
+        t._run = patched_run
+        return t
 
     def get_google_tools(self):
         """

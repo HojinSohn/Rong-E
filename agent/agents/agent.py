@@ -534,4 +534,7 @@ Use this information to provide personalized assistance. Update memory when you 
 
         except Exception as e:
             print(f"Error: {e}")
-            return {"text": str(e), "images": [], "widgets": []}
+            error_data = {"text": f"Error: {e}", "images": [], "widgets": []}
+            if callback:
+                await callback("response", error_data)
+            return error_data

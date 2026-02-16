@@ -300,7 +300,10 @@ async def websocket_endpoint(websocket: WebSocket):
                             }
                         })
                 if payload:
-                    await websocket.send_text(payload)
+                    try:
+                        await websocket.send_text(payload)
+                    except Exception as e:
+                        print(f"⚠️ Failed to send callback ({type}): {e}")
 
             print([tool.name for tool in agent.tools])
             print(agent.tool_map.keys())
@@ -319,7 +322,10 @@ async def websocket_endpoint(websocket: WebSocket):
         print("⚠️ Client disconnected")
     except Exception as e:
         print(f"❌ Error: {e}")
-        await websocket.close()
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

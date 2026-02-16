@@ -115,9 +115,13 @@ class GoogleAgent:
         iteration = 0
         while iteration < self.max_iterations:
             iteration += 1
-            
+
             # Invoke LLM with Tools
-            ai_msg = self.llm_with_tools.invoke(self.messages)
+            try:
+                ai_msg = self.llm_with_tools.invoke(self.messages)
+            except Exception as e:
+                print(f"GoogleAgent: LLM invocation error: {e}")
+                return f"Error: {e}"
             self.messages.append(ai_msg)
             
             # Check if we have tool calls
@@ -145,7 +149,7 @@ class GoogleAgent:
                             tool_call_id=tool_call_id,
                             name=tool_name
                         ))
-                        final_response += f"Tool {tool_name} output: {tool_output}\n"
+                        final_response += f"Tool {tool_name} output: {str(tool_output)}\n"
                     else:
                         print(f"   > Error: Tool {tool_name} not found.")
                         self.messages.append(ToolMessage(
@@ -156,7 +160,13 @@ class GoogleAgent:
                         final_response += f"Tool {tool_name} not found.\n"
             else:
                 # Final Response - no more tool calls
-                final_response += ai_msg.content
+                content = ai_msg.content
+                if isinstance(content, list):
+                    content = "\n".join(
+                        block.get("text", "") if isinstance(block, dict) else str(block)
+                        for block in content
+                    )
+                final_response += content
                 break
         
         print("GoogleAgent: Task execution completed.")

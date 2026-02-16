@@ -9,3 +9,4 @@ agent/config
 dist/
 build/
 .build/
+rust/

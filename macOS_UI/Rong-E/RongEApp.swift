@@ -19,6 +19,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // WebSocket connection is handled automatically by SocketClient.shared init()
 
         // 4. Auto-sync configs when WebSocket first connects
+        // Track readiness: both LLM and MCP must complete before startup workflow
+        var llmReady = false
+        var mcpReady = false
+
         coordinator.client.$isConnected
             .removeDuplicates()
             .filter { $0 == true }
@@ -41,12 +45,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        // 5. Run startup workflow after MCP servers are synced (one-time only)
+        // 5. Run startup workflow after BOTH LLM and MCP are ready (one-time only)
+        coordinator.client.onLLMSetResult = { [weak self] success, message in
+            print("🤖 LLM Set Result: success=\(success), message=\(message ?? "nil")")
+            self?.coordinator.client.onLLMSetResult = nil
+            llmReady = true
+            if mcpReady {
+                self?.runStartupWorkflowIfNeeded()
+            }
+        }
+
         coordinator.client.onMCPSyncResult = { [weak self] success, message in
             print("🔧 MCP Sync Result: success=\(success), message=\(message ?? "nil")")
-            // Clear callback after first run so manual syncs don't re-trigger startup
             self?.coordinator.client.onMCPSyncResult = nil
-            self?.runStartupWorkflowIfNeeded()
+            mcpReady = true
+            if llmReady {
+                self?.runStartupWorkflowIfNeeded()
+            }
         }
     }
 
