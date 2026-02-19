@@ -228,7 +228,7 @@ class SocketClient: ObservableObject {
     }
 
     private func connectWithRetry(maxRetries: Int, delay: TimeInterval, attempt: Int = 0) {
-        let url = URL(string: "ws://127.0.0.1:8000/ws")!
+        let url = URL(string: "ws://127.0.0.1:3000/ws")!
         urlSession?.invalidateAndCancel()
         let session = URLSession(configuration: .default)
         urlSession = session

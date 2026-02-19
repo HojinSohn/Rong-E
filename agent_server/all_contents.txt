@@ -1,0 +1,410 @@
+===== ./src/llm.rs =====
+use crate::tools::Calculator; // Import your local tool
+use rig::{
+    completion::Chat,
+    message::{DocumentSourceKind, Image, ImageMediaType, Message as RigMessage, UserContent},
+    providers::{anthropic, gemini, ollama, openai},
+    mcp::Client as McpClient, // Import MCP Client
+    OneOrMany,
+};
+use rig::client::{CompletionClient, ProviderClient};
+
+/// Route the request to the correct provider
+pub async fn call_llm(
+    provider: &str,
+    api_key: &str,
+    model: &str,
+    query: &str,
+    chat_history: Vec<RigMessage>,
+    mcp_tools: Vec<Tool>, 
+    mcp_peer: Option<Arc<rmcp::Peer<McpTransport>>>,
+    system_prompt: Option<&str>,
+    base64_image: Option<&str>,
+) -> Result<String, String> {
+    
+    // We create a helper macro or function to attach tools to ANY agent
+    // Since Rust types are static, we apply tools inside the match block
+    
+    match provider {
+        "gemini" => {
+            let client: gemini::Client = gemini::Client::new(api_key)
+                .map_err(|e| format!("Gemini Error: {}", e))?;
+            
+            // Build Agent WITH Tools
+            let mut builder = client.agent(model)
+                .tool(Calculator); // Add Local Tool
+
+            // Add all MCP Clients
+            for mcp in mcp_clients {
+                builder = builder.tool(mcp.clone());
+            }
+
+            if let Some(p) = system_prompt { builder = builder.preamble(p); }
+            
+            let agent = builder.build();
+            chat_with_agent(&agent, query, chat_history, base64_image).await
+        }
+        // ... Repeat pattern for OpenAI / Anthropic ...
+        "openai" => {
+            let client: openai::Client = openai::Client::new(api_key)
+                .map_err(|e| format!("OpenAI Error: {}", e))?;
+            let mut builder = client.agent(model).tool(Calculator);
+            for mcp in mcp_clients { builder = builder.tool(mcp.clone()); }
+            if let Some(p) = system_prompt { builder = builder.preamble(p); }
+            let agent = builder.build();
+            chat_with_agent(&agent, query, chat_history, base64_image).await
+        }
+        _ => Err(format!("Provider {} not implemented with tools yet", provider)),
+    }
+}
+
+// ... chat_with_agent helper remains the same ...
+async fn chat_with_agent(
+    agent: &impl Chat, 
+    query: &str,
+    history: Vec<RigMessage>,
+    base64_image: Option<&str>,
+) -> Result<String, String> {
+    // (Copy existing implementation from previous step)
+    let new_message = if let Some(img_data) = base64_image {
+        if !img_data.is_empty() {
+             let image = Image {
+                data: DocumentSourceKind::base64(img_data),
+                media_type: Some(ImageMediaType::PNG), 
+                ..Default::default()
+            };
+            let content = OneOrMany::many(vec![
+                UserContent::text(query),
+                UserContent::Image(image),
+            ]).map_err(|e| e.to_string())?;
+            RigMessage::User { content }
+        } else {
+            RigMessage::User { content: OneOrMany::one(UserContent::text(query)) }
+        }
+    } else {
+        RigMessage::User { content: OneOrMany::one(UserContent::text(query)) }
+    };
+
+    agent.chat(new_message, history).await.map_err(|e| e.to_string())
+}
+
+===== ./src/logic.rs =====
+use crate::llm;
+use crate::state::SharedState;
+use axum::extract::ws::{Message, WebSocket};
+use futures::stream::SplitSink;
+use futures::SinkExt; // Required for sender.send()
+use rig::message::{AssistantContent, Message as RigMessage, UserContent};
+use rmcp::{ClientInfo, ClientCapabilities, Implementation}; // MCP Imports
+use rig::OneOrMany;
+use serde_json::json;
+
+/// The main entry point for processing a single message text
+pub async fn process_message(
+    text: &str,
+    sender: &mut SplitSink<WebSocket, Message>,
+    chat_history: &mut Vec<RigMessage>,
+    state: &SharedState,
+) {
+    // 1. Parse JSON
+    let data: serde_json::Value = match serde_json::from_str(text) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("❌ Invalid JSON: {}", e);
+            return;
+        }
+    };
+
+    // 2. Route: Config vs Chat
+    if let Some(data_type) = data.get("data_type").and_then(|v| v.as_str()) {
+        handle_config(data_type, &data, sender, chat_history, state).await;
+    } else {
+        handle_chat(&data, sender, chat_history, state).await;
+    }
+}
+
+/// Handles system messages like "reset_session" or "set_llm"
+async fn handle_config(
+    data_type: &str,
+    data: &serde_json::Value,
+    sender: &mut SplitSink<WebSocket, Message>,
+    chat_history: &mut Vec<RigMessage>,
+    state: &SharedState,
+) {
+    match data_type {
+        "reset_session" => {
+            println!("🔄 Session Reset");
+            chat_history.clear();
+            let _ = sender
+                .send(Message::Text(
+                    json!({
+                        "type": "session_reset",
+                        "content": "Memory cleared."
+                    })
+                    .to_string(),
+                ))
+                .await;
+        }
+        "set_llm" => {
+            let provider = data["provider"].as_str().unwrap_or("gemini");
+            let model = data["model"].as_str().unwrap_or("gemini-2.5-flash");
+
+            let mut state_guard = state.lock().await;
+            state_guard.current_provider = provider.to_string();
+            state_guard.current_model = model.to_string();
+            if let Some(key) = data["api_key"].as_str() {
+                state_guard.api_key = Some(key.to_string());
+            }
+            drop(state_guard);
+
+            let _ = sender
+                .send(Message::Text(
+                    json!({
+                        "type": "llm_set_success",
+                        "content": format!("LLM set to {}/{}", provider, model)
+                    })
+                    .to_string(),
+                ))
+                .await;
+        }
+        _ => println!("⚠️ Unknown type: {}", data_type),
+    }
+}
+
+/// Handles normal chat messages
+async fn handle_chat(
+    data: &serde_json::Value,
+    sender: &mut SplitSink<WebSocket, Message>,
+    chat_history: &mut Vec<RigMessage>,
+    state: &SharedState,
+) {
+    let query = data["text"].as_str().unwrap_or("").to_string();
+
+    // 1. Get State
+    let (api_key, model, provider) = {
+        let state = state.lock().await;
+        (
+            state.api_key.clone(),
+            state.current_model.clone(),
+            state.current_provider.clone(),
+        )
+    };
+
+    // 2. Send "Thinking"
+    let _ = sender
+        .send(Message::Text(
+            json!({ "type": "thought", "content": "Thinking..." }).to_string(),
+        ))
+        .await;
+
+    // 3. Call LLM
+    let result = llm::call_llm(
+        &provider,
+        api_key.as_deref().unwrap_or(""),
+        &model,
+        &query,
+        chat_history.clone(),
+        data["system_prompt"].as_str(),
+        data["base64_image"].as_str(),
+    )
+    .await;
+
+    // 4. Handle Result & Update History
+    match result {
+        Ok(text) => {
+            chat_history.push(RigMessage::User {
+                content: OneOrMany::one(UserContent::text(query.clone())),
+            });
+
+            chat_history.push(RigMessage::Assistant {
+                id: Default::default(),
+                content: OneOrMany::one(AssistantContent::text(text.clone())),
+            });
+
+            let response_json = json!({
+                "type": "response",
+                "content": { "text": text, "images": [], "widgets": [] }
+            });
+            let _ = sender.send(Message::Text(response_json.to_string())).await;
+        }
+        Err(e) => {
+            let _ = sender
+                .send(Message::Text(
+                    json!({
+                        "type": "response",
+                        "content": { "text": format!("Error: {}", e) }
+                    })
+                    .to_string(),
+                ))
+                .await;
+        }
+    };
+}
+
+===== ./src/main.rs =====
+use axum::{routing::get, Router};
+use std::{net::SocketAddr, sync::Arc};
+use tokio::net::TcpListener;
+use tokio::sync::Mutex;
+
+// Register modules
+mod llm;
+mod routes;
+mod state;
+mod logic;
+
+use state::AppState;
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
+
+    // Initialize State
+    let state = Arc::new(Mutex::new(AppState::new()));
+
+    // Setup Router
+    let app = Router::new()
+        .route("/ws", get(routes::ws_handler))
+        .with_state(state);
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    println!("🚀 Rust Server listening on {}", addr);
+
+    let listener = TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+
+===== ./src/routes.rs =====
+
+use crate::logic;
+
+use crate::state::SharedState;
+use axum::{
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
+    response::IntoResponse,
+};
+use futures::StreamExt; // Only need StreamExt here for receiver.next()
+use rig::message::Message as RigMessage;
+
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<SharedState>,
+) -> impl IntoResponse {
+    ws.on_upgrade(|socket| handle_socket(socket, state))
+}
+
+async fn handle_socket(socket: WebSocket, state: SharedState) {
+    // Split socket into sender/receiver
+    let (mut sender, mut receiver) = socket.split();
+    println!("✅ Client connected");
+
+    // Initialize session history
+    let mut chat_history: Vec<RigMessage> = Vec::new();
+
+    // The Main Loop
+    while let Some(Ok(msg)) = receiver.next().await {
+        if let Message::Text(text) = msg {
+            // Delegate all logic to the new module
+            logic::process_message(
+                &text, 
+                &mut sender, 
+                &mut chat_history, 
+                &state
+            ).await;
+        }
+    }
+
+    println!("🔌 Client disconnected");
+}
+
+===== ./src/state.rs =====
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use rmcp::types::Tool; // Import MCP Tool definition
+
+// Define the Transport Type (it's long, so we alias it)
+pub type McpTransport = rmcp::transport::StreamableHttpClientTransport;
+
+pub struct AppState {
+    pub current_model: String,
+    pub current_provider: String,
+    pub api_key: Option<String>,
+    
+    // Store discovered tools here
+    pub mcp_tools: Vec<Tool>,
+    
+    // Store the active connection (Peer)
+    // Note: In a real app with multiple servers, this would be a Vec or HashMap
+    pub mcp_peer: Option<Arc<rmcp::Peer<McpTransport>>>, 
+}
+
+pub type SharedState = Arc<Mutex<AppState>>;
+
+impl AppState {
+    pub fn new() -> Self {
+        Self {
+            current_model: "gpt-4o".to_string(), // Updated default
+            current_provider: "openai".to_string(),
+            api_key: None,
+            mcp_tools: Vec::new(),
+            mcp_peer: None,
+        }
+    }
+}
+
+===== ./src/tools.rs =====
+use rig::tool::Tool;
+use serde::{Deserialize, Serialize};
+
+// --- Define the Arguments ---
+#[derive(Deserialize)]
+pub struct CalcArgs {
+    x: f64,
+    y: f64,
+    operation: String, // "add", "subtract", "multiply", "divide"
+}
+
+// --- Define the Error Type ---
+#[derive(Debug, thiserror::Error)]
+#[error("Math error")]
+pub struct MathError;
+
+// --- Define the Tool Logic ---
+#[derive(Deserialize, Serialize)]
+pub struct Calculator;
+
+impl Tool for Calculator {
+    const NAME: &'static str = "calculator";
+    const DESCRIPTION: &'static str = "Performs basic math operations (add, subtract, multiply, divide)";
+
+    type Args = CalcArgs;
+    type Output = f64;
+    type Error = MathError;
+
+    async fn definition(&self, _prompt: String) -> rig::tool::ToolDefinition {
+        rig::tool::ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: Self::DESCRIPTION.to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "x": { "type": "number" },
+                    "y": { "type": "number" },
+                    "operation": { "type": "string", "enum": ["add", "subtract", "multiply", "divide"] }
+                },
+                "required": ["x", "y", "operation"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        match args.operation.as_str() {
+            "add" => Ok(args.x + args.y),
+            "subtract" => Ok(args.x - args.y),
+            "multiply" => Ok(args.x * args.y),
+            "divide" => Ok(args.x / args.y),
+            _ => Ok(0.0), // Should handle error ideally
+        }
+    }
+}
+

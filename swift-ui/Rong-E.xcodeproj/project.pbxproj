@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A4204EA42F43BAE20093C70D /* agent_server in Copy Files */ = {isa = PBXBuildFile; fileRef = A4204EA32F43BAE20093C70D /* agent_server */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		A4F8E1152F344FDA00CC094E /* ronge_agent in Copy Files */ = {isa = PBXBuildFile; fileRef = A4F8E1142F344FDA00CC094E /* ronge_agent */; };
 /* End PBXBuildFile section */
 
@@ -18,6 +19,7 @@
 			dstSubfolderSpec = 7;
 			files = (
 				A4F8E1152F344FDA00CC094E /* ronge_agent in Copy Files */,
+				A4204EA42F43BAE20093C70D /* agent_server in Copy Files */,
 			);
 			name = "Copy Files";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -25,6 +27,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A4204EA32F43BAE20093C70D /* agent_server */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = agent_server; path = ../agent_server/target/release/agent_server; sourceTree = "<group>"; };
 		A4425FE02EEB6C620009FAC8 /* Rong-E.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Rong-E.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A4F8E1142F344FDA00CC094E /* ronge_agent */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ronge_agent; path = ../agent/dist/ronge_agent; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -51,6 +54,7 @@
 		A4425FD72EEB6C620009FAC8 = {
 			isa = PBXGroup;
 			children = (
+				A4204EA32F43BAE20093C70D /* agent_server */,
 				A4F8E1142F344FDA00CC094E /* ronge_agent */,
 				A4425FE22EEB6C620009FAC8 /* Rong-E */,
 				A4425FE12EEB6C620009FAC8 /* Products */,
@@ -293,8 +297,10 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = "Rong-E.Rong-E";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -307,6 +313,7 @@
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 2.5;
@@ -346,8 +353,10 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = "Rong-E.Rong-E";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -360,6 +369,7 @@
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 2.5;

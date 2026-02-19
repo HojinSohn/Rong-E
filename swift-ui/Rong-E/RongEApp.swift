@@ -6,12 +6,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // The Delegate references the shared coordinator
     var coordinator = WindowCoordinator.shared
     let pythonManager = PythonProcessManager.shared
+    let serverManager = ServerManager.shared
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 1. Start the Rong-E agent server
         print("🚀 Starting Rong-E agent server...")
         pythonManager.startServer()
+        serverManager.startServer() // Start the Rust server as well
 
         // 2. Safe to show window now that AppKit is ready
         coordinator.showMainOverlay()
@@ -70,9 +72,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Save settings before quitting
         AppContext.shared.saveSettings()
 
-        // Stop the server when app quits
-        print("🛑 Stopping Rong-E agent server...")
+        // Stop both servers when app quits
+        print("🛑 Stopping servers...")
         pythonManager.stopServer()
+        serverManager.stopServer()
     }
 
     /// Send the saved LLM configuration to the Python backend

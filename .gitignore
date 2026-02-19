@@ -11,3 +11,5 @@ build/
 .build/
 rust/
 instruction.txt
+target/
+.vscode/
