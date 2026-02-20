@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		A4204EA42F43BAE20093C70D /* agent_server in Copy Files */ = {isa = PBXBuildFile; fileRef = A4204EA32F43BAE20093C70D /* agent_server */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		A4F8E1152F344FDA00CC094E /* ronge_agent in Copy Files */ = {isa = PBXBuildFile; fileRef = A4F8E1142F344FDA00CC094E /* ronge_agent */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -18,7 +17,6 @@
 			dstPath = "";
 			dstSubfolderSpec = 7;
 			files = (
-				A4F8E1152F344FDA00CC094E /* ronge_agent in Copy Files */,
 				A4204EA42F43BAE20093C70D /* agent_server in Copy Files */,
 			);
 			name = "Copy Files";
@@ -29,7 +27,6 @@
 /* Begin PBXFileReference section */
 		A4204EA32F43BAE20093C70D /* agent_server */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = agent_server; path = ../agent_server/target/release/agent_server; sourceTree = "<group>"; };
 		A4425FE02EEB6C620009FAC8 /* Rong-E.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Rong-E.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A4F8E1142F344FDA00CC094E /* ronge_agent */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ronge_agent; path = ../agent/dist/ronge_agent; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -55,7 +52,6 @@
 			isa = PBXGroup;
 			children = (
 				A4204EA32F43BAE20093C70D /* agent_server */,
-				A4F8E1142F344FDA00CC094E /* ronge_agent */,
 				A4425FE22EEB6C620009FAC8 /* Rong-E */,
 				A4425FE12EEB6C620009FAC8 /* Products */,
 			);

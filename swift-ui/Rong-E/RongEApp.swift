@@ -5,14 +5,12 @@ import Combine
 class AppDelegate: NSObject, NSApplicationDelegate {
     // The Delegate references the shared coordinator
     var coordinator = WindowCoordinator.shared
-    let pythonManager = PythonProcessManager.shared
     let serverManager = ServerManager.shared
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 1. Start the Rong-E agent server
         print("🚀 Starting Rong-E agent server...")
-        pythonManager.startServer()
         serverManager.startServer()
 
         // 2. Safe to show window now that AppKit is ready
@@ -99,7 +97,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Stop both servers when app quits
         print("🛑 Stopping servers...")
-        pythonManager.stopServer()
         serverManager.stopServer()
     }
 

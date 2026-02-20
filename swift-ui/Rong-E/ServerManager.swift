@@ -12,7 +12,17 @@ import Combine
 class ServerManager: ObservableObject {
     static let shared = ServerManager()
 
-    @Published private(set) var isRunning: Bool = false
+    enum ServerStatus: Equatable {
+        case stopped
+        case starting
+        case running
+        case error(String)
+        case stopping
+    }
+
+    @Published private(set) var status: ServerStatus = .stopped
+
+    var isRunning: Bool { status == .running }
 
     private var process: Process?
     private var outputPipe: Pipe?
@@ -27,8 +37,8 @@ class ServerManager: ObservableObject {
     }
 
     func startServer() {
-        guard !isRunning else {
-            print("⚠️ Rust server is already running")
+        guard status != .running, status != .starting else {
+            print("⚠️ Rust server is already running or starting")
             return
         }
 
@@ -46,14 +56,17 @@ class ServerManager: ObservableObject {
                 serverPath = bundlePath
             } else {
                 print("❌ 'agent_server' in bundle is a folder, not the compiled binary.")
+                status = .error("Binary not found in bundle")
                 return
             }
         } else {
             print("❌ Could not find 'agent_server' binary.")
+            status = .error("Binary not found")
             return
         }
 
         print("🦀 Starting Rust server from: \(serverPath)")
+        status = .starting
 
         // 2. Configure the process
         let newProcess = Process()
@@ -74,8 +87,13 @@ class ServerManager: ObservableObject {
         // 4. Handle termination
         newProcess.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
-                self?.isRunning = false
-                print("🦀 Rust server exited (code: \(proc.terminationStatus))")
+                let code = proc.terminationStatus
+                if code == 0 || code == 15 /* SIGTERM */ {
+                    self?.status = .stopped
+                } else {
+                    self?.status = .error("Exited with code \(code)")
+                }
+                print("🦀 Rust server exited (code: \(code))")
             }
         }
 
@@ -84,21 +102,22 @@ class ServerManager: ObservableObject {
             try newProcess.run()
             self.process = newProcess
             self.outputPipe = newPipe
-            self.isRunning = true
+            self.status = .running
             print("✅ Rust server started (PID: \(newProcess.processIdentifier))")
         } catch {
+            self.status = .error(error.localizedDescription)
             print("❌ Failed to start Rust server: \(error)")
         }
     }
 
     func stopServer() {
-        guard let process = process, isRunning else { return }
+        guard let process = process, isRunning || status == .starting else { return }
         print("🛑 Stopping Rust server...")
         process.terminate()
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         outputPipe = nil
         self.process = nil
-        isRunning = false
+        status = .stopped
     }
 
     /// Find the compiled binary during development (not in bundle)

@@ -12,7 +12,7 @@ struct MainView: View {
     @State private var onCoreHover = false
 
     // 2. Server Loading State
-    @ObservedObject private var pythonManager = PythonProcessManager.shared
+    @ObservedObject private var serverManager = ServerManager.shared
 
     // 3. Permission & Screenshot State
     @State private var waitingForPermission = false
@@ -41,7 +41,7 @@ struct MainView: View {
 
     // Computed property to check if server is ready (process running AND WebSocket connected)
     private var isServerReady: Bool {
-        pythonManager.serverStatus == .running && socketClient.isConnected
+        serverManager.status == .running && socketClient.isConnected
     }
 
     func toggleMinimized() {
@@ -130,7 +130,7 @@ struct MainView: View {
                 mainContent
             } else {
                 AgentLoadingView(
-                    serverStatus: pythonManager.serverStatus,
+                    serverStatus: serverManager.status,
                     isConnected: socketClient.isConnected,
                     connectionFailed: socketClient.connectionFailed,
                     onRetry: {
@@ -150,7 +150,7 @@ struct MainView: View {
         }
         .onChange(of: socketClient.isConnected) { isConnected in
             // Trigger main content animations when WebSocket connects (and server is running)
-            if isConnected && pythonManager.serverStatus == .running {
+            if isConnected && serverManager.status == .running {
                 toggleMinimized()
                 // Transition from "Starting up" to "Await input"
                 for i in appContext.reasoningSteps.indices {
@@ -2129,7 +2129,7 @@ extension NSTextField {
 
 // MARK: - Server Loading View
 struct AgentLoadingView: View {
-    let serverStatus: PythonProcessManager.ServerStatus
+    let serverStatus: ServerManager.ServerStatus
     let isConnected: Bool
     let connectionFailed: Bool
     var onRetry: (() -> Void)?
