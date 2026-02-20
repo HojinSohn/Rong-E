@@ -13,18 +13,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 1. Start the Rong-E agent server
         print("🚀 Starting Rong-E agent server...")
         pythonManager.startServer()
-        serverManager.startServer() // Start the Rust server as well
+        serverManager.startServer()
 
         // 2. Safe to show window now that AppKit is ready
         coordinator.showMainOverlay()
 
-        // WebSocket connection is handled automatically by SocketClient.shared init()
-
-        // 4. Auto-sync configs when WebSocket first connects
         // Track readiness: both LLM and MCP must complete before startup workflow
         var llmReady = false
         var mcpReady = false
 
+        // 3. Auto-sync configs when WebSocket first connects
         coordinator.client.$isConnected
             .removeDuplicates()
             .filter { $0 == true }
@@ -32,13 +30,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in
                 print("🔧 Auto-syncing configs on connection...")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    AppContext.shared.addBootLog("SYSTEM: BOOT SEQUENCE INITIATED")
+            
+                    AppContext.shared.addBootLog("AGENT SERVER: STARTING UP")
+
+                    AppContext.shared.addBootLog("NETWORK: WEBSOCKET CONNECTED")
                     // Set up Google Auth first (checks for existing credentials)
                     GoogleAuthManager.shared.startupCheck()
 
                     // Sync MCP config
+                    AppContext.shared.addBootLog("TOOLS: LOADING MCP SERVERS...")
                     MCPConfigManager.shared.sendConfigToPython()
 
                     // Sync LLM config with saved provider/model/API key
+                    AppContext.shared.addBootLog("ENGINE: SYNCING CONFIGURATION...")
                     self?.sendSavedLLMConfig()
 
                     // Sync saved spreadsheet configs
@@ -47,10 +52,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        // 5. Run startup workflow after BOTH LLM and MCP are ready (one-time only)
+        // 4. Run startup workflow after BOTH LLM and MCP are ready (one-time only)
         coordinator.client.onLLMSetResult = { [weak self] success, message in
             print("🤖 LLM Set Result: success=\(success), message=\(message ?? "nil")")
             self?.coordinator.client.onLLMSetResult = nil
+            let ctx = AppContext.shared
+            if success {
+                AppContext.shared.addBootLog(
+                    "ENGINE: ONLINE — \(ctx.llmProvider.displayName.uppercased()) / \(ctx.llmModel.uppercased())"
+                )
+            } else {
+                AppContext.shared.addBootLog("ENGINE: CONFIG ERROR — \(message ?? "INVALID KEY OR MODEL")")
+            }
             llmReady = true
             if mcpReady {
                 self?.runStartupWorkflowIfNeeded()
@@ -60,6 +73,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.client.onMCPSyncResult = { [weak self] success, message in
             print("🔧 MCP Sync Result: success=\(success), message=\(message ?? "nil")")
             self?.coordinator.client.onMCPSyncResult = nil
+            if success {
+                let names = MCPConfigManager.shared.connectedServerNames
+                if names.isEmpty {
+                    AppContext.shared.addBootLog("TOOLS: NO MCP SERVERS CONFIGURED")
+                } else {
+                    for name in names {
+                        AppContext.shared.addBootLog("TOOLS: \(name.uppercased()) — ONLINE")
+                    }
+                }
+            } else {
+                AppContext.shared.addBootLog("TOOLS: MCP SYNC FAILED")
+            }
             mcpReady = true
             if llmReady {
                 self?.runStartupWorkflowIfNeeded()
@@ -88,6 +113,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Only send if we have a valid API key (or provider doesn't require one)
         if provider.requiresAPIKey && apiKey.isEmpty {
             print("⚠️ Skipping LLM config sync - no API key saved for \(provider.displayName)")
+            AppContext.shared.addBootLog("ENGINE: NO API KEY — CONFIGURE IN SETTINGS")
             return
         }
 
@@ -127,9 +153,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         guard !enabledTasks.isEmpty else {
             print("ℹ️ No startup tasks enabled")
+            AppContext.shared.addBootLog("SYSTEM: READY")
             appContext.markStartupWorkflowCompleted()
             return
         }
+        AppContext.shared.addBootLog("STARTUP: EXECUTING MORNING BRIEFING...")
         
         // Combine all tasks into one mega prompt
         let taskPrompts = enabledTasks.map { "• \($0.prompt)" }.joined(separator: "\n")

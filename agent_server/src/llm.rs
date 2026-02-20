@@ -1,6 +1,7 @@
+use crate::google_agent::GoogleSubAgent;
 use crate::tools::{
-    AppendToMemory, Calculator, GetCurrentDateTime, OpenApplication, OpenChromeTab, ReadMemory,
-    SaveToMemory,
+    AppendToMemory, Calculator, GetCurrentDateTime, NotifyingTool, OpenApplication, OpenChromeTab,
+    ReadMemory, SaveToMemory, ToolEventSender,
 };
 use rig::{
     completion::Chat,
@@ -11,107 +12,113 @@ use rig::{
 use rig::client::CompletionClient;
 use rig::client::ProviderClient;
 
+/// Base personality / instructions for the main Rong-E agent.
+/// Embedded at compile time so the binary is self-contained.
+const SYSTEM_PROMPT_TEMPLATE: &str =
+    include_str!("../prompts/system_prompt.txt");
+
+/// Appended to every preamble so Gemini always replies after tool use.
+const SAFETY_INSTRUCTION: &str =
+    "IMPORTANT: Whenever you use a tool, you MUST reply to the user \
+     with a text summary of the result. Never return an empty response \
+     after using a tool.";
+
 pub async fn call_llm(
-    provider: &str,
-    api_key: &str,
-    model: &str,
-    query: &str,
+    provider: String,
+    api_key: String,
+    model: String,
+    query: String,
     chat_history: Vec<RigMessage>,
     mcp_tool_sets: Vec<(Vec<rmcp::model::Tool>, rmcp::service::ServerSink)>,
-    system_prompt: Option<&str>,
-    base64_image: Option<&str>,
+    system_prompt: Option<String>,
+    base64_image: Option<String>,
+    google_access_token: Option<String>,
+    tool_tx: ToolEventSender,
 ) -> Result<String, String> {
     let memory_path = crate::tools::default_memory_path();
-    
-    // 1. Define the "Safety Instruction"
-    // This forces Gemini to acknowledge the tool execution.
-    let safety_instruction = "IMPORTANT: Whenever you use a tool, you MUST reply to the user with a text summary of the result. Never return an empty response after using a tool.";
 
-    // 2. Merge with user's system prompt
-    let final_prompt = if let Some(user_prompt) = system_prompt {
-        format!("{}\n\n{}", user_prompt, safety_instruction)
+    // Substitute {user_name} with the OS login name.
+    let user_name = std::env::var("USER").unwrap_or_else(|_| "User".to_string());
+    let base_prompt = SYSTEM_PROMPT_TEMPLATE.replace("{user_name}", &user_name);
+
+    // Build the final preamble:
+    //   base personality  →  safety instruction  →  optional mode-specific prompt
+    let final_prompt = if let Some(ref mode_prompt) = system_prompt {
+        format!("{}\n\n{}\n\n{}", base_prompt, SAFETY_INSTRUCTION, mode_prompt)
     } else {
-        safety_instruction.to_string()
+        format!("{}\n\n{}", base_prompt, SAFETY_INSTRUCTION)
     };
 
-    match provider {
-        "gemini" => {
-            let client = gemini::Client::new(api_key).map_err(|e| e.to_string())?;
-            let mut builder = client
-                .agent(model)
-                .tool(Calculator)
-                .tool(GetCurrentDateTime)
-                .tool(OpenApplication)
-                .tool(OpenChromeTab)
-                .tool(ReadMemory::new(memory_path.clone()))
-                .tool(SaveToMemory::new(memory_path.clone()))
-                .tool(AppendToMemory::new(memory_path))
+    // Wrap each MCP connection with an in-process notification proxy so that
+    // tool_call / tool_result events are emitted for MCP tools too.
+    let mut _proxy_guards: Vec<crate::mcp_proxy::McpProxyGuard> = Vec::new();
+    let mut proxied_mcp_tool_sets: Vec<(Vec<rmcp::model::Tool>, rmcp::service::ServerSink)> =
+        Vec::new();
+    for (tools, peer) in mcp_tool_sets {
+        match crate::mcp_proxy::create_notifying_proxy(tools.clone(), peer, tool_tx.clone()).await {
+            Ok((proxy_peer, guard)) => {
+                proxied_mcp_tool_sets.push((tools, proxy_peer));
+                _proxy_guards.push(guard);
+            }
+            Err(e) => {
+                println!("⚠️ MCP notification proxy failed (tool events skipped): {}", e);
+            }
+        }
+    }
+
+    // Helper macro so we don't duplicate the builder setup across providers
+    macro_rules! build_agent {
+        ($builder_expr:expr) => {{
+            let tx = &tool_tx;
+            let mut builder = $builder_expr
+                .tool(NotifyingTool { inner: Calculator, tx: tx.clone() })
+                .tool(NotifyingTool { inner: GetCurrentDateTime, tx: tx.clone() })
+                .tool(NotifyingTool { inner: OpenApplication, tx: tx.clone() })
+                .tool(NotifyingTool { inner: OpenChromeTab, tx: tx.clone() })
+                .tool(NotifyingTool { inner: ReadMemory::new(memory_path.clone()), tx: tx.clone() })
+                .tool(NotifyingTool { inner: SaveToMemory::new(memory_path.clone()), tx: tx.clone() })
+                .tool(NotifyingTool { inner: AppendToMemory::new(memory_path.clone()), tx: tx.clone() })
                 .preamble(&final_prompt);
-                
-            for (tools, peer) in mcp_tool_sets {
+            if let Some(ref token) = google_access_token {
+                builder = builder.tool(NotifyingTool {
+                    inner: GoogleSubAgent::new(
+                        token.clone(),
+                        api_key.clone(),
+                        provider.clone(),
+                        model.clone(),
+                    ),
+                    tx: tx.clone(),
+                });
+            }
+            for (tools, peer) in proxied_mcp_tool_sets {
                 builder = builder.rmcp_tools(tools, peer);
             }
-            let agent = builder.build();
-            chat_with_agent(&agent, query, chat_history, base64_image).await
+            builder.default_max_turns(15).build()
+        }};
+    }
+
+    match provider.as_str() {
+        "gemini" => {
+            let client = gemini::Client::new(&api_key).map_err(|e| e.to_string())?;
+            let agent = build_agent!(client.agent(&model));
+            chat_with_agent(&agent, &query, chat_history, base64_image.as_deref()).await
         }
         "openai" => {
             let client: openai::Client =
-                openai::Client::new(api_key).map_err(|e| e.to_string())?;
-            let mut builder = client
-                .agent(model)
-                .tool(Calculator)
-                .tool(GetCurrentDateTime)
-                .tool(OpenApplication)
-                .tool(OpenChromeTab)
-                .tool(ReadMemory::new(memory_path.clone()))
-                .tool(SaveToMemory::new(memory_path.clone()))
-                .tool(AppendToMemory::new(memory_path))
-                .preamble(&final_prompt);
-
-            for (tools, peer) in mcp_tool_sets {
-                builder = builder.rmcp_tools(tools, peer);
-            }
-            let agent = builder.build();
-            chat_with_agent(&agent, query, chat_history, base64_image).await
+                openai::Client::new(&api_key).map_err(|e| e.to_string())?;
+            let agent = build_agent!(client.agent(&model));
+            chat_with_agent(&agent, &query, chat_history, base64_image.as_deref()).await
         }
         "anthropic" => {
             let client: anthropic::Client =
-                anthropic::Client::new(api_key).map_err(|e| e.to_string())?;
-            let mut builder = client
-                .agent(model)
-                .tool(Calculator)
-                .tool(GetCurrentDateTime)
-                .tool(OpenApplication)
-                .tool(OpenChromeTab)
-                .tool(ReadMemory::new(memory_path.clone()))
-                .tool(SaveToMemory::new(memory_path.clone()))
-                .tool(AppendToMemory::new(memory_path))
-                .preamble(&final_prompt);
-
-            for (tools, peer) in mcp_tool_sets {
-                builder = builder.rmcp_tools(tools, peer);
-            }
-            let agent = builder.build();
-            chat_with_agent(&agent, query, chat_history, base64_image).await
+                anthropic::Client::new(&api_key).map_err(|e| e.to_string())?;
+            let agent = build_agent!(client.agent(&model));
+            chat_with_agent(&agent, &query, chat_history, base64_image.as_deref()).await
         }
         "ollama" => {
             let client = ollama::Client::from_env();
-            let mut builder = client
-                .agent(model)
-                .tool(Calculator)
-                .tool(GetCurrentDateTime)
-                .tool(OpenApplication)
-                .tool(OpenChromeTab)
-                .tool(ReadMemory::new(memory_path.clone()))
-                .tool(SaveToMemory::new(memory_path.clone()))
-                .tool(AppendToMemory::new(memory_path))
-                .preamble(&final_prompt);
-                
-            for (tools, peer) in mcp_tool_sets {
-                builder = builder.rmcp_tools(tools, peer);
-            }
-            let agent = builder.build();
-            chat_with_agent(&agent, query, chat_history, base64_image).await
+            let agent = build_agent!(client.agent(&model));
+            chat_with_agent(&agent, &query, chat_history, base64_image.as_deref()).await
         }
         _ => Err(format!("Unsupported provider: {}", provider)),
     }
@@ -195,3 +202,5 @@ async fn chat_with_agent(
         }
     }
 }
+
+

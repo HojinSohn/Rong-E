@@ -50,18 +50,89 @@ async fn handle_config(
         }
 
         "credentials" => {
-            println!("🔑 Received credentials");
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "credentials_success", "content": "Credentials received."})
-                        .to_string(),
-                ))
-                .await;
+            let dir_path = data["content"].as_str().unwrap_or("").trim().to_string();
+            println!("🔑 Received credentials, dir: {}", dir_path);
+
+            if dir_path.is_empty() {
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "credentials_error", "content": "❌ Credentials directory path is missing."})
+                            .to_string(),
+                    ))
+                    .await;
+                return;
+            }
+
+            let credentials_path = format!("{}/credentials.json", dir_path);
+            let token_path = format!("{}/token.json", dir_path);
+
+            // Validate that credentials.json exists
+            if !std::path::Path::new(&credentials_path).exists() {
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "credentials_error", "content": format!("❌ credentials.json not found at: {}", credentials_path)})
+                            .to_string(),
+                    ))
+                    .await;
+                return;
+            }
+
+            // Attempt authentication: validates token.json, refreshes if expired
+            match crate::google_auth::authenticate(&credentials_path, &token_path).await {
+                Ok(access_token) => {
+                    let mut s = state.lock().await;
+                    s.credentials_file_path = Some(credentials_path.clone());
+                    s.token_file_path = Some(token_path.clone());
+                    s.google_access_token = Some(access_token);
+                    drop(s);
+                    println!("✅ Google credentials authenticated.");
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "credentials_success", "content": "✅ Credentials received and stored successfully."})
+                                .to_string(),
+                        ))
+                        .await;
+                }
+                Err(e) => {
+                    println!("❌ Authentication error: {}", e);
+                    // Delete invalid token file (mirrors Python behaviour)
+                    if std::path::Path::new(&token_path).exists() {
+                        if let Err(re) = std::fs::remove_file(&token_path) {
+                            println!("⚠️ Failed to delete invalid token file: {}", re);
+                        } else {
+                            println!("🗑️ Deleted invalid token file.");
+                        }
+                    }
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "credentials_error", "content": format!("❌ Error during authentication: {}", e)})
+                                .to_string(),
+                        ))
+                        .await;
+                }
+            }
         }
 
         "revoke_credentials" => {
             println!("🔓 Received Revoke Credentials");
-            state.lock().await.api_key = None;
+            {
+                let mut s = state.lock().await;
+                s.api_key = None;
+                // Delete token file if present, then clear stored paths
+                if let Some(ref token_path) = s.token_file_path {
+                    let token_path = token_path.clone();
+                    if std::path::Path::new(&token_path).exists() {
+                        if let Err(e) = std::fs::remove_file(&token_path) {
+                            println!("⚠️ Failed to delete token file: {}", e);
+                        } else {
+                            println!("🗑️ Deleted token file: {}", token_path);
+                        }
+                    }
+                }
+                s.credentials_file_path = None;
+                s.token_file_path = None;
+                s.google_access_token = None;
+            }
             let _ = sender
                 .send(Message::Text(
                     json!({"type": "credentials_revoked", "content": "✅ Credentials revoked successfully."})
@@ -301,6 +372,11 @@ async fn handle_config(
                 json!({"name": "save_to_memory", "source": "built-in"}),
                 json!({"name": "append_to_memory", "source": "built-in"}),
             ];
+            if s.google_access_token.is_some() {
+                tools_list.push(
+                    json!({"name": "google_agent", "source": "google", "description": "Gmail · Calendar · Sheets sub-agent"}),
+                );
+            }
             for (server_name, conn) in &s.mcp_connections {
                 for tool in &conn.tools {
                     tools_list
@@ -407,13 +483,14 @@ async fn handle_chat(
         return;
     }
 
-    let (api_key, model, provider, mcp_tool_sets) = {
+    let (api_key, model, provider, mcp_tool_sets, google_access_token) = {
         let s = state.lock().await;
         (
             s.api_key.clone(),
             s.current_model.clone(),
             s.current_provider.clone(),
             s.all_mcp_tools(),
+            s.google_access_token.clone(),
         )
     };
 
@@ -429,24 +506,50 @@ async fn handle_chat(
             return;
         }
     }
+    
+    // Channel for tool-call events emitted during LLM execution
+    let (tool_tx, mut tool_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(64);
 
-    let _ = sender
-        .send(Message::Text(
-            json!({"type": "thought", "content": {"text": "Thinking..."}}).to_string(),
-        ))
-        .await;
+    // Spawn LLM in a separate task so we can forward tool events concurrently
+    let system_prompt = data["system_prompt"].as_str().map(|s| s.to_string());
+    let base64_image = data["base64_image"].as_str().map(|s| s.to_string());
+    let history_clone = chat_history.clone();
 
-    let result = llm::call_llm(
-        &provider,
-        api_key.as_deref().unwrap_or(""),
-        &model,
-        &query,
-        chat_history.clone(),
+    let mut llm_task = tokio::spawn(llm::call_llm(
+        provider,
+        api_key.unwrap_or_default(),
+        model,
+        query.clone(),
+        history_clone,
         mcp_tool_sets,
-        data["system_prompt"].as_str(),
-        data["base64_image"].as_str(),
-    )
-    .await;
+        system_prompt,
+        base64_image,
+        google_access_token,
+        tool_tx,
+    ));
+
+    // Forward tool_call / tool_result events while the LLM task is running.
+    // biased: drain all pending events before checking task completion.
+    let llm_result = loop {
+        tokio::select! {
+            biased;
+            Some(event) = tool_rx.recv() => {
+                let _ = sender.send(Message::Text(event.to_string())).await;
+            }
+            outcome = &mut llm_task => {
+                // Drain any events that arrived just before the task finished
+                while let Ok(event) = tool_rx.try_recv() {
+                    let _ = sender.send(Message::Text(event.to_string())).await;
+                }
+                break outcome;
+            }
+        }
+    };
+
+    let result = match llm_result {
+        Ok(r) => r,
+        Err(join_err) => Err(format!("LLM task panicked: {}", join_err)),
+    };
 
     match result {
         Ok(text) => {

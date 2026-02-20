@@ -3,6 +3,82 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use thiserror::Error;
+use tokio::sync::mpsc;
+
+// ── Tool Event Channel ──
+
+/// Sender half of the tool-event channel.  Clone one per tool instance.
+pub type ToolEventSender = mpsc::Sender<serde_json::Value>;
+
+/// Wraps any `Tool` and fires `tool_call` / `tool_result` WebSocket events
+/// on `tx` whenever the tool is invoked.
+pub struct NotifyingTool<T> {
+    pub inner: T,
+    pub tx: ToolEventSender,
+}
+
+impl<T: Tool> Tool for NotifyingTool<T>
+where
+    T::Args: Serialize,
+    T::Output: Send,
+{
+    const NAME: &'static str = T::NAME;
+    type Args = T::Args;
+    type Output = T::Output;
+    type Error = T::Error;
+
+    async fn definition(&self, prompt: String) -> ToolDefinition {
+        self.inner.definition(prompt).await
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        // Serialize args before they are consumed by the inner call
+        let args_json = serde_json::to_value(&args)
+            .unwrap_or(serde_json::Value::Object(Default::default()));
+
+        // Notify UI: tool is starting
+        // Schema matches Swift ToolCallContent { toolName, toolArgs }
+        let _ = self
+            .tx
+            .send(serde_json::json!({
+                "type": "tool_call",
+                "content": {
+                    "toolName": T::NAME,
+                    "toolArgs": args_json
+                }
+            }))
+            .await;
+
+        let result = self.inner.call(args).await?;
+
+        // Notify UI: tool finished
+        // Schema matches Swift ToolResultContent { toolName, result }
+        if let Ok(result_str) = serde_json::to_string(&result) {
+            const MAX_RESULT_BYTES: usize = 32 * 1024; // 32 KB
+            let result_str = if result_str.len() > MAX_RESULT_BYTES {
+                format!(
+                    "{}... [truncated — {} bytes total]",
+                    &result_str[..MAX_RESULT_BYTES],
+                    result_str.len()
+                )
+            } else {
+                result_str
+            };
+            let _ = self
+                .tx
+                .send(serde_json::json!({
+                    "type": "tool_result",
+                    "content": {
+                        "toolName": T::NAME,
+                        "result": result_str
+                    }
+                }))
+                .await;
+        }
+
+        Ok(result)
+    }
+}
 
 // ── Error Types ──
 
@@ -16,7 +92,7 @@ pub enum ToolError {
 
 // ── Calculator ──
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct CalcArgs {
     x: f64,
     y: f64,
@@ -68,7 +144,7 @@ impl Tool for Calculator {
 #[derive(Deserialize, Serialize)]
 pub struct GetCurrentDateTime;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct EmptyArgs {}
 
 impl Tool for GetCurrentDateTime {
@@ -99,7 +175,7 @@ impl Tool for GetCurrentDateTime {
 #[derive(Deserialize, Serialize)]
 pub struct OpenApplication;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct OpenApplicationArgs {
     app_name: String,
 }
@@ -150,7 +226,7 @@ impl Tool for OpenApplication {
 #[derive(Deserialize, Serialize)]
 pub struct OpenChromeTab;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct OpenChromeTabArgs {
     url: String,
 }
@@ -271,7 +347,7 @@ impl SaveToMemory {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct SaveToMemoryArgs {
     content: String,
 }
@@ -319,7 +395,7 @@ impl AppendToMemory {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct AppendToMemoryArgs {
     content: String,
 }

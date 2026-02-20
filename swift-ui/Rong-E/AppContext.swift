@@ -196,6 +196,32 @@ class AppContext: ObservableObject {
             self.isLoading = false
         }
     }
+
+    // MARK: - Boot Log Queue
+    // Logs are queued and displayed one at a time with a short delay for a
+    // typed-terminal animation effect.
+    private var bootLogQueue: [String] = []
+    private var bootLogBusy = false
+
+    /// Enqueue a terminal-style boot log line.  Lines are shown one at a time
+    /// with a 0.4 s gap so the chat view animates them in sequentially.
+    func addBootLog(_ message: String) {
+        bootLogQueue.append(message)
+        drainBootLogQueue()
+    }
+
+    private func drainBootLogQueue() {
+        guard !bootLogBusy, !bootLogQueue.isEmpty else { return }
+        bootLogBusy = true
+        let next = bootLogQueue.removeFirst()
+        withAnimation(.easeOut(duration: 0.25)) {
+            currentSessionChatMessages.append(ChatMessage(role: "system", content: next))
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.bootLogBusy = false
+            self?.drainBootLogQueue()
+        }
+    }
     struct ModeConfiguration: Identifiable, Codable, Hashable {
         var id: Int
         var name: String

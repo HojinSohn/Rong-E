@@ -14,6 +14,9 @@ pub struct AppState {
     pub current_model: String,
     pub current_provider: String,
     pub api_key: Option<String>,
+    pub credentials_file_path: Option<String>,
+    pub token_file_path: Option<String>,
+    pub google_access_token: Option<String>,
     pub mcp_connections: HashMap<String, McpConnection>,
 }
 
@@ -25,6 +28,9 @@ impl AppState {
             current_model: "gemini-2.5-flash".to_string(),
             current_provider: "gemini".to_string(),
             api_key: None,
+            credentials_file_path: None,
+            token_file_path: None,
+            google_access_token: None,
             mcp_connections: HashMap::new(),
         }
     }

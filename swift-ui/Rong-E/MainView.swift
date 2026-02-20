@@ -1336,9 +1336,9 @@ struct MessageListContent: View {
             
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        
-                        // System Logs
+                    VStack(alignment: .leading, spacing: 12) {
+
+                        // System Logs (legacy static section — now unused, kept for layout)
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(systemLogs, id: \.self) { log in
                                 Text(">> \(log)")
@@ -1349,13 +1349,18 @@ struct MessageListContent: View {
                         }
                         .padding(.horizontal)
                         .padding(.top, 10)
-                        
+
                         // Dynamic Chat Stream
+                        // VStack (not Lazy) so SwiftUI animates row insertions properly.
                         ForEach(messages) { message in
                             RongEMessageRow(message: message)
                                 .id(message.id)
+                                .transition(.asymmetric(
+                                    insertion: .opacity.combined(with: .move(edge: .bottom)),
+                                    removal: .opacity
+                                ))
                         }
-                        
+
                         Color.clear.frame(height: 20).id("bottom")
                     }
                     .padding(.vertical)
@@ -1590,8 +1595,8 @@ struct MessageView: View {
                         .padding(.horizontal)
                         .padding(.top, 10)
                         
-                        // 3. Dynamic Chat Stream
-                        ForEach(appContext.currentSessionChatMessages) { message in
+                        // 3. Dynamic Chat Stream (system boot logs excluded — shown above)
+                        ForEach(appContext.currentSessionChatMessages.filter { $0.role != "system" }) { message in
                             EquatableView(content: RongEMessageRow(message: message))
                                 .id(message.id)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -1659,13 +1664,29 @@ struct MessageView: View {
 // MARK: - RongE Message Row
 struct RongEMessageRow: View, Equatable {
     let message: ChatMessage
-    var isUser: Bool { message.role == "user" }
+    var isUser: Bool   { message.role == "user" }
+    var isSystem: Bool { message.role == "system" }
 
     static func == (lhs: RongEMessageRow, rhs: RongEMessageRow) -> Bool {
         lhs.message.id == rhs.message.id
     }
 
     var body: some View {
+        if isSystem {
+            // Terminal-style boot log: >> LOG TEXT
+            HStack(spacing: 6) {
+                Text(">>")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.cyan.opacity(0.5))
+                Text(message.content)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.cyan.opacity(0.7))
+                    .shadow(color: .cyan, radius: 1)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 1)
+        } else {
         HStack(alignment: .top, spacing: 12) {
             // AI Avatar / Decorator
             if !isUser {
@@ -1719,6 +1740,7 @@ struct RongEMessageRow: View, Equatable {
             }
         }
         .padding(.horizontal, 16)
+        } // end else (non-system message)
     }
 }
 
