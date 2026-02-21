@@ -1,6 +1,6 @@
 use crate::google_agent::GoogleSubAgent;
 use crate::tools::{
-    AppendToMemory, Calculator, GetCurrentDateTime, NotifyingTool, OpenApplication, OpenChromeTab,
+    AppendToMemory, Calculator, NotifyingTool, OpenApplication, OpenChromeTab,
     ReadMemory, SaveToMemory, ToolEventSender,
 };
 use rig::{
@@ -17,12 +17,6 @@ use rig::client::ProviderClient;
 const SYSTEM_PROMPT_TEMPLATE: &str =
     include_str!("../prompts/system_prompt.txt");
 
-/// Appended to every preamble so Gemini always replies after tool use.
-const SAFETY_INSTRUCTION: &str =
-    "IMPORTANT: Whenever you use a tool, you MUST reply to the user \
-     with a text summary of the result. Never return an empty response \
-     after using a tool.";
-
 pub async fn call_llm(
     provider: String,
     api_key: String,
@@ -33,21 +27,54 @@ pub async fn call_llm(
     system_prompt: Option<String>,
     base64_image: Option<String>,
     google_access_token: Option<String>,
+    spreadsheet_configs: Vec<crate::state::SpreadsheetConfig>,
     tool_tx: ToolEventSender,
+    user_name: Option<String>,
 ) -> Result<String, String> {
     let memory_path = crate::tools::default_memory_path();
 
-    // Substitute {user_name} with the OS login name.
-    let user_name = std::env::var("USER").unwrap_or_else(|_| "User".to_string());
-    let base_prompt = SYSTEM_PROMPT_TEMPLATE.replace("{user_name}", &user_name);
+    // Use the name provided by the Swift UI; fall back to the OS login name.
+    let user_name = user_name
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| std::env::var("USER").unwrap_or_else(|_| "User".to_string()));
 
-    // Build the final preamble:
-    //   base personality  →  safety instruction  →  optional mode-specific prompt
-    let final_prompt = if let Some(ref mode_prompt) = system_prompt {
-        format!("{}\n\n{}\n\n{}", base_prompt, SAFETY_INSTRUCTION, mode_prompt)
+    // Current date/time injected at call time so the LLM always has it.
+    let now = chrono::Local::now();
+    let current_datetime = now.format("%A, %B %-d, %Y %H:00").to_string();
+
+    let base_prompt = SYSTEM_PROMPT_TEMPLATE
+        .replace("{user_name}", &user_name)
+        .replace("{current_datetime}", &current_datetime);
+
+    // Build the spreadsheet context block — alias + description only.
+    // The google_agent sub-agent holds the alias→ID map; this agent only needs
+    // to know which names exist so it can route requests correctly.
+    let spreadsheet_context = if spreadsheet_configs.is_empty() {
+        String::new()
     } else {
-        format!("{}\n\n{}", base_prompt, SAFETY_INSTRUCTION)
+        let mut lines = vec![
+            "\n\n## Available Google Spreadsheets".to_string(),
+            "The user has registered the following spreadsheets by alias. When they mention one, delegate the task to google_agent using the alias name — the sub-agent will resolve it to the correct spreadsheet ID.".to_string(),
+        ];
+        for cfg in &spreadsheet_configs {
+            let desc_info = if cfg.description.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", cfg.description)
+            };
+            lines.push(format!("- **{}**{}", cfg.alias, desc_info));
+        }
+        lines.join("\n")
     };
+
+    // Build the final preamble: base personality → spreadsheet context → optional mode prompt
+    let final_prompt = if let Some(ref mode_prompt) = system_prompt {
+        format!("{}{}\n\n{}", base_prompt, spreadsheet_context, mode_prompt)
+    } else {
+        format!("{}{}", base_prompt, spreadsheet_context)
+    };
+
+    println!("🧠 Final system prompt:\n{}", final_prompt);
 
     // Wrap each MCP connection with an in-process notification proxy so that
     // tool_call / tool_result events are emitted for MCP tools too.
@@ -72,7 +99,6 @@ pub async fn call_llm(
             let tx = &tool_tx;
             let mut builder = $builder_expr
                 .tool(NotifyingTool { inner: Calculator, tx: tx.clone() })
-                .tool(NotifyingTool { inner: GetCurrentDateTime, tx: tx.clone() })
                 .tool(NotifyingTool { inner: OpenApplication, tx: tx.clone() })
                 .tool(NotifyingTool { inner: OpenChromeTab, tx: tx.clone() })
                 .tool(NotifyingTool { inner: ReadMemory::new(memory_path.clone()), tx: tx.clone() })
@@ -86,6 +112,7 @@ pub async fn call_llm(
                         api_key.clone(),
                         provider.clone(),
                         model.clone(),
+                        spreadsheet_configs.clone(),
                     ),
                     tx: tx.clone(),
                 });

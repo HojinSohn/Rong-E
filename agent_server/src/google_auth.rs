@@ -1,5 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Mirrors the token.json written by Python's google-auth library.
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -41,6 +42,15 @@ struct RefreshResponse {
     expires_in: Option<u64>,
 }
 
+/// Response body from the authorization code exchange endpoint.
+#[derive(Debug, Deserialize)]
+struct TokenExchangeResponse {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_in: Option<u64>,
+    scope: Option<String>,
+}
+
 /// Authenticate using the on-disk `token.json` + `credentials.json`.
 ///
 /// Steps (mirrors Python's `AuthManager.authenticate`):
@@ -58,21 +68,29 @@ pub async fn authenticate(
     // --- 1. Load token.json ---
     let token_str = tokio::fs::read_to_string(token_path).await.ok();
 
-    let Some(token_str) = token_str else {
-        return Err(
-            "No token.json found. Please complete the OAuth flow from the app first.".to_string(),
-        );
-    };
+    let mut token = token_str
+        .as_deref()
+        .map(|s| serde_json::from_str::<GoogleToken>(s)
+            .map_err(|e| format!("Failed to parse token.json: {}", e)))
+        .transpose()?
+        .unwrap_or_else(|| GoogleToken {
+            token: None,
+            refresh_token: None,
+            token_uri: None,
+            client_id: None,
+            client_secret: None,
+            expiry: None,
+            scopes: None,
+            universe_domain: None,
+            account: None,
+        });
 
-    let mut token: GoogleToken = serde_json::from_str(&token_str)
-        .map_err(|e| format!("Failed to parse token.json: {}", e))?;
-
-    let access_token = token.token.clone().unwrap_or_default();
-    let expired = is_token_expired(&token);
-
-    if !access_token.is_empty() && !expired {
-        println!("✅ Google token is valid.");
-        return Ok(access_token);
+    // --- 1b. Check existing access token ---
+    if let Some(access_token) = token.token.clone().filter(|t| !t.is_empty()) {
+        if !is_token_expired(&token) {
+            println!("✅ Google token is valid.");
+            return Ok(access_token);
+        }
     }
 
     println!("🔄 Google token is expired or missing. Attempting refresh…");
@@ -91,17 +109,25 @@ pub async fn authenticate(
         resolve_client_creds(&token, credentials_path).await?;
 
     // --- 4. Refresh ---
-    let refreshed = refresh_access_token(&client_id, &client_secret, &refresh_token, &token_uri)
-        .await
-        .map_err(|e| format!("Token refresh failed: {}", e))?;
+    let refreshed = refresh_access_token(
+        &client_id,
+        &client_secret,
+        &refresh_token,
+        &token_uri,
+    )
+    .await
+    .map_err(|e| format!("Token refresh failed: {}", e))?;
 
     // --- 5. Persist updated token ---
-    let new_expiry = Utc::now() + Duration::seconds(refreshed.expires_in.unwrap_or(3599) as i64);
+    let new_expiry =
+        Utc::now() + Duration::seconds(refreshed.expires_in.unwrap_or(3599) as i64);
+
     token.token = Some(refreshed.access_token.clone());
     token.expiry = Some(new_expiry.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string());
 
     let updated_json = serde_json::to_string_pretty(&token)
         .map_err(|e| format!("Failed to serialize updated token: {}", e))?;
+
     tokio::fs::write(token_path, updated_json)
         .await
         .map_err(|e| format!("Failed to save refreshed token.json: {}", e))?;
@@ -170,6 +196,199 @@ async fn resolve_client_creds(
         .unwrap_or_else(|| "https://oauth2.googleapis.com/token".to_string());
 
     Ok((cfg.client_id, cfg.client_secret, uri))
+}
+
+// ---------------------------------------------------------------------------
+// Full OAuth2 authorization-code flow (for first-time or re-auth)
+// ---------------------------------------------------------------------------
+
+/// Binds a local TCP listener, builds the Google consent URL, and returns
+/// both so the caller can send the URL to the UI and then await the callback.
+pub async fn prepare_oauth_flow(
+    credentials_path: &str,
+) -> Result<(String, tokio::net::TcpListener), String> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| format!("Failed to bind OAuth listener: {}", e))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to get local port: {}", e))?
+        .port();
+
+    let creds_str = tokio::fs::read_to_string(credentials_path)
+        .await
+        .map_err(|e| format!("Failed to read credentials.json: {}", e))?;
+    let creds: CredentialsFile = serde_json::from_str(&creds_str)
+        .map_err(|e| format!("Failed to parse credentials.json: {}", e))?;
+    let cfg = creds
+        .installed
+        .or(creds.web)
+        .ok_or_else(|| "credentials.json has no 'installed' or 'web' section.".to_string())?;
+
+    let redirect_uri = format!("http://localhost:{}", port);
+    let scopes = [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/spreadsheets",
+    ]
+    .join(" ");
+
+    let url = format!(
+        "https://accounts.google.com/o/oauth2/auth\
+         ?client_id={}\
+         &redirect_uri={}\
+         &response_type=code\
+         &scope={}\
+         &access_type=offline\
+         &prompt=consent",
+        urlencoding::encode(&cfg.client_id),
+        urlencoding::encode(&redirect_uri),
+        urlencoding::encode(&scopes),
+    );
+
+    Ok((url, listener))
+}
+
+/// Accepts one HTTP redirect from the browser, exchanges the authorization
+/// code for tokens, writes `token.json`, and returns the access token.
+pub async fn await_oauth_callback(
+    listener: tokio::net::TcpListener,
+    credentials_path: &str,
+    token_path: &str,
+) -> Result<String, String> {
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to get port: {}", e))?
+        .port();
+
+    // Accept exactly one connection (the browser redirect)
+    let (mut stream, _) = listener
+        .accept()
+        .await
+        .map_err(|e| format!("Failed to accept OAuth callback: {}", e))?;
+
+    // Read the HTTP request
+    let mut buf = vec![0u8; 8192];
+    let n = stream
+        .read(&mut buf)
+        .await
+        .map_err(|e| format!("Failed to read callback request: {}", e))?;
+    let request = String::from_utf8_lossy(&buf[..n]);
+
+    // First line: "GET /?code=XXX&scope=... HTTP/1.1"
+    let path = request
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("");
+    let query = path.split('?').nth(1).unwrap_or("");
+
+    // Check for an error param before looking for the code
+    for param in query.split('&') {
+        if let Some(err) = param.strip_prefix("error=") {
+            let decoded = urlencoding::decode(err)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|_| err.to_string());
+            let _ = stream
+                .write_all(
+                    b"HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n\
+                      <html><body><h2>Authentication cancelled or denied.</h2>\
+                      <p>You can close this tab.</p></body></html>",
+                )
+                .await;
+            return Err(format!("OAuth error: {}", decoded));
+        }
+    }
+
+    // Extract the authorization code
+    let code = query
+        .split('&')
+        .find(|p| p.starts_with("code="))
+        .and_then(|p| p.strip_prefix("code="))
+        .map(|c| {
+            urlencoding::decode(c)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|_| c.to_string())
+        })
+        .ok_or_else(|| "No authorization code in callback URL".to_string())?;
+
+    // Respond to the browser immediately
+    let success_html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n\
+              <html><body style=\"font-family:sans-serif;text-align:center;padding:60px\">\
+              <h2>\u{2705} Authentication Successful!</h2>\
+              <p>You can close this tab and return to Rong-E.</p>\
+              </body></html>";
+    let _ = stream.write_all(success_html.as_bytes()).await;
+    drop(stream);
+
+    // Load client credentials for the exchange
+    let creds_str = tokio::fs::read_to_string(credentials_path)
+        .await
+        .map_err(|e| format!("Failed to read credentials.json: {}", e))?;
+    let creds: CredentialsFile = serde_json::from_str(&creds_str)
+        .map_err(|e| format!("Failed to parse credentials.json: {}", e))?;
+    let cfg = creds
+        .installed
+        .or(creds.web)
+        .ok_or_else(|| "credentials.json has no 'installed' or 'web' section.".to_string())?;
+
+    let token_uri = cfg
+        .token_uri
+        .clone()
+        .unwrap_or_else(|| "https://oauth2.googleapis.com/token".to_string());
+    let redirect_uri = format!("http://localhost:{}", port);
+
+    // Exchange code → tokens
+    let client = reqwest::Client::new();
+    let params = [
+        ("code", code.as_str()),
+        ("client_id", cfg.client_id.as_str()),
+        ("client_secret", cfg.client_secret.as_str()),
+        ("redirect_uri", redirect_uri.as_str()),
+        ("grant_type", "authorization_code"),
+    ];
+    let resp = client
+        .post(&token_uri)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| format!("Token exchange request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Token exchange failed {}: {}", status, body));
+    }
+
+    let token_resp: TokenExchangeResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+
+    // Persist the new token.json
+    let expiry = Utc::now() + Duration::seconds(token_resp.expires_in.unwrap_or(3599) as i64);
+    let new_token = GoogleToken {
+        token: Some(token_resp.access_token.clone()),
+        refresh_token: token_resp.refresh_token,
+        token_uri: Some(token_uri),
+        client_id: Some(cfg.client_id),
+        client_secret: Some(cfg.client_secret),
+        expiry: Some(expiry.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()),
+        scopes: token_resp.scope.map(serde_json::Value::String),
+        universe_domain: Some("googleapis.com".to_string()),
+        account: None,
+    };
+
+    let json_str = serde_json::to_string_pretty(&new_token)
+        .map_err(|e| format!("Failed to serialize token: {}", e))?;
+    tokio::fs::write(token_path, &json_str)
+        .await
+        .map_err(|e| format!("Failed to write token.json: {}", e))?;
+
+    println!("✅ OAuth flow complete. Token saved to {}", token_path);
+    Ok(token_resp.access_token)
 }
 
 /// Sends a POST to Google's token endpoint to exchange a refresh_token

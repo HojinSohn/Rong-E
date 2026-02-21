@@ -1321,8 +1321,6 @@ struct EquatabeChatList: View, Equatable {
         MessageListContent(messages: messages, fullChatViewMode: fullChatViewMode)
     }
 }
-
-// Isolate the actual ScrollView logic here
 struct MessageListContent: View {
     let messages: [ChatMessage]
     let fullChatViewMode: Bool
@@ -1338,7 +1336,7 @@ struct MessageListContent: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
 
-                        // System Logs (legacy static section — now unused, kept for layout)
+                        // System Logs
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(systemLogs, id: \.self) { log in
                                 Text(">> \(log)")
@@ -1351,34 +1349,41 @@ struct MessageListContent: View {
                         .padding(.top, 10)
 
                         // Dynamic Chat Stream
-                        // VStack (not Lazy) so SwiftUI animates row insertions properly.
                         ForEach(messages) { message in
                             RongEMessageRow(message: message)
-                                .id(message.id)
+                                // The ID is already here, which is perfect
+                                .id(message.id) 
                                 .transition(.asymmetric(
                                     insertion: .opacity.combined(with: .move(edge: .bottom)),
                                     removal: .opacity
                                 ))
                         }
-
-                        Color.clear.frame(height: 20).id("bottom")
+                        
+                        // 1. The Anchor Point
+                        // A 1-pixel invisible view at the very end of the VStack
+                        Color.clear
+                            .frame(height: 1)
+                            .id("BottomAnchor") 
                     }
                     .padding(.vertical)
                 }
-                // Determine height based on mode
                 .frame(maxHeight: fullChatViewMode ? 450 : 300)
+                
+                .onChange(of: messages.last?.content) { _ in 
+                    scrollToBottom(proxy: proxy)
+                }
                 .onChange(of: messages.count) { _ in
-                    scrollToBottom(proxy)
+                    scrollToBottom(proxy: proxy)
                 }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
-    
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation {
-                proxy.scrollTo("bottom", anchor: .top)
+
+    private func scrollToBottom(proxy: ScrollViewProxy) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            withAnimation(.easeOut(duration: 0.5)) {
+                proxy.scrollTo("BottomAnchor", anchor: .bottom)
             }
         }
     }
@@ -1634,12 +1639,9 @@ struct MessageView: View {
 
     @MainActor
     private func scrollToBottom(_ proxy: ScrollViewProxy, useLastMessage: Bool = false) {
-        // Double dispatch to ensure SwiftUI has fully laid out new content
-        DispatchQueue.main.async {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.easeOut(duration: 0.3)) {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
     }

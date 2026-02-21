@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -21,6 +22,24 @@ class GoogleAuthManager: ObservableObject {
                 withAnimation {
                     self?.context.isGoogleConnected = true
                 }
+            }
+        }
+
+        // Listen for auth errors (e.g. expired token with no refresh token)
+        self.client.onCredentialsError = { [weak self] errorText in
+            print("❌ Global Auth Manager received credentials error: \(errorText)")
+            DispatchQueue.main.async {
+                withAnimation {
+                    self?.context.isGoogleConnected = false
+                }
+            }
+        }
+
+        // Open the Google consent URL in the default browser
+        self.client.onOAuthURL = { urlString in
+            print("🌐 Opening OAuth URL in browser")
+            if let url = URL(string: urlString) {
+                NSWorkspace.shared.open(url)
             }
         }
     }
@@ -66,6 +85,17 @@ class GoogleAuthManager: ObservableObject {
 
     // MARK: - Actions
     
+    /// Triggers the full browser-based OAuth2 flow to get a fresh token with refresh_token.
+    /// Call this when `connect()` fails with a credentials_error.
+    func startOAuth() {
+        guard credentialsFileExists else {
+            print("❌ Cannot start OAuth: No credentials.json found.")
+            return
+        }
+        print("🔐 Starting OAuth re-authentication flow...")
+        client.sendStartOAuth(dirPath: context.credentialsDirectory.path)
+    }
+
     func connect() {
         print("🔗 Attempting to connect Google Services...")
         guard credentialsFileExists else {

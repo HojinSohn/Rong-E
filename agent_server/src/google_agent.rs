@@ -43,6 +43,9 @@ pub struct GoogleSubAgent {
     pub provider: String,
     #[serde(skip)]
     pub model: String,
+    /// Alias → real spreadsheet ID mappings so the sub-agent can resolve names.
+    #[serde(skip)]
+    pub spreadsheet_configs: Vec<crate::state::SpreadsheetConfig>,
 }
 
 impl GoogleSubAgent {
@@ -51,12 +54,14 @@ impl GoogleSubAgent {
         api_key: String,
         provider: String,
         model: String,
+        spreadsheet_configs: Vec<crate::state::SpreadsheetConfig>,
     ) -> Self {
         Self {
             access_token,
             api_key,
             provider,
             model,
+            spreadsheet_configs,
         }
     }
 }
@@ -109,6 +114,7 @@ Examples:\n\
             &self.model,
             &self.access_token,
             &args.task,
+            &self.spreadsheet_configs,
         )
         .await
         .map_err(GoogleAgentError)
@@ -125,8 +131,38 @@ async fn run_google_agent(
     model: &str,
     access_token: &str,
     task: &str,
+    spreadsheet_configs: &[crate::state::SpreadsheetConfig],
 ) -> Result<String, String> {
     let t = access_token.to_string();
+
+    // Inject current date/time so the agent can use it for calendar tasks.
+    let now = chrono::Local::now();
+    let current_datetime = now.format("%A, %B %-d, %Y %H:00").to_string();
+    let base_prompt = SYSTEM_PROMPT.replace("{current_datetime}", &current_datetime);
+
+    // Build preamble: base prompt + alias→ID table (if any spreadsheets registered)
+    let preamble = if spreadsheet_configs.is_empty() {
+        base_prompt
+    } else {
+        let mut lines = vec![
+            base_prompt,
+            "\n\n## Registered Spreadsheets (alias → real ID)".to_string(),
+            "When a task refers to a spreadsheet by alias, use the corresponding ID below as the `spreadsheet_id` parameter — NEVER pass the alias itself to the tool.".to_string(),
+        ];
+        for cfg in spreadsheet_configs {
+            let tab_info = if cfg.selected_tab.is_empty() {
+                String::new()
+            } else {
+                format!(", default tab: \"{}\"", cfg.selected_tab)
+            };
+            lines.push(format!(
+                "- alias: \"{}\" → spreadsheet_id: `{}`{}",
+                cfg.alias, cfg.sheet_id, tab_info
+            ));
+        }
+        lines.join("\n")
+    };
+
     let user_msg = RigMessage::User {
         content: OneOrMany::one(UserContent::text(task)),
     };
@@ -136,7 +172,7 @@ async fn run_google_agent(
             let client = gemini::Client::new(api_key).map_err(|e| e.to_string())?;
             let agent = client
                 .agent(model)
-                .preamble(SYSTEM_PROMPT)
+                .preamble(&preamble)
                 .tool(SearchGmail::new(t.clone()))
                 .tool(GetGmailMessage::new(t.clone()))
                 .tool(GetGmailThread::new(t.clone()))
@@ -154,7 +190,7 @@ async fn run_google_agent(
                 openai::Client::new(api_key).map_err(|e| e.to_string())?;
             let agent = client
                 .agent(model)
-                .preamble(SYSTEM_PROMPT)
+                .preamble(&preamble)
                 .tool(SearchGmail::new(t.clone()))
                 .tool(GetGmailMessage::new(t.clone()))
                 .tool(GetGmailThread::new(t.clone()))
@@ -172,7 +208,7 @@ async fn run_google_agent(
                 anthropic::Client::new(api_key).map_err(|e| e.to_string())?;
             let agent = client
                 .agent(model)
-                .preamble(SYSTEM_PROMPT)
+                .preamble(&preamble)
                 .tool(SearchGmail::new(t.clone()))
                 .tool(GetGmailMessage::new(t.clone()))
                 .tool(GetGmailThread::new(t.clone()))
@@ -189,7 +225,7 @@ async fn run_google_agent(
             let client = ollama::Client::from_env();
             let agent = client
                 .agent(model)
-                .preamble(SYSTEM_PROMPT)
+                .preamble(&preamble)
                 .tool(SearchGmail::new(t.clone()))
                 .tool(GetGmailMessage::new(t.clone()))
                 .tool(GetGmailThread::new(t.clone()))

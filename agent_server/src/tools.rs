@@ -139,36 +139,8 @@ impl Tool for Calculator {
     }
 }
 
-// ── GetCurrentDateTime ──
-
-#[derive(Deserialize, Serialize)]
-pub struct GetCurrentDateTime;
-
 #[derive(Deserialize, Serialize)]
 pub struct EmptyArgs {}
-
-impl Tool for GetCurrentDateTime {
-    const NAME: &'static str = "get_current_date_time";
-    type Args = EmptyArgs;
-    type Output = String;
-    type Error = ToolError;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "get_current_date_time".to_string(),
-            description: "Returns the current local date and time in YYYY-MM-DD HH:MM:SS format.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        }
-    }
-
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
-    }
-}
 
 // ── OpenApplication ──
 

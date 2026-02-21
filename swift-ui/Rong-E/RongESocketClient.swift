@@ -34,7 +34,7 @@ struct AgentMessage: Codable {
         case "tool_result":
             let val = try container.decode(ToolResultContent.self, forKey: .content)
             content = .toolResult(val)
-        case "credentials_success", "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error":
+        case "credentials_success", "credentials_error", "oauth_url", "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error":
             // Handle simple string content for status messages
             if let stringContent = try? container.decode(String.self, forKey: .content) {
                 content = .response(ResponseContent(text: stringContent, images: []))
@@ -197,6 +197,8 @@ class SocketClient: ObservableObject {
     var onReceiveWidgets: (([ChatWidgetData]) -> Void)?
     var onDisconnect: ((String) -> Void)?
     var onReceivedCredentialsSuccess: ((String) -> Void)?
+    var onCredentialsError: ((String) -> Void)?
+    var onOAuthURL: ((String) -> Void)?
     var onMCPSyncResult: ((Bool, String?) -> Void)?
     var onMCPServerStatus: (([MCPServerStatusInfo]) -> Void)?
     var onSessionReset: (() -> Void)?
@@ -400,6 +402,14 @@ class SocketClient: ObservableObject {
                 if case .response(let content) = parsedMsg.content {
                      self.onReceivedCredentialsSuccess?(content.text)
                 }
+            case "credentials_error":
+                if case .response(let content) = parsedMsg.content {
+                    self.onCredentialsError?(content.text)
+                }
+            case "oauth_url":
+                if case .response(let content) = parsedMsg.content {
+                    self.onOAuthURL?(content.text)
+                }
             case "mcp_sync_success":
                 if case .response(let content) = parsedMsg.content {
                     self.onMCPSyncResult?(true, content.text)
@@ -538,6 +548,21 @@ class SocketClient: ObservableObject {
                 if let error = error {
                     print("❌ MCP Config Send Error: \(error)")
                 }
+            }
+        }
+    }
+
+    func sendStartOAuth(dirPath: String) {
+        let json: [String: String] = [
+            "data_type": "start_oauth",
+            "dir_path": dirPath
+        ]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Starting OAuth flow for dir: \(dirPath)")
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Start OAuth Send Error: \(error)") }
             }
         }
     }

@@ -365,7 +365,6 @@ async fn handle_config(
             let s = state.lock().await;
             let mut tools_list: Vec<serde_json::Value> = vec![
                 json!({"name": "calculator", "source": "built-in"}),
-                json!({"name": "get_current_date_time", "source": "built-in"}),
                 json!({"name": "open_application", "source": "built-in"}),
                 json!({"name": "open_chrome_tab", "source": "built-in"}),
                 json!({"name": "read_memory", "source": "built-in"}),
@@ -392,21 +391,125 @@ async fn handle_config(
         }
 
         "get_sheet_tabs" => {
-            let spreadsheet_id = data["spreadsheet_id"].as_str().unwrap_or("");
-            println!("📊 Received Sheet Tabs Request for: {}", spreadsheet_id);
-            // Google Sheets integration is not implemented in the Rust server
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Google Sheets integration is not supported by this server."}})
-                        .to_string(),
-                ))
-                .await;
+            let spreadsheet_id = data["spreadsheet_id"].as_str().unwrap_or("").to_string();
+            println!("📊 Get Sheet Tabs for: {}", spreadsheet_id);
+
+            if spreadsheet_id.is_empty() {
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Missing spreadsheet_id."}})
+                            .to_string(),
+                    ))
+                    .await;
+                return;
+            }
+
+            let access_token = state.lock().await.google_access_token.clone();
+            let Some(token) = access_token else {
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Not authenticated with Google. Please connect your Google account first."}})
+                            .to_string(),
+                    ))
+                    .await;
+                return;
+            };
+
+            // Fetch spreadsheet metadata from the Sheets API
+            let url = format!(
+                "https://sheets.googleapis.com/v4/spreadsheets/{}?fields=properties.title,sheets.properties.title",
+                spreadsheet_id
+            );
+
+            let client = reqwest::Client::new();
+            match client.get(&url).bearer_auth(&token).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    let body: serde_json::Value =
+                        resp.json().await.unwrap_or_default();
+                    let title = body["properties"]["title"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
+                    let tabs: Vec<String> = body["sheets"]
+                        .as_array()
+                        .unwrap_or(&vec![])
+                        .iter()
+                        .filter_map(|s| {
+                            s["properties"]["title"]
+                                .as_str()
+                                .map(|t| t.to_string())
+                        })
+                        .collect();
+                    println!(
+                        "✅ Sheet '{}' has {} tab(s): {:?}",
+                        title,
+                        tabs.len(),
+                        tabs
+                    );
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "sheet_tabs_result", "content": {
+                                "success": true,
+                                "title": title,
+                                "tabs": tabs
+                            }})
+                            .to_string(),
+                        ))
+                        .await;
+                }
+                Ok(resp) => {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
+                    println!("❌ Sheets API error {}: {}", status, body);
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "sheet_tabs_result", "content": {
+                                "success": false,
+                                "error": format!("Google API {} – {}", status, body)
+                            }})
+                            .to_string(),
+                        ))
+                        .await;
+                }
+                Err(e) => {
+                    println!("❌ Sheets API request failed: {}", e);
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "sheet_tabs_result", "content": {
+                                "success": false,
+                                "error": format!("HTTP error: {}", e)
+                            }})
+                            .to_string(),
+                        ))
+                        .await;
+                }
+            }
         }
 
         "sync_spreadsheets" => {
-            let configs = data["configs"].as_array();
-            let count = configs.map(|c| c.len()).unwrap_or(0);
-            println!("📊 Received Spreadsheet Configs: {} sheet(s)", count);
+            let raw_configs = data["configs"].as_array().cloned().unwrap_or_default();
+            let mut configs: Vec<crate::state::SpreadsheetConfig> = Vec::new();
+            for c in &raw_configs {
+                let alias = c["alias"].as_str().unwrap_or("").to_string();
+                let sheet_id = c["sheetID"].as_str().unwrap_or("").to_string();
+                let selected_tab = c["selectedTab"].as_str().unwrap_or("").to_string();
+                let description = c["description"].as_str().unwrap_or("").to_string();
+                if !alias.is_empty() && !sheet_id.is_empty() {
+                    configs.push(crate::state::SpreadsheetConfig {
+                        alias,
+                        sheet_id,
+                        selected_tab,
+                        description,
+                    });
+                }
+            }
+            let count = configs.len();
+            println!(
+                "📊 Synced {} spreadsheet config(s): {:?}",
+                count,
+                configs.iter().map(|c| &c.alias).collect::<Vec<_>>()
+            );
+            state.lock().await.spreadsheet_configs = configs;
             let _ = sender
                 .send(Message::Text(
                     json!({"type": "spreadsheets_synced", "content": format!("✅ Synced {} spreadsheet(s)", count)})
@@ -459,6 +562,96 @@ async fn handle_config(
             }
         }
 
+        "start_oauth" => {
+            let dir_path = data["dir_path"].as_str().unwrap_or("").trim().to_string();
+            if dir_path.is_empty() {
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "credentials_error", "content": "❌ dir_path is required for start_oauth."})
+                            .to_string(),
+                    ))
+                    .await;
+                return;
+            }
+
+            let credentials_path = format!("{}/credentials.json", dir_path);
+            let token_path = format!("{}/token.json", dir_path);
+
+            if !std::path::Path::new(&credentials_path).exists() {
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "credentials_error", "content": format!("❌ credentials.json not found at: {}", credentials_path)})
+                            .to_string(),
+                    ))
+                    .await;
+                return;
+            }
+
+            // Bind listener + build consent URL
+            match crate::google_auth::prepare_oauth_flow(&credentials_path).await {
+                Ok((auth_url, listener)) => {
+                    println!("🌐 OAuth URL ready. Sending to client to open in browser.");
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "oauth_url", "content": auth_url}).to_string(),
+                        ))
+                        .await;
+
+                    // Block this handler while waiting for the browser callback (5 min timeout)
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(300),
+                        crate::google_auth::await_oauth_callback(
+                            listener,
+                            &credentials_path,
+                            &token_path,
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(Ok(access_token)) => {
+                            let mut s = state.lock().await;
+                            s.credentials_file_path = Some(credentials_path);
+                            s.token_file_path = Some(token_path);
+                            s.google_access_token = Some(access_token);
+                            drop(s);
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "credentials_success", "content": "✅ Google authentication successful."})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                        Ok(Err(e)) => {
+                            println!("❌ OAuth callback error: {}", e);
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "credentials_error", "content": format!("❌ OAuth failed: {}", e)})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                        Err(_) => {
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "credentials_error", "content": "❌ OAuth timed out (5 min). Please try again."})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to prepare OAuth flow: {}", e);
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "credentials_error", "content": format!("❌ Failed to start OAuth: {}", e)})
+                                .to_string(),
+                        ))
+                        .await;
+                }
+            }
+        }
+
         _ => {
             println!("⚠️ Unknown data_type: {}", data_type);
         }
@@ -483,7 +676,7 @@ async fn handle_chat(
         return;
     }
 
-    let (api_key, model, provider, mcp_tool_sets, google_access_token) = {
+    let (api_key, model, provider, mcp_tool_sets, google_access_token, spreadsheet_configs) = {
         let s = state.lock().await;
         (
             s.api_key.clone(),
@@ -491,8 +684,11 @@ async fn handle_chat(
             s.current_provider.clone(),
             s.all_mcp_tools(),
             s.google_access_token.clone(),
+            s.spreadsheet_configs.clone(),
         )
     };
+
+    let user_name = data["user_name"].as_str().map(|s| s.to_string());
 
     // Ollama doesn't need an API key; others do
     if provider != "ollama" {
@@ -525,7 +721,9 @@ async fn handle_chat(
         system_prompt,
         base64_image,
         google_access_token,
+        spreadsheet_configs,
         tool_tx,
+        user_name,
     ));
 
     // Forward tool_call / tool_result events while the LLM task is running.

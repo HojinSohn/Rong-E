@@ -2,6 +2,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// A spreadsheet the user has registered, with an alias the agent can use.
+#[derive(Clone, Debug)]
+pub struct SpreadsheetConfig {
+    pub alias: String,
+    pub sheet_id: String,
+    pub selected_tab: String,
+    pub description: String,
+}
+
 /// A live MCP server connection
 pub struct McpConnection {
     pub tools: Vec<rmcp::model::Tool>,
@@ -18,6 +27,7 @@ pub struct AppState {
     pub token_file_path: Option<String>,
     pub google_access_token: Option<String>,
     pub mcp_connections: HashMap<String, McpConnection>,
+    pub spreadsheet_configs: Vec<SpreadsheetConfig>,
 }
 
 pub type SharedState = Arc<Mutex<AppState>>;
@@ -32,6 +42,7 @@ impl AppState {
             token_file_path: None,
             google_access_token: None,
             mcp_connections: HashMap::new(),
+            spreadsheet_configs: Vec::new(),
         }
     }
 

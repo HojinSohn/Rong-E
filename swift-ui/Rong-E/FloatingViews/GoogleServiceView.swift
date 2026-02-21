@@ -182,20 +182,37 @@ struct GoogleServiceView: View {
                 
                 // Connect / Revoke Buttons
                 if !context.isGoogleConnected {
-                    Button(action: { googleAuthManager.connect() }) {
-                        Text("INITIATE LINK")
-                            .font(.system(size: 11, design: .monospaced))
-                            .fontWeight(.bold)
-                            .frame(maxHeight: .infinity)
-                            .padding(.horizontal, 15)
-                            .background(Color.jarvisBlue.opacity(0.2))
-                            .foregroundColor(.jarvisBlue)
-                            .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
-                            .modifier(JarvisGlow(active: true))
-                            .contentShape(Rectangle())
+                    VStack(spacing: 6) {
+                        Button(action: { googleAuthManager.connect() }) {
+                            Text("INITIATE LINK")
+                                .font(.system(size: 11, design: .monospaced))
+                                .fontWeight(.bold)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color.jarvisBlue.opacity(0.2))
+                                .foregroundColor(.jarvisBlue)
+                                .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
+                                .modifier(JarvisGlow(active: true))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(BorderlessButtonStyle())
+
+                        if googleAuthManager.credentialsFileExists {
+                            Button(action: { googleAuthManager.startOAuth() }) {
+                                Text("RE-AUTHENTICATE")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .fontWeight(.bold)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(Color.orange.opacity(0.15))
+                                    .foregroundColor(.orange)
+                                    .overlay(Rectangle().stroke(Color.orange.opacity(0.6), lineWidth: 1))
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(BorderlessButtonStyle())
+                        }
                     }
-                    .buttonStyle(BorderlessButtonStyle())
-                    .frame(height: 54) // Match height roughly
+                    .frame(width: 130)
                 } else {
                     Button(action: { googleAuthManager.revoke() }) {
                         Text("TERMINATE")
