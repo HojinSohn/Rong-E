@@ -18,36 +18,36 @@ struct PermissionWaitingView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "lock.shield")
                         .font(.system(size: 20))
-                        .foregroundColor(.yellow)
+                        .foregroundStyle(Color.jarvisAmber)
                         .scaleEffect(pulseAnimation ? 1.1 : 1.0)
                         .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: pulseAnimation)
                     
                     Text("Screen Recording Permission Required")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
+                        .font(JarvisFont.body)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                 }
                 
                 // Instructions
                 Text("Please grant permission in System Settings, then click 'Retry'")
-                    .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.8))
+                    .font(JarvisFont.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 
                 // Buttons
-                HStack(spacing: 12) {
+                HStack(spacing: JarvisSpacing.md) {
                     Button(action: onRetry) {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 11))
                             Text("Retry")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(JarvisFont.label)
                         }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.green.opacity(0.8))
-                        .cornerRadius(8)
+                        .foregroundStyle(Color.jarvisTextPrimary)
+                        .padding(.horizontal, JarvisSpacing.lg)
+                        .padding(.vertical, JarvisSpacing.sm)
+                        .background(Color.jarvisGreen.opacity(0.8))
+                        .cornerRadius(JarvisRadius.medium)
                     }
                     .buttonStyle(.plain)
                     
@@ -56,13 +56,13 @@ struct PermissionWaitingView: View {
                             Image(systemName: "xmark")
                                 .font(.system(size: 11))
                             Text("Continue Without Screenshot")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(JarvisFont.label)
                         }
-                        .foregroundColor(.white.opacity(0.9))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.gray.opacity(0.6))
-                        .cornerRadius(8)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .padding(.horizontal, JarvisSpacing.lg)
+                        .padding(.vertical, JarvisSpacing.sm)
+                        .background(Color.jarvisDim.opacity(0.6))
+                        .cornerRadius(JarvisRadius.medium)
                     }
                     .buttonStyle(.plain)
                 }

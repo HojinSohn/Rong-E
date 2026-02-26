@@ -78,13 +78,13 @@ struct ImageView: View {
             VStack(alignment: .leading, spacing: 4) {
                 if let author = imageData.author {
                     Text("Photo by \(author)")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white)
+                        .font(JarvisFont.label)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                 }
                 if let alt = imageData.alt {
                     Text(alt)
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.8))
+                        .font(JarvisFont.captionMono)
+                        .foregroundStyle(Color.jarvisTextSecondary)
                         .lineLimit(2)
                 }
             }
@@ -257,14 +257,13 @@ struct ImageViewFromBase64: View {
             }) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 24))
-                    .foregroundColor(.white.opacity(0.8))
-                    .background(Color.black.opacity(0.2).clipShape(Circle())) // subtle backing
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .background(Color.black.opacity(0.2).clipShape(Circle()))
             }
             .buttonStyle(.plain)
             .shadow(radius: 2)
         }
-        .padding(16)
-        // Add a gradient at the top so white text is readable on white images
+        .padding(JarvisSpacing.lg)
         .background(
             LinearGradient(
                 colors: [Color.black.opacity(0.6), Color.clear],
@@ -277,13 +276,13 @@ struct ImageViewFromBase64: View {
     }
     
     var errorView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: JarvisSpacing.md) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 32))
-                .foregroundColor(.yellow)
+                .foregroundStyle(Color.jarvisAmber)
             Text("Failed to load")
-                .font(.headline)
-                .foregroundColor(.white)
+                .font(JarvisFont.subtitle)
+                .foregroundStyle(Color.jarvisTextPrimary)
             Button("Retry") { loadImageFromBase64() }
                 .buttonStyle(.borderedProminent)
         }

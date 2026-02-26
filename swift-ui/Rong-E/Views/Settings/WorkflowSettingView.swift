@@ -10,44 +10,44 @@ struct WorkflowSettingsView: View {
     let windowID: String
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: JarvisSpacing.lg) {
             HStack {
                 Text("Startup Protocol")
-                    .font(.headline)
-                    .foregroundColor(.white)
+                    .font(JarvisFont.title)
+                    .foregroundStyle(Color.jarvisTextPrimary)
                 Spacer()
                 Button(action: {
                     coordinator.closeWindow(id: windowID)
                 }) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.gray)
+                        .foregroundStyle(Color.jarvisTextDim)
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
             }
             
             Text("Tasks to run automatically when connected.")
-                .font(.caption)
-                .foregroundColor(.gray)
+                .font(JarvisFont.caption)
+                .foregroundStyle(Color.jarvisTextDim)
             
             // Task List
             List {
                 ForEach(manager.tasks) { task in
-                    HStack(spacing: 12) {
+                    HStack(spacing: JarvisSpacing.md) {
                         // Drag handle
                         Image(systemName: "line.3.horizontal")
-                            .foregroundColor(.gray)
-                            .font(.caption)
+                            .foregroundStyle(Color.jarvisTextDim)
+                            .font(JarvisFont.caption)
 
                         Toggle("", isOn: Binding(
                             get: { task.isEnabled },
                             set: { _ in manager.toggle(task) }
                         ))
                         .labelsHidden()
-                        .toggleStyle(SwitchToggleStyle(tint: .blue))
+                        .toggleStyle(SwitchToggleStyle(tint: Color.jarvisBlue))
 
                         Text(task.prompt)
-                            .foregroundColor(task.isEnabled ? .white : .gray)
+                            .foregroundStyle(task.isEnabled ? Color.jarvisTextPrimary : Color.jarvisTextDim)
                             .strikethrough(!task.isEnabled)
                             .lineLimit(2)
 
@@ -60,45 +60,47 @@ struct WorkflowSettingsView: View {
                             }
                         }) {
                             Image(systemName: "trash")
-                                .foregroundColor(.red.opacity(0.7))
-                                .font(.caption)
+                                .foregroundStyle(Color.jarvisRed.opacity(0.7))
+                                .font(JarvisFont.caption)
                         }
                         .buttonStyle(.plain)
                     }
-                    .listRowBackground(Color.white.opacity(0.05))
+                    .listRowBackground(Color.jarvisSurfaceLight)
                 }
                 .onDelete(perform: manager.delete)
                 .onMove(perform: manager.move)
             }
             .frame(height: 200)
             .scrollContentBackground(.hidden)
-            .background(Color.black.opacity(0.2))
-            .cornerRadius(8)
+            .background(Color.jarvisSurfaceDark)
+            .cornerRadius(JarvisRadius.medium)
             
             // Add New Task
             HStack {
                 TextField("e.g. 'Check weather in West Lafayette'", text: $newTaskInput)
                     .textFieldStyle(PlainTextFieldStyle())
-                    .padding(8)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(6)
-                    .foregroundColor(.white)
-                    .onSubmit { addNew() } // Press Enter to add
+                    .font(JarvisFont.mono)
+                    .padding(JarvisSpacing.sm)
+                    .background(Color.jarvisSurfaceDeep)
+                    .cornerRadius(JarvisRadius.small)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.small).stroke(Color.jarvisBorder, lineWidth: 1))
+                    .foregroundStyle(Color.jarvisTextPrimary)
+                    .onSubmit { addNew() }
                 
                 Button(action: addNew) {
                     Image(systemName: "plus")
-                        .padding(8)
-                        .background(Color.blue)
+                        .padding(JarvisSpacing.sm)
+                        .background(Color.jarvisBlue)
                         .clipShape(Circle())
-                        .foregroundColor(.white)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                 }
                 .buttonStyle(.plain)
                 .disabled(newTaskInput.isEmpty)
             }
         }
         .padding()
-        .background(Color.black.opacity(0.8))
-        .cornerRadius(12)
+        .background(Color.jarvisSurface)
+        .cornerRadius(JarvisRadius.large)
         .frame(width: 400, height: 350)
         .onAppear {
             manager.loadTasks()

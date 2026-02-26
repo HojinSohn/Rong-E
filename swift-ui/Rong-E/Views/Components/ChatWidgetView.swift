@@ -119,7 +119,7 @@ struct LinkWidgetView: View {
     @Binding var isHovered: Bool
     @Binding var isPressed: Bool
 
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+    private let accentColor = Color.jarvisCyan
 
     var body: some View {
         Button(action: {
@@ -128,23 +128,23 @@ struct LinkWidgetView: View {
             HStack(spacing: 10) {
                 ZStack {
                     Circle()
-                        .fill(hudCyan.opacity(0.15))
-                        .frame(width: 32, height: 32)
+                        .fill(accentColor.opacity(0.15))
+                        .frame(width: JarvisDimension.iconCircleSize, height: JarvisDimension.iconCircleSize)
 
                     Image(systemName: widget.icon ?? "link")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(hudCyan)
+                        .foregroundStyle(accentColor)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(widget.label)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white)
+                        .font(JarvisFont.body)
+                        .foregroundStyle(Color.jarvisTextPrimary)
 
                     if let url = widget.action.url {
                         Text(formatURL(url))
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .font(JarvisFont.captionMono)
+                            .foregroundStyle(Color.jarvisTextDim)
                             .lineLimit(1)
                     }
                 }
@@ -153,14 +153,14 @@ struct LinkWidgetView: View {
 
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(hudCyan.opacity(isHovered ? 1.0 : 0.6))
+                    .foregroundStyle(accentColor.opacity(isHovered ? 1.0 : 0.6))
                     .rotationEffect(.degrees(isHovered ? 0 : -5))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(widgetBackground(color: hudCyan, isHovered: isHovered))
-            .overlay(widgetBorder(color: hudCyan, isHovered: isHovered))
-            .cornerRadius(12)
+            .background(widgetBackground(color: accentColor, isHovered: isHovered))
+            .overlay(widgetBorder(color: accentColor, isHovered: isHovered))
+            .cornerRadius(JarvisRadius.large)
             .scaleEffect(isPressed ? 0.98 : 1.0)
         }
         .buttonStyle(.plain)
@@ -182,7 +182,7 @@ struct AppLaunchWidgetView: View {
     @Binding var isHovered: Bool
     @Binding var isPressed: Bool
 
-    private let hudGreen = Color(red: 0.0, green: 1.0, blue: 0.6)
+    private let accentColor = Color.jarvisGreen
 
     var body: some View {
         Button(action: {
@@ -190,24 +190,24 @@ struct AppLaunchWidgetView: View {
         }) {
             HStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(hudGreen.opacity(0.15))
-                        .frame(width: 32, height: 32)
+                    RoundedRectangle(cornerRadius: JarvisRadius.medium)
+                        .fill(accentColor.opacity(0.15))
+                        .frame(width: JarvisDimension.iconCircleSize, height: JarvisDimension.iconCircleSize)
 
                     Image(systemName: widget.icon ?? "app.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(hudGreen)
+                        .foregroundStyle(accentColor)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(widget.label)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white)
+                        .font(JarvisFont.body)
+                        .foregroundStyle(Color.jarvisTextPrimary)
 
                     if let appName = widget.action.appName {
                         Text(appName)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .font(JarvisFont.captionMono)
+                            .foregroundStyle(Color.jarvisTextDim)
                     }
                 }
 
@@ -215,20 +215,20 @@ struct AppLaunchWidgetView: View {
 
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(hudGreen)
+                        .fill(accentColor)
                         .frame(width: 6, height: 6)
                         .opacity(isHovered ? 1.0 : 0.6)
 
                     Text("LAUNCH")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(hudGreen.opacity(isHovered ? 1.0 : 0.6))
+                        .font(JarvisFont.tag)
+                        .foregroundStyle(accentColor.opacity(isHovered ? 1.0 : 0.6))
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(widgetBackground(color: hudGreen, isHovered: isHovered))
-            .overlay(widgetBorder(color: hudGreen, isHovered: isHovered))
-            .cornerRadius(12)
+            .background(widgetBackground(color: accentColor, isHovered: isHovered))
+            .overlay(widgetBorder(color: accentColor, isHovered: isHovered))
+            .cornerRadius(JarvisRadius.large)
             .scaleEffect(isPressed ? 0.98 : 1.0)
         }
         .buttonStyle(.plain)
@@ -244,12 +244,12 @@ struct ImageWidgetView: View {
     @State private var isExpanded = false
     @State private var loadedImage: NSImage?
 
-    private let hudPurple = Color(red: 0.7, green: 0.4, blue: 1.0)
+    private let accentColor = Color.jarvisPurple
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: JarvisSpacing.sm) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: JarvisRadius.large)
                     .fill(Color.black.opacity(0.3))
                     .frame(height: isExpanded ? 300 : 150)
 
@@ -259,13 +259,13 @@ struct ImageWidgetView: View {
                         .aspectRatio(contentMode: isExpanded ? .fit : .fill)
                         .frame(height: isExpanded ? 300 : 150)
                         .clipped()
-                        .cornerRadius(12)
+                        .cornerRadius(JarvisRadius.large)
                 } else {
                     ProgressView()
                         .scaleEffect(0.8)
                 }
             }
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(hudPurple.opacity(0.3), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: JarvisRadius.large).stroke(accentColor.opacity(0.3), lineWidth: 1))
             .onTapGesture {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     isExpanded.toggle()
@@ -275,8 +275,8 @@ struct ImageWidgetView: View {
             HStack {
                 if let alt = widget.action.imageAlt {
                     Text(alt)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .font(JarvisFont.caption)
+                        .foregroundStyle(Color.jarvisTextSecondary)
                 }
                 Spacer()
                 Button(action: { withAnimation { isExpanded.toggle() } }) {
@@ -284,20 +284,20 @@ struct ImageWidgetView: View {
                         Image(systemName: isExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 10))
                         Text(isExpanded ? "Collapse" : "Expand")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(JarvisFont.captionMono)
                     }
-                    .foregroundStyle(hudPurple)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(hudPurple.opacity(0.15))
-                    .cornerRadius(6)
+                    .foregroundStyle(accentColor)
+                    .padding(.horizontal, JarvisSpacing.sm)
+                    .padding(.vertical, JarvisSpacing.xs)
+                    .background(accentColor.opacity(0.15))
+                    .cornerRadius(JarvisRadius.small)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(0.2)))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(hudPurple.opacity(0.2), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: JarvisRadius.card).fill(Color.jarvisSurfaceDark))
+        .overlay(RoundedRectangle(cornerRadius: JarvisRadius.card).stroke(accentColor.opacity(0.2), lineWidth: 1))
         .onAppear { loadImage() }
     }
 
@@ -323,41 +323,41 @@ struct FilePreviewWidgetView: View {
     @Binding var isHovered: Bool
     @Binding var isPressed: Bool
 
-    private let hudAmber = Color(red: 1.0, green: 0.8, blue: 0.0)
+    private let accentColor = Color.jarvisAmber
 
     var body: some View {
         Button(action: {
             WidgetActionHandler.shared.execute(widget: widget)
         }) {
-            HStack(spacing: 12) {
+            HStack(spacing: JarvisSpacing.md) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(hudAmber.opacity(0.15))
+                    RoundedRectangle(cornerRadius: JarvisRadius.medium)
+                        .fill(accentColor.opacity(0.15))
                         .frame(width: 40, height: 48)
 
                     VStack(spacing: 2) {
                         Image(systemName: fileIcon)
                             .font(.system(size: 18))
-                            .foregroundStyle(hudAmber)
+                            .foregroundStyle(accentColor)
 
                         if let ext = widget.action.fileType {
                             Text(ext.uppercased())
-                                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                                .foregroundStyle(hudAmber.opacity(0.8))
+                                .font(JarvisFont.tag)
+                                .foregroundStyle(accentColor.opacity(0.8))
                         }
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: JarvisSpacing.xs) {
                     Text(widget.action.fileName ?? widget.label)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white)
+                        .font(JarvisFont.body)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                         .lineLimit(1)
 
                     if let path = widget.action.filePath {
                         Text(shortenPath(path))
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.4))
+                            .font(JarvisFont.captionMono)
+                            .foregroundStyle(Color.jarvisTextDim)
                             .lineLimit(1)
                     }
                 }
@@ -368,15 +368,15 @@ struct FilePreviewWidgetView: View {
                     Image(systemName: "eye")
                         .font(.system(size: 12))
                     Text("PREVIEW")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .font(JarvisFont.tag)
                 }
-                .foregroundStyle(hudAmber.opacity(isHovered ? 1.0 : 0.6))
+                .foregroundStyle(accentColor.opacity(isHovered ? 1.0 : 0.6))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(widgetBackground(color: hudAmber, isHovered: isHovered))
-            .overlay(widgetBorder(color: hudAmber, isHovered: isHovered))
-            .cornerRadius(12)
+            .background(widgetBackground(color: accentColor, isHovered: isHovered))
+            .overlay(widgetBorder(color: accentColor, isHovered: isHovered))
+            .cornerRadius(JarvisRadius.large)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -410,19 +410,19 @@ struct CodeBlockWidgetView: View {
     let widget: ChatWidgetData
     @Binding var showCopiedFeedback: Bool
 
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+    private let accentColor = Color.jarvisCyan
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 if let lang = widget.action.language {
                     Text(lang.uppercased())
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(hudCyan)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(hudCyan.opacity(0.15))
-                        .cornerRadius(4)
+                        .font(JarvisFont.tag)
+                        .foregroundStyle(accentColor)
+                        .padding(.horizontal, JarvisSpacing.sm)
+                        .padding(.vertical, JarvisSpacing.xs)
+                        .background(accentColor.opacity(0.15))
+                        .cornerRadius(JarvisRadius.small)
                 }
 
                 Spacer()
@@ -440,11 +440,11 @@ struct CodeBlockWidgetView: View {
                         Text(showCopiedFeedback ? "Copied!" : "Copy")
                             .font(.system(size: 10, weight: .medium))
                     }
-                    .foregroundStyle(showCopiedFeedback ? .green : hudCyan)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background((showCopiedFeedback ? Color.green : hudCyan).opacity(0.15))
-                    .cornerRadius(4)
+                    .foregroundStyle(showCopiedFeedback ? Color.jarvisGreen : accentColor)
+                    .padding(.horizontal, JarvisSpacing.sm)
+                    .padding(.vertical, JarvisSpacing.xs)
+                    .background((showCopiedFeedback ? Color.jarvisGreen : accentColor).opacity(0.15))
+                    .cornerRadius(JarvisRadius.small)
                 }
                 .buttonStyle(.plain)
             }
@@ -454,15 +454,15 @@ struct CodeBlockWidgetView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(widget.action.code ?? "")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .padding(12)
+                    .font(JarvisFont.code)
+                    .foregroundStyle(Color.jarvisTextPrimary.opacity(0.9))
+                    .padding(JarvisSpacing.md)
             }
             .frame(maxHeight: 200)
         }
-        .background(Color(white: 0.1))
-        .cornerRadius(10)
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(hudCyan.opacity(0.2), lineWidth: 1))
+        .background(Color.jarvisSurfaceDeep)
+        .cornerRadius(JarvisRadius.large)
+        .overlay(RoundedRectangle(cornerRadius: JarvisRadius.large).stroke(accentColor.opacity(0.2), lineWidth: 1))
     }
 }
 
@@ -475,28 +475,28 @@ struct ConfirmationWidgetView: View {
     @State private var confirmHovered = false
     @State private var cancelHovered = false
 
-    private let hudGreen = Color(red: 0.0, green: 1.0, blue: 0.6)
-    private let hudRed = Color(red: 1.0, green: 0.4, blue: 0.4)
+    private let confirmColor = Color.jarvisGreen
+    private let cancelColor = Color.jarvisRed
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: JarvisSpacing.md) {
             Text(widget.label)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white)
+                .font(JarvisFont.body)
+                .foregroundStyle(Color.jarvisTextPrimary)
 
-            HStack(spacing: 12) {
+            HStack(spacing: JarvisSpacing.md) {
                 Button(action: { onConfirm?() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark")
                             .font(.system(size: 11, weight: .semibold))
                         Text(widget.action.confirmAction ?? "Confirm")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(JarvisFont.label)
                     }
-                    .foregroundStyle(confirmHovered ? .black : hudGreen)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(confirmHovered ? hudGreen : hudGreen.opacity(0.15)))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(hudGreen.opacity(0.5), lineWidth: 1))
+                    .foregroundStyle(confirmHovered ? .black : confirmColor)
+                    .padding(.horizontal, JarvisSpacing.lg)
+                    .padding(.vertical, JarvisSpacing.sm)
+                    .background(RoundedRectangle(cornerRadius: JarvisRadius.medium).fill(confirmHovered ? confirmColor : confirmColor.opacity(0.15)))
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(confirmColor.opacity(0.5), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in
@@ -508,13 +508,13 @@ struct ConfirmationWidgetView: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 11, weight: .semibold))
                         Text(widget.action.cancelAction ?? "Cancel")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(JarvisFont.label)
                     }
-                    .foregroundStyle(cancelHovered ? .white : hudRed.opacity(0.8))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(cancelHovered ? hudRed.opacity(0.3) : Color.clear))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(hudRed.opacity(0.3), lineWidth: 1))
+                    .foregroundStyle(cancelHovered ? Color.jarvisTextPrimary : cancelColor.opacity(0.8))
+                    .padding(.horizontal, JarvisSpacing.lg)
+                    .padding(.vertical, JarvisSpacing.sm)
+                    .background(RoundedRectangle(cornerRadius: JarvisRadius.medium).fill(cancelHovered ? cancelColor.opacity(0.3) : Color.clear))
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(cancelColor.opacity(0.3), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in
@@ -523,8 +523,8 @@ struct ConfirmationWidgetView: View {
             }
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.3)))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: JarvisRadius.large).fill(Color.jarvisSurfaceDark))
+        .overlay(RoundedRectangle(cornerRadius: JarvisRadius.large).stroke(Color.jarvisBorder, lineWidth: 1))
     }
 }
 
@@ -534,33 +534,33 @@ struct QuickActionWidgetView: View {
     @Binding var isHovered: Bool
     @Binding var isPressed: Bool
 
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+    private let accentColor = Color.jarvisCyan
 
     var body: some View {
         Button(action: {
             WidgetActionHandler.shared.execute(widget: widget)
         }) {
-            HStack(spacing: 8) {
+            HStack(spacing: JarvisSpacing.sm) {
                 if let icon = widget.icon {
                     Image(systemName: icon)
                         .font(.system(size: 12, weight: .semibold))
                 }
 
                 Text(widget.label)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(JarvisFont.label)
 
                 if let subtitle = widget.subtitle {
                     Spacer()
                     Text(subtitle)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .font(JarvisFont.captionMono)
+                        .foregroundStyle(Color.jarvisTextDim)
                 }
             }
-            .foregroundStyle(isHovered ? .black : hudCyan)
+            .foregroundStyle(isHovered ? .black : accentColor)
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 8).fill(isHovered ? hudCyan : hudCyan.opacity(0.15)))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(hudCyan.opacity(0.5), lineWidth: 1))
+            .padding(.vertical, JarvisSpacing.sm)
+            .background(RoundedRectangle(cornerRadius: JarvisRadius.medium).fill(isHovered ? accentColor : accentColor.opacity(0.15)))
+            .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(accentColor.opacity(0.5), lineWidth: 1))
             .scaleEffect(isPressed ? 0.97 : 1.0)
         }
         .buttonStyle(.plain)
@@ -585,7 +585,7 @@ struct ChatWidgetsContainer: View {
 
 // MARK: - Helper Views
 private func widgetBackground(color: Color, isHovered: Bool) -> some View {
-    RoundedRectangle(cornerRadius: 12)
+    RoundedRectangle(cornerRadius: JarvisRadius.large)
         .fill(
             LinearGradient(
                 colors: [
@@ -600,7 +600,7 @@ private func widgetBackground(color: Color, isHovered: Bool) -> some View {
 }
 
 private func widgetBorder(color: Color, isHovered: Bool) -> some View {
-    RoundedRectangle(cornerRadius: 12)
+    RoundedRectangle(cornerRadius: JarvisRadius.large)
         .stroke(
             LinearGradient(
                 colors: [
