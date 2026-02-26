@@ -73,7 +73,7 @@ pub async fn authenticate(
         .map(|s| serde_json::from_str::<GoogleToken>(s)
             .map_err(|e| format!("Failed to parse token.json: {}", e)))
         .transpose()?
-        .unwrap_or_else(|| GoogleToken {
+        .unwrap_or(GoogleToken {
             token: None,
             refresh_token: None,
             token_uri: None,
@@ -86,11 +86,11 @@ pub async fn authenticate(
         });
 
     // --- 1b. Check existing access token ---
-    if let Some(access_token) = token.token.clone().filter(|t| !t.is_empty()) {
-        if !is_token_expired(&token) {
-            println!("✅ Google token is valid.");
-            return Ok(access_token);
-        }
+    if let Some(access_token) = token.token.clone().filter(|t| !t.is_empty())
+        && !is_token_expired(&token)
+    {
+        println!("✅ Google token is valid.");
+        return Ok(access_token);
     }
 
     println!("🔄 Google token is expired or missing. Attempting refresh…");
@@ -169,14 +169,14 @@ async fn resolve_client_creds(
     credentials_path: &str,
 ) -> Result<(String, String, String), String> {
     // Prefer values embedded in token.json (Python writes them there)
-    if let (Some(id), Some(secret)) = (token.client_id.clone(), token.client_secret.clone()) {
-        if !id.is_empty() && !secret.is_empty() {
-            let uri = token
-                .token_uri
-                .clone()
-                .unwrap_or_else(|| "https://oauth2.googleapis.com/token".to_string());
-            return Ok((id, secret, uri));
-        }
+    if let (Some(id), Some(secret)) = (token.client_id.clone(), token.client_secret.clone())
+        && !id.is_empty() && !secret.is_empty()
+    {
+        let uri = token
+            .token_uri
+            .clone()
+            .unwrap_or_else(|| "https://oauth2.googleapis.com/token".to_string());
+        return Ok((id, secret, uri));
     }
 
     // Fall back to credentials.json
