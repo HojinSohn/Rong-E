@@ -1,0 +1,58 @@
+name: Rust CI
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'agent_server/**'
+      - '.github/workflows/rust.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent_server
+
+      - name: Build
+        working-directory: agent_server
+        run: cargo build --release
+
+      - name: Run tests
+        working-directory: agent_server
+        run: cargo test
+
+  clippy:
+    name: Clippy lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent_server
+
+      - name: Clippy
+        working-directory: agent_server
+        run: cargo clippy -- -D warnings
