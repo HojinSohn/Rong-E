@@ -520,10 +520,7 @@ async fn handle_config(
 
         "get_memory" => {
             let memory_path = crate::tools::default_memory_path();
-            let content = match tokio::fs::read_to_string(&memory_path).await {
-                Ok(c) => c,
-                Err(_) => String::new(),
-            };
+            let content = tokio::fs::read_to_string(&memory_path).await.unwrap_or_default();
             let _ = sender
                 .send(Message::Text(
                     json!({"type": "memory_content", "content": content}).to_string(),
@@ -691,16 +688,16 @@ async fn handle_chat(
     let user_name = data["user_name"].as_str().map(|s| s.to_string());
 
     // Ollama doesn't need an API key; others do
-    if provider != "ollama" {
-        if api_key.as_ref().map_or(true, |k| k.is_empty()) {
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "response", "content": {"text": "No API key configured. Please set your API key in Settings.", "images": [], "widgets": []}})
-                        .to_string(),
-                ))
-                .await;
-            return;
-        }
+    if provider != "ollama"
+        && api_key.as_ref().is_none_or(|k| k.is_empty())
+    {
+        let _ = sender
+            .send(Message::Text(
+                json!({"type": "response", "content": {"text": "No API key configured. Please set your API key in Settings.", "images": [], "widgets": []}})
+                    .to_string(),
+            ))
+            .await;
+        return;
     }
     
     // Channel for tool-call events emitted during LLM execution

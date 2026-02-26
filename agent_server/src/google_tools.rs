@@ -73,31 +73,29 @@ fn decode_gmail_body(data: &str) -> String {
 /// Recursively extract plain text from a Gmail message payload (handles multipart).
 fn extract_text(payload: &serde_json::Value) -> String {
     // Direct body data
-    if let Some(data) = payload["body"]["data"].as_str() {
-        if !data.is_empty() {
-            return decode_gmail_body(data);
-        }
+    if let Some(data) = payload["body"]["data"].as_str()
+        && !data.is_empty()
+    {
+        return decode_gmail_body(data);
     }
 
     if let Some(parts) = payload["parts"].as_array() {
         // Prefer text/plain
         for part in parts {
-            if part["mimeType"].as_str() == Some("text/plain") {
-                if let Some(data) = part["body"]["data"].as_str() {
-                    if !data.is_empty() {
-                        return decode_gmail_body(data);
-                    }
-                }
+            if part["mimeType"].as_str() == Some("text/plain")
+                && let Some(data) = part["body"]["data"].as_str()
+                && !data.is_empty()
+            {
+                return decode_gmail_body(data);
             }
         }
         // Fall back to text/html
         for part in parts {
-            if part["mimeType"].as_str() == Some("text/html") {
-                if let Some(data) = part["body"]["data"].as_str() {
-                    if !data.is_empty() {
-                        return format!("[HTML] {}", decode_gmail_body(data));
-                    }
-                }
+            if part["mimeType"].as_str() == Some("text/html")
+                && let Some(data) = part["body"]["data"].as_str()
+                && !data.is_empty()
+            {
+                return format!("[HTML] {}", decode_gmail_body(data));
             }
         }
         // Recurse into nested multipart

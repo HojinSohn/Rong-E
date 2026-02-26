@@ -135,6 +135,17 @@ struct MainView: View {
                     connectionFailed: socketClient.connectionFailed,
                     onRetry: {
                         socketClient.retryConnection()
+                    },
+                    onRestart: {
+                        serverManager.stopServer()
+                        socketClient.disconnect()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            serverManager.startServer()
+                            setUpConnection()
+                        }
+                    },
+                    onQuit: {
+                        NSApplication.shared.terminate(nil)
                     }
                 )
             }
@@ -2121,6 +2132,8 @@ struct AgentLoadingView: View {
     let isConnected: Bool
     let connectionFailed: Bool
     var onRetry: (() -> Void)?
+    var onRestart: (() -> Void)?
+    var onQuit: (() -> Void)?
 
     // MARK: - Computed Styles
 
@@ -2238,10 +2251,51 @@ struct AgentLoadingView: View {
                         .padding(.top, 8)
                     }
                 }
+
+                // Restart / Quit controls
+                HStack(spacing: 12) {
+                    Button(action: { onRestart?() }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 9, weight: .semibold))
+                            Text("RESTART")
+                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                .tracking(1)
+                        }
+                        .foregroundStyle(.white.opacity(0.75))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(
+                            Capsule()
+                                .fill(Color.white.opacity(0.07))
+                                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { onQuit?() }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "power")
+                                .font(.system(size: 9, weight: .semibold))
+                            Text("QUIT")
+                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                .tracking(1)
+                        }
+                        .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4).opacity(0.85))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(
+                            Capsule()
+                                .fill(Color(red: 1.0, green: 0.3, blue: 0.3).opacity(0.1))
+                                .overlay(Capsule().stroke(Color(red: 1.0, green: 0.3, blue: 0.3).opacity(0.25), lineWidth: 0.5))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.vertical, 30)
         }
-        .frame(width: 240, height: 300)
+        .frame(width: 240, height: 320)
     }
 }
 

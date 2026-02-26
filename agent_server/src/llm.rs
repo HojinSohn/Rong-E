@@ -17,6 +17,7 @@ use rig::client::ProviderClient;
 const SYSTEM_PROMPT_TEMPLATE: &str =
     include_str!("../prompts/system_prompt.txt");
 
+#[allow(clippy::too_many_arguments)]
 pub async fn call_llm(
     provider: String,
     api_key: String,
