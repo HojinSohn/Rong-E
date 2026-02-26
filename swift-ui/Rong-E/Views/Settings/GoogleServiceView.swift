@@ -21,8 +21,8 @@ struct GoogleServiceView: View {
         case disconnected, connecting, connected
         var color: Color {
             switch self {
-            case .disconnected: return .red
-            case .connecting: return .yellow
+            case .disconnected: return .jarvisRed
+            case .connecting: return .jarvisAmber
             case .connected: return .jarvisBlue
             }
         }
@@ -67,7 +67,7 @@ struct GoogleServiceView: View {
                     HStack(spacing: 6) {
                         Text("STATUS:")
                             .font(.system(size: 8, design: .monospaced))
-                            .foregroundColor(.gray)
+                            .foregroundColor(.jarvisTextDim)
                         Text(connectionStatus.label)
                             .font(.system(size: 10, design: .monospaced))
                             .fontWeight(.bold)
@@ -158,17 +158,17 @@ struct GoogleServiceView: View {
                     HStack {
                         Image(systemName: "doc.plaintext.fill")
                             .font(.title2)
-                            .foregroundColor(!googleAuthManager.credentialsFileExists ? .gray : .jarvisBlue)
+                            .foregroundColor(!googleAuthManager.credentialsFileExists ? .jarvisTextDim : .jarvisBlue)
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text(googleAuthManager.credentialsFileExists ? "CREDENTIALS LOADED" : "LOAD CREDENTIALS")
                                 .font(.system(size: 11, design: .monospaced))
                                 .fontWeight(.bold)
-                                .foregroundColor(.white)
+                                .foregroundColor(.jarvisTextPrimary)
                             
                             Text(googleAuthManager.credentialsFileExists ? currentSelectedFileName : "SELECT .JSON FILE")
                                 .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(.gray)
+                                .foregroundColor(.jarvisTextDim)
                         }
                         Spacer()
                     }
@@ -204,9 +204,9 @@ struct GoogleServiceView: View {
                                     .fontWeight(.bold)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 8)
-                                    .background(Color.orange.opacity(0.15))
-                                    .foregroundColor(.orange)
-                                    .overlay(Rectangle().stroke(Color.orange.opacity(0.6), lineWidth: 1))
+                                    .background(Color.jarvisOrange.opacity(0.15))
+                                    .foregroundColor(.jarvisOrange)
+                                    .overlay(Rectangle().stroke(Color.jarvisOrange.opacity(0.6), lineWidth: 1))
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(BorderlessButtonStyle())
@@ -220,9 +220,9 @@ struct GoogleServiceView: View {
                             .fontWeight(.bold)
                             .frame(maxHeight: .infinity)
                             .padding(.horizontal, 15)
-                            .background(Color.red.opacity(0.2))
-                            .foregroundColor(.red)
-                            .overlay(Rectangle().stroke(Color.red, lineWidth: 1))
+                            .background(Color.jarvisRed.opacity(0.2))
+                            .foregroundColor(.jarvisRed)
+                            .overlay(Rectangle().stroke(Color.jarvisRed, lineWidth: 1))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(BorderlessButtonStyle())
@@ -263,16 +263,16 @@ struct GoogleServiceView: View {
             if connectionStatus != .connected {
                 Text("WARNING: AUTHENTICATION REQUIRED FOR DATA ACCESS.")
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.red.opacity(0.8))
+                    .foregroundColor(.jarvisRed.opacity(0.8))
                     .padding(.top, 10)
             } else if sheetManager.configs.isEmpty {
                 VStack(spacing: 5) {
                     Text("NO DATA STREAMS FOUND")
                         .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.gray)
+                        .foregroundColor(.jarvisTextDim)
                     Text("INITIATE NEW RESOURCE CONNECTION")
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(.gray.opacity(0.5))
+                        .foregroundColor(.jarvisTextDim.opacity(0.5))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 30)
@@ -303,12 +303,12 @@ struct ResourceRow: View {
             // Icon Block
             ZStack {
                 Rectangle()
-                    .fill(Color.green.opacity(0.1))
+                    .fill(Color.jarvisGreen.opacity(0.1))
                     .frame(width: 40, height: 40)
-                    .border(Color.green.opacity(0.3), width: 1)
+                    .border(Color.jarvisGreen.opacity(0.3), width: 1)
 
                 Image(systemName: "tablecells.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(.jarvisGreen)
                     .font(.system(size: 16))
             }
 
@@ -317,15 +317,15 @@ struct ResourceRow: View {
                     Text(sheet.alias.uppercased())
                         .font(.system(size: 12, design: .monospaced))
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundColor(.jarvisTextPrimary)
 
                     Text("// \(sheet.selectedTab.uppercased())")
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.green.opacity(0.7))
+                        .foregroundColor(.jarvisGreen.opacity(0.7))
                 }
                 Text(sheet.description.uppercased())
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(.gray)
+                    .foregroundColor(.jarvisTextDim)
                     .lineLimit(1)
             }
             Spacer()
@@ -334,7 +334,7 @@ struct ResourceRow: View {
             if let onDelete = onDelete {
                 Button(action: onDelete) {
                     Image(systemName: "trash")
-                        .foregroundColor(.red.opacity(0.7))
+                        .foregroundColor(.jarvisRed.opacity(0.7))
                         .font(.system(size: 12))
                 }
                 .buttonStyle(BorderlessButtonStyle())
@@ -342,9 +342,9 @@ struct ResourceRow: View {
 
             // Status light
             Circle()
-                .fill(Color.green)
+                .fill(Color.jarvisGreen)
                 .frame(width: 4, height: 4)
-                .shadow(color: .green, radius: 4)
+                .shadow(color: .jarvisGreen, radius: 4)
         }
         .padding(8)
         .background(Color.black.opacity(0.3))
@@ -406,7 +406,7 @@ struct AddSheetModal: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("TARGET URL (G-SHEETS)")
                                 .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.gray)
+                                .foregroundColor(.jarvisTextDim)
 
                             HStack {
                                 JarvisTextField(text: $urlInput)
@@ -417,9 +417,9 @@ struct AddSheetModal: View {
                                         .fontWeight(.bold)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 10)
-                                        .background(urlInput.isEmpty ? Color.gray.opacity(0.2) : Color.jarvisBlue.opacity(0.2))
-                                        .foregroundColor(urlInput.isEmpty ? .gray : .jarvisBlue)
-                                        .overlay(Rectangle().stroke(urlInput.isEmpty ? Color.gray : Color.jarvisBlue, lineWidth: 1))
+                                        .background(urlInput.isEmpty ? Color.jarvisTextDim.opacity(0.2) : Color.jarvisBlue.opacity(0.2))
+                                        .foregroundColor(urlInput.isEmpty ? .jarvisTextDim : .jarvisBlue)
+                                        .overlay(Rectangle().stroke(urlInput.isEmpty ? Color.jarvisTextDim : Color.jarvisBlue, lineWidth: 1))
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(BorderlessButtonStyle())
@@ -443,7 +443,7 @@ struct AddSheetModal: View {
                         if let error = errorMessage {
                             Text("ERROR: \(error.uppercased())")
                                 .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.red)
+                                .foregroundColor(.jarvisRed)
                         }
 
                         // 2. Details (Hidden until verified)
@@ -455,11 +455,11 @@ struct AddSheetModal: View {
                                     HStack {
                                         Text("LINKED TO:")
                                             .font(.system(size: 10, design: .monospaced))
-                                            .foregroundColor(.gray)
+                                            .foregroundColor(.jarvisTextDim)
                                         Text(title.uppercased())
                                             .font(.system(size: 10, design: .monospaced))
                                             .fontWeight(.bold)
-                                            .foregroundColor(.green)
+                                            .foregroundColor(.jarvisGreen)
                                     }
                                 }
 
@@ -467,7 +467,7 @@ struct AddSheetModal: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("SELECT DATA WORKSHEET (\(foundTabs.count) FOUND)")
                                         .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(.gray)
+                                        .foregroundColor(.jarvisTextDim)
 
                                     Picker("", selection: $selectedTab) {
                                         ForEach(foundTabs, id: \.self) { tab in
@@ -485,7 +485,7 @@ struct AddSheetModal: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("SYSTEM ALIAS")
                                         .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(.gray)
+                                        .foregroundColor(.jarvisTextDim)
                                     JarvisTextField(text: $aliasInput)
                                 }
 
@@ -493,7 +493,7 @@ struct AddSheetModal: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("CONTEXTUAL USAGE")
                                         .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(.gray)
+                                        .foregroundColor(.jarvisTextDim)
                                     JarvisTextField(text: $descriptionInput)
                                 }
                             }
@@ -507,7 +507,7 @@ struct AddSheetModal: View {
                 HStack {
                     Button("CANCEL") { isPresented = false }
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.gray)
+                        .foregroundColor(.jarvisTextDim)
                         .buttonStyle(BorderlessButtonStyle())
                         .keyboardShortcut(.cancelAction)
 
@@ -529,9 +529,9 @@ struct AddSheetModal: View {
                             .fontWeight(.bold)
                             .padding(.horizontal, 20)
                             .padding(.vertical, 10)
-                            .background((extractedID == nil || aliasInput.isEmpty) ? Color.gray.opacity(0.2) : Color.jarvisBlue.opacity(0.2))
-                            .foregroundColor((extractedID == nil || aliasInput.isEmpty) ? .gray : .jarvisBlue)
-                            .overlay(Rectangle().stroke((extractedID == nil || aliasInput.isEmpty) ? Color.gray : Color.jarvisBlue, lineWidth: 1))
+                            .background((extractedID == nil || aliasInput.isEmpty) ? Color.jarvisTextDim.opacity(0.2) : Color.jarvisBlue.opacity(0.2))
+                            .foregroundColor((extractedID == nil || aliasInput.isEmpty) ? .jarvisTextDim : .jarvisBlue)
+                            .overlay(Rectangle().stroke((extractedID == nil || aliasInput.isEmpty) ? Color.jarvisTextDim : Color.jarvisBlue, lineWidth: 1))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(BorderlessButtonStyle())

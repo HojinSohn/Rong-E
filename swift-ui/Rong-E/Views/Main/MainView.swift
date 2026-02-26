@@ -173,17 +173,17 @@ struct MainView: View {
 
                 // Time Display (Dynamic)
                 Text(Date(), style: .time)
-                    .font(.system(size: 42, weight: .semibold, design: .default))
-                    .foregroundStyle(.white)
+                    .font(JarvisFont.display)
+                    .foregroundStyle(Color.jarvisTextPrimary)
                     .shadow(color: .white, radius: 10)
 
                 Text("Good \(getGreeting()), \(appContext.userName.components(separatedBy: " ").first ?? appContext.userName)!") // Good Morning/Afternoon/Evening Greeting
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(Color.jarvisTextSecondary)
 
                 Spacer()
             }
-            .frame(width: 800, height: 520)
+            .frame(width: JarvisDimension.expandedWidth, height: JarvisDimension.expandedHeight)
             .zIndex(1)
             .opacity(minimizedMode ? 0 : 1)
             // Adjust offset to keep it visually balanced with the new smaller size
@@ -242,23 +242,23 @@ struct MainView: View {
             }
             // MARK: - Frame Animation Logic
             .frame(
-                width: minimizedMode ? 80 : 800,
-                height: minimizedMode ? 80 : 520
+                width: minimizedMode ? JarvisDimension.minimizedSize : JarvisDimension.expandedWidth,
+                height: minimizedMode ? JarvisDimension.minimizedSize : JarvisDimension.expandedHeight
             )
             .background(
                 ZStack {
                     if !minimizedMode {
                         // 1. Base Tint (Very Low Opacity for "See-Through")
-                        RoundedRectangle(cornerRadius: 40)
-                            .fill(Color.black.opacity(0.5))
+                        RoundedRectangle(cornerRadius: JarvisRadius.pill)
+                            .fill(Color.jarvisSurface)
 
                         // 2. High-Tech Border (Keeps layout defined without solid background)
-                        RoundedRectangle(cornerRadius: 40)
+                        RoundedRectangle(cornerRadius: JarvisRadius.pill)
                             .strokeBorder(
                                 LinearGradient(
                                     colors: [
-                                        appContext.currentMode.isScreenshotEnabled ? Color.cyan.opacity(0.8) : Color.cyan.opacity(0.4),
-                                        Color.cyan.opacity(0.05)
+                                        appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.8) : Color.jarvisCyan.opacity(0.4),
+                                        Color.jarvisCyan.opacity(0.05)
                                     ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
@@ -267,14 +267,14 @@ struct MainView: View {
                             )
                     } else {
                         // Minimized Mode Background
-                        RoundedRectangle(cornerRadius: 40) // Half of 80 to make a perfect circle
-                            .fill(Color.black.opacity(0.6))
-                            .shadow(color: Color.cyan.opacity(0.4), radius: 10)
+                        RoundedRectangle(cornerRadius: JarvisRadius.pill)
+                            .fill(Color.jarvisSurfaceDark)
+                            .shadow(color: Color.jarvisCyan.opacity(0.4), radius: 10)
                     }
                 }
             )
-            // Corner radius becomes 40 (half of 80) to make a perfect circle
-            .cornerRadius(40)
+            // Corner radius becomes pill to make a perfect circle
+            .cornerRadius(JarvisRadius.pill)
 
             // Restore on Tap
             .onTapGesture {
@@ -572,7 +572,6 @@ struct MinimizedControlsView: View {
 
     // Configuration
     private let radius: CGFloat = 70
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
 
     var body: some View {
         ZStack {
@@ -582,7 +581,7 @@ struct MinimizedControlsView: View {
                 action: toggleMessages,
                 angle: -45,
                 radius: radius,
-                hudCyan: hudCyan
+                hudCyan: .jarvisCyan
             )
 
             // Center: Minimize (0°)
@@ -591,7 +590,7 @@ struct MinimizedControlsView: View {
                 action: toggleMinimized,
                 angle: 0,
                 radius: radius,
-                hudCyan: hudCyan
+                hudCyan: .jarvisCyan
             )
 
             // Right: Quit (+45°)
@@ -600,7 +599,7 @@ struct MinimizedControlsView: View {
                 action: { NSApplication.shared.terminate(nil) },
                 angle: 45,
                 radius: radius,
-                hudCyan: Color.red
+                hudCyan: .jarvisRed
             )
         }
         .frame(height: 100)
@@ -633,12 +632,12 @@ struct OrbiterButton: View {
                 ZStack {
                     // Background
                     Circle()
-                        .fill(Color.black.opacity(0.8))
+                        .fill(Color.jarvisSurfaceDeep)
                     
                     // Stroke (Reacts to Hover)
                     Circle()
                         .stroke(
-                            isActive || isHovering ? hudCyan : Color.white.opacity(0.2),
+                            isActive || isHovering ? hudCyan : Color.jarvisTextDim,
                             lineWidth: isHovering ? 2 : 1
                         )
                     
@@ -685,17 +684,15 @@ struct LeftColumnView: View {
                 // Header
                 HStack {
                     Text("Reasoning Trace")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .textCase(.uppercase)
+                        .modifier(JarvisSectionHeader())
                     Spacer()
                     Image(systemName: "lines.measurement.horizontal")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.3))
+                        .foregroundStyle(Color.jarvisTextDim)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(Color.black.opacity(0.2))
+                .background(Color.jarvisSurfaceLight)
 
                 // Scrollable Content
                 ScrollViewReader { proxy in
@@ -722,18 +719,18 @@ struct LeftColumnView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity) // Fills remaining space
-            .background(Color.black.opacity(0.3))
-            .cornerRadius(16)
+            .background(Color.jarvisSurfaceLight)
+            .cornerRadius(JarvisRadius.card)
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(.white.opacity(0.05), lineWidth: 1)
+                RoundedRectangle(cornerRadius: JarvisRadius.card)
+                    .stroke(Color.jarvisBorder, lineWidth: 1)
             )
             
             // 2. Agent Environment (New Useful Widget)
             VStack(alignment: .leading, spacing: 10) {
                 Text("Environment")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .font(JarvisFont.captionMono)
+                    .foregroundStyle(Color.jarvisTextDim)
                     .textCase(.uppercase)
                 
                 // Model Info
@@ -741,62 +738,60 @@ struct LeftColumnView: View {
                     Image(systemName: "sparkles")
                         .foregroundStyle(.yellow)
                     Text(appContext.llmProvider.displayName)
-                        .foregroundStyle(.white.opacity(0.9))
+                        .foregroundStyle(Color.jarvisTextSecondary)
                     Spacer()
                     Text(appContext.llmModel)
-                        .font(.system(size: 8, weight: .bold))
-                        .padding(.horizontal, 4)
+                        .font(JarvisFont.tag)
+                        .padding(.horizontal, JarvisSpacing.xs)
                         .padding(.vertical, 2)
                         .background(Color.white.opacity(0.1))
-                        .cornerRadius(4)
+                        .cornerRadius(JarvisRadius.small)
                 }
                 .font(.caption)
                 
-                Divider().overlay(.white.opacity(0.1))
+                Divider().overlay(Color.jarvisBorder)
                 
                 // Active MCP Servers Count
                 HStack {
                     Image(systemName: "hammer.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.jarvisOrange)
                     Text("MCP Servers")
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(Color.jarvisTextSecondary)
                     Spacer()
                     Text("\(mcpConfigManager.connectedServerCount) Active")
-                        .foregroundStyle(mcpConfigManager.connectedServerCount > 0 ? .green : .gray)
+                        .foregroundStyle(mcpConfigManager.connectedServerCount > 0 ? Color.jarvisGreen : .gray)
                         .fontWeight(.medium)
                 }
                 .font(.caption)
             }
             .padding(14)
-            .background(Color.black.opacity(0.3))
-            .cornerRadius(16)
+            .background(Color.jarvisSurfaceLight)
+            .cornerRadius(JarvisRadius.card)
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(.white.opacity(0.05), lineWidth: 1)
+                RoundedRectangle(cornerRadius: JarvisRadius.card)
+                    .stroke(Color.jarvisBorder, lineWidth: 1)
             )
 
             // 3. Active Tools
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("Active Tools")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .textCase(.uppercase)
+                        .modifier(JarvisSectionHeader())
                     Spacer()
                     Text("\(appContext.activeTools.count)")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.cyan.opacity(0.7))
+                        .font(JarvisFont.captionMono)
+                        .foregroundStyle(Color.jarvisCyan.opacity(0.7))
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(Color.black.opacity(0.2))
+                .background(Color.jarvisSurfaceLight)
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         if appContext.activeTools.isEmpty {
                             Text("No tools loaded")
                                 .font(.system(size: 11))
-                                .foregroundStyle(.white.opacity(0.3))
+                                .foregroundStyle(Color.jarvisTextDim)
                                 .padding(.horizontal, 10)
                         } else {
                             // Group tools by source
@@ -809,18 +804,18 @@ struct LeftColumnView: View {
                             ForEach(sortedKeys, id: \.self) { source in
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(source == "base" ? "BASE" : source.uppercased())
-                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(source == "base" ? .cyan.opacity(0.5) : .orange.opacity(0.5))
-                                        .padding(.top, 4)
+                                        .font(JarvisFont.tag)
+                                        .foregroundStyle(source == "base" ? Color.jarvisCyan.opacity(0.5) : Color.jarvisOrange.opacity(0.5))
+                                        .padding(.top, JarvisSpacing.xs)
 
                                     ForEach(grouped[source] ?? [], id: \.name) { tool in
                                         HStack(spacing: 6) {
                                             Circle()
-                                                .fill(source == "base" ? Color.cyan : Color.orange)
+                                                .fill(source == "base" ? Color.jarvisCyan : Color.jarvisOrange)
                                                 .frame(width: 5, height: 5)
                                             Text(tool.name)
                                                 .font(.system(size: 11, design: .monospaced))
-                                                .foregroundStyle(.white.opacity(0.8))
+                                                .foregroundStyle(Color.jarvisTextSecondary)
                                         }
                                     }
                                 }
@@ -831,14 +826,14 @@ struct LeftColumnView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: 140)
-            .background(Color.black.opacity(0.3))
-            .cornerRadius(16)
+            .background(Color.jarvisSurfaceLight)
+            .cornerRadius(JarvisRadius.card)
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(.white.opacity(0.05), lineWidth: 1)
+                RoundedRectangle(cornerRadius: JarvisRadius.card)
+                    .stroke(Color.jarvisBorder, lineWidth: 1)
             )
         }
-        .frame(width: 240) // Slightly widened for better reading
+        .frame(width: JarvisDimension.leftColumnWidth) // Slightly widened for better reading
         .padding(.vertical, 12)
         .padding(.leading, 12)
         .onAppear {
@@ -906,7 +901,7 @@ struct ReasoningStepRow: View {
                 // Description
                 Text(step.description)
                     .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(Color.jarvisTextSecondary)
 
                 Spacer()
 
@@ -914,7 +909,7 @@ struct ReasoningStepRow: View {
                 if step.details != nil {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(Color.jarvisTextTertiary)
                 }
             }
             .contentShape(Rectangle())
@@ -928,12 +923,12 @@ struct ReasoningStepRow: View {
             if isExpanded, let details = step.details {
                 Text(details)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(Color.jarvisTextTertiary)
                     .padding(.leading, 20)
                     .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.white.opacity(0.05))
-                    .cornerRadius(8)
+                    .cornerRadius(JarvisRadius.medium)
             }
         }
     }
@@ -942,14 +937,14 @@ struct ReasoningStepRow: View {
     private func statusIcon(for status: ReasoningStep.StepStatus) -> some View {
         switch status {
         case .completed:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.caption)
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.jarvisGreen).font(.caption)
         case .active:
             ZStack {
-                Circle().stroke(Color.cyan, lineWidth: 2).frame(width: 10, height: 10)
-                Circle().fill(Color.cyan).frame(width: 4, height: 4)
+                Circle().stroke(Color.jarvisCyan, lineWidth: 2).frame(width: 10, height: 10)
+                Circle().fill(Color.jarvisCyan).frame(width: 4, height: 4)
             }
         case .pending:
-            Circle().stroke(Color.white.opacity(0.2), lineWidth: 1).frame(width: 10, height: 10)
+            Circle().stroke(Color.jarvisTextDim, lineWidth: 1).frame(width: 10, height: 10)
         }
     }
 }
@@ -958,8 +953,6 @@ struct ReasoningStepRow: View {
 struct ModeBarView: View {
     @Binding var fullChatViewMode: Bool
     @EnvironmentObject var appContext: AppContext
-
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
 
     var body: some View {
         HStack {
@@ -980,11 +973,11 @@ struct ModeBarView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text("\(appContext.currentMode.name.uppercased()) MODE")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .font(JarvisFont.monoSmall)
+                        .foregroundStyle(Color.jarvisTextTertiary)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 8))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(Color.jarvisTextDim)
                 }
             }
             .menuStyle(.borderlessButton)
@@ -999,28 +992,28 @@ struct ModeBarView: View {
                 HStack(spacing: 4) {
                     ZStack {
                         Rectangle()
-                            .stroke(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3), lineWidth: 0.8)
+                            .stroke(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextDim, lineWidth: 0.8)
                             .frame(width: 10, height: 10)
 
                         if appContext.currentMode.isScreenshotEnabled {
                             Rectangle()
-                                .fill(hudCyan)
+                                .fill(Color.jarvisCyan)
                                 .frame(width: 5, height: 5)
-                                .shadow(color: hudCyan, radius: 3)
+                                .shadow(color: Color.jarvisCyan, radius: 3)
                         }
                     }
 
                     Text(appContext.currentMode.isScreenshotEnabled ? "VISION: ON" : "VISION: OFF")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.5))
+                        .font(JarvisFont.tag)
+                        .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextTertiary)
 
                     Image(systemName: "viewfinder")
                         .font(.system(size: 8))
-                        .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3))
+                        .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextDim)
                 }
                 .padding(.vertical, 3)
                 .padding(.horizontal, 6)
-                .background(appContext.currentMode.isScreenshotEnabled ? hudCyan.opacity(0.1) : Color.clear)
+                .background(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.1) : Color.clear)
                 .cornerRadius(3)
             }
             .buttonStyle(.plain)
@@ -1032,13 +1025,13 @@ struct ModeBarView: View {
             }) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(hudCyan.opacity(0.5), lineWidth: 0.8)
+                        .stroke(Color.jarvisCyan.opacity(0.5), lineWidth: 0.8)
                         .background(Color.black.opacity(0.1))
                         .frame(width: 26, height: 26)
 
                     Image(systemName: fullChatViewMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(hudCyan)
+                        .foregroundStyle(Color.jarvisCyan)
                 }
             }
             .buttonStyle(.plain)
@@ -1078,8 +1071,8 @@ struct MainColumnView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeOut(duration: 0.35), value: fullChatViewMode)
-        .backgroundColor(Color.black.opacity(0.5))
-        .cornerRadius(24)
+        .backgroundColor(Color.jarvisSurface)
+        .cornerRadius(JarvisRadius.container)
     }
 }
 
@@ -1093,8 +1086,8 @@ struct InputAreaView: View {
     @State private var hasText: Bool = false
 
     // Aesthetic Constants
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
-    private let hudDark = Color.black.opacity(0.8)
+    private let hudCyan = Color.jarvisCyan
+    private let hudDark = Color.jarvisSurfaceDeep
 
     var body: some View {
         HStack(spacing: 16) {
@@ -1109,8 +1102,8 @@ struct InputAreaView: View {
 
                 TextField("COMMAND...", text: $localText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 14, weight: .medium, design: .monospaced)) // Tech font
-                    .foregroundStyle(.white)
+                    .font(JarvisFont.mono)
+                    .foregroundStyle(Color.jarvisTextPrimary)
                     .accentColor(hudCyan)
                     .submitLabel(.send)
                     .onSubmit {
@@ -1127,11 +1120,11 @@ struct InputAreaView: View {
             .background(
                 ZStack {
                     // 2. Dark Fill
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.black.opacity(0.6))
+                    RoundedRectangle(cornerRadius: JarvisRadius.large)
+                        .fill(Color.jarvisSurfaceDark)
 
                     // 3. Glowing Border
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: JarvisRadius.large)
                         .strokeBorder(
                             LinearGradient(
                                 colors: [hudCyan.opacity(0.6), hudCyan.opacity(0.1)],
@@ -1220,9 +1213,9 @@ struct RongERing: View {
     @State private var pulse = false
     @State private var rotate = false
     
-    // Define custom light blue colors
-    let lightBlueGlow = Color(red: 0.2, green: 0.85, blue: 1.0) // Cyan-ish
-    let deepBlue = Color(red: 0.0, green: 0.5, blue: 1.0)       // Standard Blue
+    // Use design system colors
+    let lightBlueGlow = Color.jarvisLightBlue
+    let deepBlue = Color.jarvisDeepBlue
     
     var body: some View {
         ZStack {
@@ -1342,7 +1335,7 @@ struct MessageListContent: View {
                                 Text(">> \(log)")
                                     .font(.caption2)
                                     .fontWeight(.bold)
-                                    .foregroundStyle(.cyan.opacity(0.7))
+                                    .foregroundStyle(Color.jarvisCyan.opacity(0.7))
                             }
                         }
                         .padding(.horizontal)
@@ -1377,7 +1370,7 @@ struct MessageListContent: View {
                 }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: JarvisRadius.card))
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy) {
@@ -1398,7 +1391,7 @@ struct MinimizedMessageView: View {
     @EnvironmentObject var appContext: AppContext
     
     // Theme Colors
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+    private let hudCyan = Color.jarvisCyan
     
     var body: some View {
         VStack(spacing: 0) { 
@@ -1411,8 +1404,8 @@ struct MinimizedMessageView: View {
                 
                 Text("RONG-E CHAT") 
                     .font(.system(size: 14, weight: .bold, design: .monospaced))
-                    .foregroundStyle(hudCyan)
-                    .shadow(color: hudCyan.opacity(0.5), radius: 5)
+                    .foregroundStyle(Color.jarvisCyan)
+                    .shadow(color: Color.jarvisCyan.opacity(0.5), radius: 5)
                 
                 Spacer()
 
@@ -1455,8 +1448,8 @@ struct MinimizedMessageView: View {
                 .background(Color.clear) // Clear background for messages
                 .cornerRadius(12)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: JarvisRadius.large)
+                        .stroke(Color.jarvisBorder, lineWidth: 0.5)
                 )
             
             // MARK: - Mode & Vision Controls
@@ -1477,11 +1470,11 @@ struct MinimizedMessageView: View {
                 } label: {
                     HStack(spacing: 3) {
                         Text("MODE: \(appContext.currentMode.name.uppercased())")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.5))
+                            .font(JarvisFont.label)
+                            .foregroundStyle(Color.jarvisTextTertiary)
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.system(size: 7))
-                            .foregroundStyle(Color.white.opacity(0.3))
+                            .foregroundStyle(Color.jarvisTextDim)
                     }
                 }
                 .menuStyle(.borderlessButton)
@@ -1497,29 +1490,29 @@ struct MinimizedMessageView: View {
                     HStack(spacing: 6) {
                         ZStack {
                             Rectangle()
-                                .stroke(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3), lineWidth: 1)
+                                .stroke(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextDim, lineWidth: 1)
                                 .frame(width: 12, height: 12)
                             
                             if appContext.currentMode.isScreenshotEnabled {
                                 Rectangle()
-                                    .fill(hudCyan)
+                                    .fill(Color.jarvisCyan)
                                     .frame(width: 6, height: 6)
-                                    .shadow(color: hudCyan, radius: 4)
+                                    .shadow(color: Color.jarvisCyan, radius: 4)
                             }
                         }
                         
                         Text(appContext.currentMode.isScreenshotEnabled ? "VISION: ON" : "VISION: OFF")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.5))
+                            .font(JarvisFont.captionMono)
+                            .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextTertiary)
                         
                         Image(systemName: "viewfinder")
                             .font(.system(size: 10))
-                            .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? hudCyan : Color.white.opacity(0.3))
+                            .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextDim)
                     }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 8)
-                    .background(appContext.currentMode.isScreenshotEnabled ? hudCyan.opacity(0.1) : Color.clear)
-                    .cornerRadius(4)
+                    .padding(.vertical, JarvisSpacing.xs)
+                    .padding(.horizontal, JarvisSpacing.sm)
+                    .background(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.1) : Color.clear)
+                    .cornerRadius(JarvisRadius.small)
                 }
                 .buttonStyle(.plain)
             }
@@ -1529,19 +1522,19 @@ struct MinimizedMessageView: View {
             // MARK: - Input Area
             InputAreaView(inputText: $inputText, onSubmit: onSubmit)
         }
-        .padding(16)
+        .padding(JarvisSpacing.lg)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(Color.black.opacity(0.6)) // Adjust opacity for desired transparency
+                RoundedRectangle(cornerRadius: JarvisRadius.container)
+                    .fill(Color.jarvisSurfaceDark)
                 
-                // 2. High-Tech Border (Keeps layout defined without solid background)
-                RoundedRectangle(cornerRadius: 24)
+                // 2. High-Tech Border
+                RoundedRectangle(cornerRadius: JarvisRadius.container)
                     .strokeBorder(
                         LinearGradient(
                             colors: [
-                                appContext.currentMode.isScreenshotEnabled ? hudCyan.opacity(0.8) : hudCyan.opacity(0.4),
-                                hudCyan.opacity(0.05)
+                                appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.8) : Color.jarvisCyan.opacity(0.4),
+                                Color.jarvisCyan.opacity(0.05)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -1593,8 +1586,8 @@ struct MessageView: View {
                                 Text(">> \(log)")
                                     .font(.caption2)
                                     .fontWeight(.bold)
-                                    .foregroundStyle(.cyan.opacity(0.7))
-                                    .shadow(color: .cyan, radius: 2)
+                                    .foregroundStyle(Color.jarvisCyan.opacity(0.7))
+                                    .shadow(color: Color.jarvisCyan, radius: 2)
                             }
                         }
                         .padding(.horizontal)
@@ -1634,7 +1627,7 @@ struct MessageView: View {
                 .task(id: bootAnimationId) { await animateBootLogs(proxy: proxy) }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: JarvisRadius.card))
     }
 
     @MainActor
@@ -1679,11 +1672,11 @@ struct RongEMessageRow: View, Equatable {
             HStack(spacing: 6) {
                 Text(">>")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.cyan.opacity(0.5))
+                    .foregroundStyle(Color.jarvisCyan.opacity(0.5))
                 Text(message.content)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.cyan.opacity(0.7))
-                    .shadow(color: .cyan, radius: 1)
+                    .foregroundStyle(Color.jarvisCyan.opacity(0.7))
+                    .shadow(color: Color.jarvisCyan, radius: 1)
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -1697,12 +1690,12 @@ struct RongEMessageRow: View, Equatable {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: 50, height: 50)
-                    .background(Circle().fill(Color.cyan.opacity(0.2)))
-                    .shadow(color: Color.cyan.opacity(0.4), radius: 8)
+                    .background(Circle().fill(Color.jarvisCyan.opacity(0.2)))
+                    .shadow(color: Color.jarvisCyan.opacity(0.4), radius: 8)
                     .clipShape(Circle())
                     .overlay(
                         Circle()
-                            .stroke(Color.cyan, lineWidth: 2)
+                            .stroke(Color.jarvisCyan, lineWidth: 2)
                     )
             } else {
                 Spacer()
@@ -1713,13 +1706,13 @@ struct RongEMessageRow: View, Equatable {
                 Text(isUser ? "COMMAND INPUT" : "SYSTEM RESPONSE")
                     .font(.system(size: 8, weight: .bold))
                     .tracking(1.5)
-                    .foregroundStyle(isUser ? Color.orange.opacity(0.8) : Color.cyan.opacity(0.8))
+                    .foregroundStyle(isUser ? Color.jarvisOrange.opacity(0.8) : Color.jarvisCyan.opacity(0.8))
 
 
                 // USE THE CACHED ATTRIBUTED STRING
                 Text(message.attributedContent) 
-                    .font(.system(size: 14, weight: .regular, design: .default))
-                    .foregroundStyle(.white)
+                    .font(JarvisFont.body)
+                    .foregroundStyle(Color.jarvisTextPrimary)
                     .padding(12)
                     .background(HUDGlassPanel(isAccent: isUser))
 
@@ -1734,7 +1727,7 @@ struct RongEMessageRow: View, Equatable {
             // User Decorator (Right side)
             if isUser {
                 Circle()
-                    .strokeBorder(Color.orange.opacity(0.6), lineWidth: 1.5)
+                    .strokeBorder(Color.jarvisOrange.opacity(0.6), lineWidth: 1.5)
                     .frame(width: 8, height: 8)
                     .padding(.top, 24)
             } else {
@@ -1758,20 +1751,20 @@ struct HUDGlassPanel: View {
             Color.black.opacity(0.2)
 
             // Tech Borders
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: JarvisRadius.large)
                 .strokeBorder(
                     LinearGradient(
                         colors: isAccent
-                            ? [.orange.opacity(0.4), .orange.opacity(0.08)]
-                            : [.cyan.opacity(0.4), .cyan.opacity(0.08)],
+                            ? [Color.jarvisOrange.opacity(0.4), Color.jarvisOrange.opacity(0.08)]
+                            : [Color.jarvisCyan.opacity(0.4), Color.jarvisCyan.opacity(0.08)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
                     lineWidth: 0.8
                 )
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: isAccent ? .orange.opacity(0.08) : .cyan.opacity(0.1), radius: 6)
+        .clipShape(RoundedRectangle(cornerRadius: JarvisRadius.large))
+        .shadow(color: isAccent ? Color.jarvisOrange.opacity(0.08) : Color.jarvisCyan.opacity(0.1), radius: 6)
     }
 }
 
@@ -1782,12 +1775,12 @@ struct RongEAvatarIcon: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
+                .stroke(Color.jarvisCyan.opacity(0.3), lineWidth: 1)
                 .frame(width: 24, height: 24)
             
             Circle()
                 .trim(from: 0, to: 0.7)
-                .stroke(Color.cyan, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .stroke(Color.jarvisCyan, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                 .frame(width: 18, height: 18)
                 .rotationEffect(.degrees(rotate ? 360 : 0))
                 .animation(.linear(duration: 4).repeatForever(autoreverses: false), value: rotate)
@@ -1833,15 +1826,15 @@ struct HeaderView: View {
     var body: some View {
         HStack {
             Text("Rong-E System")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
+                .font(JarvisFont.title)
+                .foregroundStyle(Color.jarvisTextPrimary)
                 .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
             
             Spacer()
             
             Text("v1.0.0 Beta")
-                .font(.system(size: 12, weight: .heavy))
-                .foregroundStyle(.white)
+                .font(JarvisFont.subtitle)
+                .foregroundStyle(Color.jarvisTextPrimary)
                 .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
             
             Spacer()
@@ -1852,14 +1845,13 @@ struct HeaderView: View {
             }) {
                 ZStack {
                     Color.white.opacity(googleHovering ? 0.25 : 0.15)
-                        .cornerRadius(8)
+                        .cornerRadius(JarvisRadius.medium)
                     
                     Image(systemName: "cloud.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+                        .font(JarvisFont.icon)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                 }
-                .frame(width: 32, height: 32)
-                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .modifier(JarvisHeaderButton(isHovered: googleHovering))
                 .scaleEffect(googleHovering ? 1.1 : 1.0)
             }
             .buttonStyle(.plain)
@@ -1882,14 +1874,13 @@ struct HeaderView: View {
             }) {
                 ZStack {
                     Color.white.opacity(workflowHovering ? 0.25 : 0.15)
-                        .cornerRadius(8)
+                        .cornerRadius(JarvisRadius.medium)
 
                     Image(systemName: "list.bullet.clipboard.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+                        .font(JarvisFont.icon)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                 }
-                .frame(width: 32, height: 32)
-                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .modifier(JarvisHeaderButton(isHovered: workflowHovering))
                 .scaleEffect(workflowHovering ? 1.1 : 1.0)
             }
             .buttonStyle(.plain)
@@ -1912,14 +1903,13 @@ struct HeaderView: View {
             }) {
                 ZStack {
                     Color.white.opacity(settingsHovering ? 0.25 : 0.15)
-                        .cornerRadius(8)
+                        .cornerRadius(JarvisRadius.medium)
                     
                     Image(systemName: "gearshape.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+                        .font(JarvisFont.icon)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                 }
-                .frame(width: 32, height: 32)
-                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .modifier(JarvisHeaderButton(isHovered: settingsHovering))
                 .scaleEffect(settingsHovering ? 1.1 : 1.0)
             }
             .buttonStyle(.plain)
@@ -1944,14 +1934,13 @@ struct HeaderView: View {
             }) {
                 ZStack {
                     Color.white.opacity(refreshHovering ? 0.25 : 0.15)
-                        .cornerRadius(8)
+                        .cornerRadius(JarvisRadius.medium)
 
                     Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+                        .font(JarvisFont.icon)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                 }
-                .frame(width: 32, height: 32)
-                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .modifier(JarvisHeaderButton(isHovered: refreshHovering))
                 .scaleEffect(refreshHovering ? 1.1 : 1.0)
             }
             .buttonStyle(.plain)
@@ -1974,14 +1963,13 @@ struct HeaderView: View {
             }) {
                 ZStack {
                     Color.white.opacity(chatMinimizeHovering ? 0.25 : 0.15)
-                        .cornerRadius(8)
+                        .cornerRadius(JarvisRadius.medium)
                     
                     Image(systemName: "rectangle.compress.vertical")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+                        .font(JarvisFont.icon)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                 }
-                .frame(width: 32, height: 32)
-                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .modifier(JarvisHeaderButton(isHovered: chatMinimizeHovering))
                 .scaleEffect(chatMinimizeHovering ? 1.1 : 1.0)
             }
             .buttonStyle(.plain)
@@ -2004,14 +1992,13 @@ struct HeaderView: View {
             }) {
                 ZStack {
                     Color.white.opacity(shrinkHovering ? 0.9 : 1.0)
-                        .cornerRadius(8)
+                        .cornerRadius(JarvisRadius.medium)
                     
                     Image(systemName: "minus")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(JarvisFont.icon)
                         .foregroundStyle(shrinkHovering ? .black : .black)
                 }
-                .frame(width: 32, height: 32)
-                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .modifier(JarvisHeaderButton(isHovered: shrinkHovering))
                 .scaleEffect(shrinkHovering ? 1.1 : 1.0)
             }
             .buttonStyle(.plain)
@@ -2033,15 +2020,14 @@ struct HeaderView: View {
                 NSApplication.shared.terminate(nil)
             }) {
                 ZStack {
-                    Color.red.opacity(quitHovering ? 0.6 : 0.4)
-                        .cornerRadius(8)
+                    Color.jarvisRed.opacity(quitHovering ? 0.6 : 0.4)
+                        .cornerRadius(JarvisRadius.medium)
 
                     Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+                        .font(JarvisFont.icon)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                 }
-                .frame(width: 32, height: 32)
-                .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .modifier(JarvisHeaderButton(isHovered: quitHovering))
                 .scaleEffect(quitHovering ? 1.1 : 1.0)
             }
             .buttonStyle(.plain)
@@ -2070,7 +2056,7 @@ struct WaveformBar: View {
         ZStack {
             // Main white glowing line
             Capsule()
-                .fill(LinearGradient(colors: [.clear, .cyan, .clear], startPoint: .leading, endPoint: .trailing))
+                .fill(LinearGradient(colors: [.clear, .jarvisCyan, .clear], startPoint: .leading, endPoint: .trailing))
                 .frame(height: 2)
                 .padding(.horizontal, 20)
                 .blur(radius: 2)
@@ -2100,10 +2086,10 @@ struct WaveformBarItem: View {
     
     var body: some View {
         Capsule()
-            .fill(LinearGradient(colors: [.cyan, .white], startPoint: .bottom, endPoint: .top))
+            .fill(LinearGradient(colors: [.jarvisCyan, .white], startPoint: .bottom, endPoint: .top))
             .frame(width: 3, height: getHeight())
             .opacity(0.35 + Darwin.sin(Double(phase) + Double(index) * 0.3) * 0.2)
-            .shadow(color: .cyan.opacity(0.2), radius: 4, x: 0, y: 0)
+            .shadow(color: Color.jarvisCyan.opacity(0.2), radius: 4, x: 0, y: 0)
     }
     
     private func getHeight() -> CGFloat {
@@ -2141,13 +2127,13 @@ struct AgentLoadingView: View {
     // Logic to determine the color of the Orb based on state
     var statusColor: Color {
         if connectionFailed {
-            return Color(red: 1.0, green: 0.3, blue: 0.3) // Red for failed
+            return Color.jarvisRed
         }
         switch serverStatus {
-        case .running: return isConnected ? Color(red: 0.2, green: 1.0, blue: 0.4) : Color(red: 0.2, green: 0.85, blue: 1.0)
-        case .error: return Color(red: 1.0, green: 0.3, blue: 0.3)
-        case .stopping: return Color.orange
-        default: return Color(red: 0.2, green: 0.85, blue: 1.0) // Your default Light Blue
+        case .running: return isConnected ? Color.jarvisGreen : Color.jarvisLightBlue
+        case .error: return Color.jarvisRed
+        case .stopping: return Color.jarvisAmber
+        default: return Color.jarvisLightBlue
         }
     }
 
@@ -2174,11 +2160,10 @@ struct AgentLoadingView: View {
         ZStack {
             // MARK: - Dark Transparent Glass Container
             RoundedRectangle(cornerRadius: 30)
-                .fill(Color.black.opacity(0.2)) // More transparent tint
-                .background(.ultraThinMaterial.opacity(0.5))  // Lighter blur effect
+                .fill(Color.black.opacity(0.2))
+                .background(.ultraThinMaterial.opacity(0.5))
                 .clipShape(RoundedRectangle(cornerRadius: 30))
                 .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 10)
-                // Subtle border matching the status color
                 .overlay(
                     RoundedRectangle(cornerRadius: 30)
                         .strokeBorder(
@@ -2196,7 +2181,7 @@ struct AgentLoadingView: View {
                 )
 
             VStack(spacing: 25) {
-                // 1. The Glossy Orb (Your Design)
+                // 1. The Glossy Orb
                 RongERing()
                     .frame(width: 110, height: 110)
                     .shadow(color: statusColor.opacity(0.8), radius: 80)
@@ -2207,7 +2192,7 @@ struct AgentLoadingView: View {
                     Text("RONG-E AGENT")
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .tracking(2)
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(Color.jarvisTextSecondary)
 
                     // Status Line with Dots
                     HStack(spacing: 8) {
@@ -2240,13 +2225,13 @@ struct AgentLoadingView: View {
                                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                     .tracking(1)
                             }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
+                            .foregroundStyle(Color.jarvisTextPrimary)
+                            .padding(.horizontal, JarvisSpacing.lg)
+                            .padding(.vertical, JarvisSpacing.sm)
                             .background(
                                 Capsule()
-                                    .fill(Color(red: 0.2, green: 0.85, blue: 1.0).opacity(0.3))
-                                    .overlay(Capsule().stroke(Color(red: 0.2, green: 0.85, blue: 1.0).opacity(0.5), lineWidth: 1))
+                                    .fill(Color.jarvisLightBlue.opacity(0.3))
+                                    .overlay(Capsule().stroke(Color.jarvisLightBlue.opacity(0.5), lineWidth: 1))
                             )
                         }
                         .buttonStyle(.plain)

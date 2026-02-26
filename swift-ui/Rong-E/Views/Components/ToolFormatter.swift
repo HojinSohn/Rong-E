@@ -41,8 +41,8 @@ struct ToolConsoleView: View {
     let toolName: String
     let args: [String: AnyCodable]
     
-    private let hudAmber = Color(red: 1.0, green: 0.8, blue: 0.0)
-    private let hudCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+    private let accentColor = Color.jarvisAmber
+    private let keyColor = Color.jarvisCyan
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -51,27 +51,27 @@ struct ToolConsoleView: View {
             HStack {
                 Image(systemName: "terminal.fill")
                     .font(.system(size: 10))
-                    .foregroundStyle(hudAmber)
+                    .foregroundStyle(accentColor)
                 
                 Text("SYSTEM_CALL > \(toolName.uppercased())")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(hudAmber)
+                    .font(JarvisFont.tag)
+                    .foregroundStyle(accentColor)
                 
                 Spacer()
                 
                 // Pulsing Status Light
                 Circle()
-                    .fill(hudAmber)
+                    .fill(accentColor)
                     .frame(width: 6, height: 6)
-                    .shadow(color: hudAmber, radius: 4)
+                    .shadow(color: accentColor, radius: 4)
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-            .background(hudAmber.opacity(0.1))
+            .padding(.vertical, JarvisSpacing.sm)
+            .padding(.horizontal, JarvisSpacing.md)
+            .background(accentColor.opacity(0.1))
             .overlay(
                 Rectangle()
                     .frame(height: 1)
-                    .foregroundStyle(hudAmber.opacity(0.3)),
+                    .foregroundStyle(accentColor.opacity(0.3)),
                 alignment: .bottom
             )
             
@@ -81,38 +81,38 @@ struct ToolConsoleView: View {
                 
                 if parsedArgs.isEmpty {
                     Text("No arguments provided")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.4))
-                        .padding(.vertical, 4)
+                        .font(JarvisFont.captionMono)
+                        .foregroundStyle(Color.jarvisTextDim)
+                        .padding(.vertical, JarvisSpacing.xs)
                 } else {
                     ForEach(parsedArgs, id: \.key) { item in
-                        HStack(alignment: .top, spacing: 8) {
+                        HStack(alignment: .top, spacing: JarvisSpacing.sm) {
                             Text(item.key)
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundStyle(hudCyan.opacity(0.8))
+                                .font(JarvisFont.monoSmall)
+                                .foregroundStyle(keyColor.opacity(0.8))
                                 .frame(width: 80, alignment: .leading)
                             
                             Text(":")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.3))
+                                .font(JarvisFont.monoSmall)
+                                .foregroundStyle(Color.jarvisTextTertiary)
                             
                             Text(item.value)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.9))
+                                .font(JarvisFont.monoSmall)
+                                .foregroundStyle(Color.jarvisTextPrimary.opacity(0.9))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
             }
-            .padding(12)
+            .padding(JarvisSpacing.md)
         }
-        .background(Color.black.opacity(0.6))
-        .cornerRadius(8)
+        .background(Color.jarvisSurfaceDeep)
+        .cornerRadius(JarvisRadius.medium)
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: JarvisRadius.medium)
                 .strokeBorder(
                     LinearGradient(
-                        colors: [hudAmber.opacity(0.5), hudAmber.opacity(0.1)],
+                        colors: [accentColor.opacity(0.5), accentColor.opacity(0.1)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),

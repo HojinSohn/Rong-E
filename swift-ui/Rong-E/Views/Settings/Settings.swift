@@ -60,7 +60,7 @@ struct SettingsView: View {
                     }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title2)
-                            .foregroundColor(.gray)
+                            .foregroundColor(.jarvisTextDim)
                             .modifier(JarvisGlow(active: false))
                     }
                     .buttonStyle(BorderlessButtonStyle())
@@ -120,7 +120,7 @@ struct GeneralSettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("USER NAME")
                             .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.gray)
+                            .foregroundColor(.jarvisTextDim)
 
                         TextField("Enter your name...", text: $context.userName)
                             .textFieldStyle(.plain)
@@ -128,7 +128,7 @@ struct GeneralSettingsView: View {
                             .font(.system(size: 12, design: .monospaced))
                             .background(Color.black.opacity(0.5))
                             .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
-                            .foregroundColor(.white)
+                            .foregroundColor(.jarvisTextPrimary)
                             .onChange(of: context.userName) { _ in
                                 context.saveSettings()
                             }
@@ -161,7 +161,7 @@ struct GeneralSettingsView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("API KEY")
                                 .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(.gray)
+                                .foregroundColor(.jarvisTextDim)
 
                             SecureField(context.llmProvider.apiKeyPlaceholder, text: $context.aiApiKey)
                                 .textFieldStyle(.plain)
@@ -169,7 +169,7 @@ struct GeneralSettingsView: View {
                                 .font(.system(size: 12, design: .monospaced))
                                 .background(Color.black.opacity(0.5))
                                 .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
-                                .foregroundColor(.white)
+                                .foregroundColor(.jarvisTextPrimary)
                         }
                     } else {
                         HStack(spacing: 4) {
@@ -178,7 +178,7 @@ struct GeneralSettingsView: View {
                                 .foregroundColor(.jarvisBlue.opacity(0.7))
                             Text("Ollama runs locally — no API key needed.")
                                 .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(.gray)
+                                .foregroundColor(.jarvisTextDim)
                         }
                     }
 
@@ -190,12 +190,12 @@ struct GeneralSettingsView: View {
                                     .controlSize(.mini)
                             } else {
                                 Image(systemName: llmStatusIsError ? "xmark.circle.fill" : "checkmark.circle.fill")
-                                    .foregroundColor(llmStatusIsError ? .red : .green)
+                                    .foregroundColor(llmStatusIsError ? .jarvisRed : .jarvisGreen)
                                     .font(.system(size: 9))
                             }
                             Text(status)
                                 .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(llmStatusIsError ? .red : .green)
+                                .foregroundColor(llmStatusIsError ? .jarvisRed : .jarvisGreen)
                         }
                     }
 
@@ -292,13 +292,13 @@ struct LLMProviderButton: View {
             Text(provider.displayName.uppercased())
                 .font(.system(size: 8, design: .monospaced))
                 .fontWeight(isSelected ? .bold : .regular)
-                .foregroundColor(isSelected ? .white : .gray)
+                .foregroundColor(isSelected ? .jarvisTextPrimary : .jarvisTextDim)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
                 .background(isSelected ? Color.jarvisBlue.opacity(0.2) : Color.black.opacity(0.3))
                 .overlay(
                     Rectangle()
-                        .stroke(isSelected ? Color.jarvisBlue : Color.white.opacity(0.1), lineWidth: 1)
+                        .stroke(isSelected ? Color.jarvisBlue : Color.jarvisBorder, lineWidth: 1)
                 )
                 .contentShape(Rectangle())
         }
@@ -316,14 +316,14 @@ struct LLMModelSelector: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("MODEL")
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(.gray)
+                .foregroundColor(.jarvisTextDim)
 
             // Selected model display / dropdown toggle
             Button(action: { withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() } }) {
                 HStack {
                     Text(selectedModel.isEmpty ? "Select a model" : selectedModel)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(selectedModel.isEmpty ? .gray : .white)
+                        .foregroundColor(selectedModel.isEmpty ? .jarvisTextDim : .jarvisTextPrimary)
                     Spacer()
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8))
@@ -351,7 +351,7 @@ struct LLMModelSelector: View {
                                     .frame(width: 6, height: 6)
                                 Text(model)
                                     .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(selectedModel == model ? .white : .gray)
+                                    .foregroundColor(selectedModel == model ? .jarvisTextPrimary : .jarvisTextDim)
                                 Spacer()
                             }
                             .padding(.vertical, 5)
@@ -376,7 +376,7 @@ struct LLMModelSelector: View {
                         })
                         .textFieldStyle(.plain)
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.white)
+                        .foregroundColor(.jarvisTextPrimary)
                     }
                     .padding(.vertical, 5)
                     .padding(.horizontal, 8)
@@ -418,10 +418,10 @@ struct MCPSettingsView: View {
             if let error = configManager.lastError {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(.jarvisOrange)
                     Text(error)
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.orange)
+                        .foregroundColor(.jarvisOrange)
                     Spacer()
                     Button("CLEAR") {
                         configManager.lastError = nil
@@ -430,8 +430,8 @@ struct MCPSettingsView: View {
                     .foregroundColor(.jarvisBlue)
                 }
                 .padding(8)
-                .background(Color.orange.opacity(0.1))
-                .overlay(Rectangle().stroke(Color.orange.opacity(0.3), lineWidth: 1))
+                .background(Color.jarvisOrange.opacity(0.1))
+                .overlay(Rectangle().stroke(Color.jarvisOrange.opacity(0.3), lineWidth: 1))
             }
 
             // Server list
@@ -442,10 +442,10 @@ struct MCPSettingsView: View {
                         .foregroundColor(.jarvisBlue.opacity(0.4))
                     Text("NO SERVERS CONFIGURED")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.gray)
+                        .foregroundColor(.jarvisTextDim)
                     Text("Import config or add servers manually")
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(.gray.opacity(0.6))
+                        .foregroundColor(.jarvisTextDim.opacity(0.6))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
@@ -543,11 +543,11 @@ struct MCPServerRow: View {
 
                 Text(server.name.uppercased())
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.white)
+                    .foregroundColor(.jarvisTextPrimary)
 
                 Text("// \(server.command)")
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(.gray)
+                    .foregroundColor(.jarvisTextDim)
 
                 Spacer()
 
@@ -561,7 +561,7 @@ struct MCPServerRow: View {
                 Button(action: onDelete) {
                     Image(systemName: "xmark")
                         .font(.system(size: 9))
-                        .foregroundColor(.red.opacity(0.8))
+                        .foregroundColor(.jarvisRed.opacity(0.8))
                 }
                 .buttonStyle(.plain)
             }
@@ -571,12 +571,12 @@ struct MCPServerRow: View {
                     if !server.args.isEmpty {
                         Text("ARGS: \(server.args.joined(separator: " "))")
                             .font(.system(size: 8, design: .monospaced))
-                            .foregroundColor(.gray)
+                            .foregroundColor(.jarvisTextDim)
                     }
                     if let env = server.env, !env.isEmpty {
                         Text("ENV: \(env.map { "\($0.key)=\($0.value)" }.joined(separator: ", "))")
                             .font(.system(size: 8, design: .monospaced))
-                            .foregroundColor(.gray)
+                            .foregroundColor(.jarvisTextDim)
                     }
                 }
                 .padding(.leading, 14)
@@ -592,7 +592,7 @@ struct MCPServerRow: View {
         switch status {
         case .idle:
             Circle()
-                .fill(Color.gray)
+                .fill(Color.jarvisTextDim)
                 .frame(width: 6, height: 6)
         case .connecting:
             ProgressView()
@@ -600,18 +600,18 @@ struct MCPServerRow: View {
                 .frame(width: 12, height: 12)
         case .connected:
             Circle()
-                .fill(Color.green)
+                .fill(Color.jarvisGreen)
                 .frame(width: 6, height: 6)
-                .shadow(color: .green.opacity(0.6), radius: 3)
+                .shadow(color: .jarvisGreen.opacity(0.6), radius: 3)
         case .connectedPermissionDenied:
             Circle()
-                .fill(Color.orange)
+                .fill(Color.jarvisOrange)
                 .frame(width: 6, height: 6)
-                .shadow(color: .orange.opacity(0.6), radius: 3)
+                .shadow(color: .jarvisOrange.opacity(0.6), radius: 3)
                 .help("macOS permission denied. Grant in System Settings > Privacy & Security.")
         case .error(let msg):
             Circle()
-                .fill(Color.red)
+                .fill(Color.jarvisRed)
                 .frame(width: 6, height: 6)
                 .help(msg)
         }
@@ -673,17 +673,17 @@ struct MCPAddServerSheet: View {
                 if let error = validationError {
                     Text(error)
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.red)
+                        .foregroundColor(.jarvisRed)
                 }
 
                 HStack {
                     Spacer()
                     Button("CANCEL") { dismiss() }
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.gray)
+                        .foregroundColor(.jarvisTextDim)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .overlay(Rectangle().stroke(Color.gray.opacity(0.5), lineWidth: 1))
+                        .overlay(Rectangle().stroke(Color.jarvisTextDim.opacity(0.5), lineWidth: 1))
                         .buttonStyle(.plain)
 
                     Button("ADD") { addServer() }
@@ -754,11 +754,11 @@ struct MCPJSONPasteSheet: View {
 
                 Text("Edit the JSON below to add or modify MCP servers")
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.gray)
+                    .foregroundColor(.jarvisTextDim)
 
                 TextEditor(text: $jsonText)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.white)
+                    .foregroundColor(.jarvisTextPrimary)
                     .scrollContentBackground(.hidden)
                     .background(Color.black.opacity(0.5))
                     .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
@@ -766,16 +766,16 @@ struct MCPJSONPasteSheet: View {
 
                 Text("FORMAT: {\"mcpServers\": {\"name\": {\"command\": \"...\", \"args\": [...]}}}")
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(.gray.opacity(0.7))
+                    .foregroundColor(.jarvisTextDim.opacity(0.7))
 
                 HStack {
                     Spacer()
                     Button("CANCEL") { dismiss() }
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.gray)
+                        .foregroundColor(.jarvisTextDim)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .overlay(Rectangle().stroke(Color.gray.opacity(0.5), lineWidth: 1))
+                        .overlay(Rectangle().stroke(Color.jarvisTextDim.opacity(0.5), lineWidth: 1))
                         .buttonStyle(.plain)
 
                     Button("APPLY") {
@@ -812,7 +812,7 @@ struct MCPTextField: View {
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(.body, design: .monospaced))
-                .foregroundColor(.white)
+                .foregroundColor(.jarvisTextPrimary)
                 .padding(8)
                 .background(Color.black.opacity(0.5))
                 .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
@@ -847,7 +847,7 @@ struct MemorySettingsView: View {
 
                 if hasChanges {
                     Circle()
-                        .fill(Color.orange)
+                        .fill(Color.jarvisOrange)
                         .frame(width: 6, height: 6)
                         .help("Unsaved changes")
                 }
@@ -855,12 +855,12 @@ struct MemorySettingsView: View {
 
             Text("Store important information that persists across conversations. The agent will use this context automatically.")
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.gray)
+                .foregroundColor(.jarvisTextDim)
 
             // Memory Editor
             TextEditor(text: $memoryContent)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.white)
+                .foregroundColor(.jarvisTextPrimary)
                 .scrollContentBackground(.hidden)
                 .background(Color.black.opacity(0.5))
                 .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
@@ -877,12 +877,12 @@ struct MemorySettingsView: View {
                             .controlSize(.mini)
                     } else {
                         Image(systemName: statusIsError ? "xmark.circle.fill" : "checkmark.circle.fill")
-                            .foregroundColor(statusIsError ? .red : .green)
+                            .foregroundColor(statusIsError ? .jarvisRed : .jarvisGreen)
                             .font(.system(size: 9))
                     }
                     Text(status)
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(statusIsError ? .red : .green)
+                        .foregroundColor(statusIsError ? .jarvisRed : .jarvisGreen)
                 }
             }
 
@@ -909,11 +909,11 @@ struct MemorySettingsView: View {
                         Text("CLEAR")
                     }
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(.red.opacity(0.8))
+                    .foregroundColor(.jarvisRed.opacity(0.8))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                     .background(Color.black.opacity(0.3))
-                    .overlay(Rectangle().stroke(Color.red.opacity(0.3), lineWidth: 1))
+                    .overlay(Rectangle().stroke(Color.jarvisRed.opacity(0.3), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .disabled(memoryContent.isEmpty)
@@ -1007,14 +1007,14 @@ struct AboutSettingsView: View {
                 
                 Image(systemName: "cpu")
                     .font(.largeTitle)
-                    .foregroundColor(.white)
+                    .foregroundColor(.jarvisTextPrimary)
             }
             .padding(.bottom, 20)
             
             Text("PROJECT: RONG-E")
                 .font(.system(.title2, design: .monospaced))
                 .fontWeight(.bold)
-                .foregroundColor(.white)
+                .foregroundColor(.jarvisTextPrimary)
                 .tracking(2)
             
             Text("BUILD: V.1.0.0-BETA")
@@ -1026,7 +1026,7 @@ struct AboutSettingsView: View {
             
             Text("CREATED BY HOJIN SOHN")
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.gray)
+                .foregroundColor(.jarvisTextDim)
                 .padding(.bottom, 5)
                 
             Text("INTELLIGENT AGENT SYSTEM ONLINE")
@@ -1048,7 +1048,7 @@ struct JarvisToggle: View {
             HStack {
                 Text(title.uppercased())
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.9))
+                    .foregroundColor(.jarvisTextPrimary.opacity(0.9))
                 Spacer()
                 
                 // Visual Switch
@@ -1057,12 +1057,12 @@ struct JarvisToggle: View {
                         .fill(isOn ? Color.jarvisBlue.opacity(0.2) : Color.black)
                         .overlay(
                             RoundedRectangle(cornerRadius: 10)
-                                .stroke(isOn ? Color.jarvisBlue : Color.gray, lineWidth: 1)
+                                .stroke(isOn ? Color.jarvisBlue : Color.jarvisTextDim, lineWidth: 1)
                         )
                         .frame(width: 40, height: 20)
                     
                     Circle()
-                        .fill(isOn ? Color.jarvisBlue : Color.gray)
+                        .fill(isOn ? Color.jarvisBlue : Color.jarvisTextDim)
                         .frame(width: 14, height: 14)
                         .offset(x: isOn ? 10 : -10)
                         .modifier(JarvisGlow(active: isOn))

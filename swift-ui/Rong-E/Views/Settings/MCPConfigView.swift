@@ -17,11 +17,12 @@ struct MCPConfigView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: JarvisSpacing.lg) {
             // Header
             HStack {
                 Text("MCP Servers")
-                    .font(.headline)
+                    .font(JarvisFont.title)
+                    .foregroundStyle(Color.jarvisTextPrimary)
                 Spacer()
                 syncStatusIndicator
             }
@@ -30,20 +31,21 @@ struct MCPConfigView: View {
             if let error = configManager.lastError {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundStyle(Color.jarvisOrange)
                     Text(error)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(JarvisFont.caption)
+                        .foregroundStyle(Color.jarvisTextSecondary)
                     Spacer()
                     Button("Dismiss") {
                         configManager.lastError = nil
                     }
                     .buttonStyle(.plain)
-                    .font(.caption)
+                    .font(JarvisFont.caption)
+                    .foregroundStyle(Color.jarvisCyan)
                 }
-                .padding(8)
-                .background(Color.orange.opacity(0.1))
-                .cornerRadius(6)
+                .padding(JarvisSpacing.sm)
+                .background(Color.jarvisOrange.opacity(0.1))
+                .cornerRadius(JarvisRadius.small)
             }
 
             // Server list
@@ -56,34 +58,62 @@ struct MCPConfigView: View {
             Divider()
 
             // Action buttons
-            HStack(spacing: 12) {
+            HStack(spacing: JarvisSpacing.md) {
                 Button(action: { showFileImporter = true }) {
                     Label("Import File", systemImage: "doc.badge.plus")
+                        .font(JarvisFont.label)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.jarvisCyan)
+                .padding(.horizontal, JarvisSpacing.md)
+                .padding(.vertical, JarvisSpacing.sm)
+                .background(Color.jarvisCyan.opacity(0.15))
+                .cornerRadius(JarvisRadius.medium)
+                .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisCyan.opacity(0.3), lineWidth: 1))
 
                 Button(action: { showJSONPasteSheet = true }) {
                     Label("Paste JSON", systemImage: "doc.on.clipboard")
+                        .font(JarvisFont.label)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.jarvisCyan)
+                .padding(.horizontal, JarvisSpacing.md)
+                .padding(.vertical, JarvisSpacing.sm)
+                .background(Color.jarvisCyan.opacity(0.15))
+                .cornerRadius(JarvisRadius.medium)
+                .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisCyan.opacity(0.3), lineWidth: 1))
 
                 Button(action: { showAddServerSheet = true }) {
                     Label("Add Server", systemImage: "plus.circle")
+                        .font(JarvisFont.label)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.jarvisGreen)
+                .padding(.horizontal, JarvisSpacing.md)
+                .padding(.vertical, JarvisSpacing.sm)
+                .background(Color.jarvisGreen.opacity(0.15))
+                .cornerRadius(JarvisRadius.medium)
+                .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisGreen.opacity(0.3), lineWidth: 1))
 
                 Spacer()
 
                 if !configManager.servers.isEmpty {
                     Button(action: { configManager.sendConfigToPython() }) {
                         Label("Sync", systemImage: "arrow.triangle.2.circlepath")
+                            .font(JarvisFont.label)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.jarvisTextPrimary)
+                    .padding(.horizontal, JarvisSpacing.lg)
+                    .padding(.vertical, JarvisSpacing.sm)
+                    .background(Color.jarvisBlue)
+                    .cornerRadius(JarvisRadius.medium)
                 }
             }
         }
         .padding()
         .frame(minWidth: 400, minHeight: 300)
+        .background(Color.jarvisSurfaceDark)
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [.json],
@@ -117,24 +147,24 @@ struct MCPConfigView: View {
                     ProgressView()
                         .controlSize(.small)
                     Text("Syncing...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(JarvisFont.captionMono)
+                        .foregroundStyle(Color.jarvisTextSecondary)
                 }
             case .success:
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
+                        .foregroundStyle(Color.jarvisGreen)
                     Text("Synced")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(JarvisFont.captionMono)
+                        .foregroundStyle(Color.jarvisTextSecondary)
                 }
             case .error(let msg):
                 HStack(spacing: 4) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
+                        .foregroundStyle(Color.jarvisRed)
                     Text(msg)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(JarvisFont.captionMono)
+                        .foregroundStyle(Color.jarvisTextSecondary)
                         .lineLimit(1)
                 }
             }
@@ -142,16 +172,16 @@ struct MCPConfigView: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: JarvisSpacing.md) {
             Image(systemName: "server.rack")
                 .font(.system(size: 40))
-                .foregroundColor(.secondary)
+                .foregroundStyle(Color.jarvisTextDim)
             Text("No MCP Servers Configured")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(JarvisFont.subtitle)
+                .foregroundStyle(Color.jarvisTextSecondary)
             Text("Import a config file or add servers manually")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(JarvisFont.caption)
+                .foregroundStyle(Color.jarvisTextDim)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
@@ -159,7 +189,7 @@ struct MCPConfigView: View {
 
     private var serverListView: some View {
         ScrollView {
-            LazyVStack(spacing: 8) {
+            LazyVStack(spacing: JarvisSpacing.sm) {
                 ForEach(configManager.servers) { server in
                     ServerRowView(
                         server: server,
@@ -221,53 +251,53 @@ struct ServerRowView: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: JarvisSpacing.xs) {
             HStack {
                 statusIndicator
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(server.name)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
+                        .font(JarvisFont.label)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                     Text(server.command)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(JarvisFont.captionMono)
+                        .foregroundStyle(Color.jarvisTextSecondary)
                 }
 
                 Spacer()
 
                 Button(action: { isExpanded.toggle() }) {
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(Color.jarvisTextDim)
                 }
                 .buttonStyle(.plain)
 
                 Button(action: onDelete) {
                     Image(systemName: "trash")
-                        .foregroundColor(.red)
+                        .foregroundStyle(Color.jarvisRed)
                 }
                 .buttonStyle(.plain)
             }
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: JarvisSpacing.xs) {
                     if !server.args.isEmpty {
                         Text("Args: \(server.args.joined(separator: " "))")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .font(JarvisFont.captionMono)
+                            .foregroundStyle(Color.jarvisTextDim)
                     }
                     if let env = server.env, !env.isEmpty {
                         Text("Env: \(env.map { "\($0.key)=\($0.value)" }.joined(separator: ", "))")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .font(JarvisFont.captionMono)
+                            .foregroundStyle(Color.jarvisTextDim)
                     }
                 }
-                .padding(.leading, 24)
+                .padding(.leading, JarvisSpacing.xxl)
             }
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.1))
-        .cornerRadius(8)
+        .background(Color.jarvisSurfaceLight)
+        .cornerRadius(JarvisRadius.medium)
     }
 
     @ViewBuilder
@@ -275,20 +305,20 @@ struct ServerRowView: View {
         switch status {
         case .idle:
             Image(systemName: "server.rack")
-                .foregroundColor(.secondary)
+                .foregroundStyle(Color.jarvisTextDim)
         case .connecting:
             ProgressView()
                 .controlSize(.small)
         case .connected:
             Image(systemName: "server.rack")
-                .foregroundColor(.green)
+                .foregroundStyle(Color.jarvisGreen)
         case .connectedPermissionDenied:
             Image(systemName: "server.rack")
-                .foregroundColor(.orange)
+                .foregroundStyle(Color.jarvisOrange)
                 .help("Connected, but macOS permission was denied. Grant access in System Settings > Privacy & Security.")
         case .error(let msg):
             Image(systemName: "server.rack")
-                .foregroundColor(.red)
+                .foregroundStyle(Color.jarvisRed)
                 .help(msg)
         }
     }
@@ -307,41 +337,73 @@ struct AddServerSheet: View {
     @State private var validationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: JarvisSpacing.lg) {
             Text("Add MCP Server")
-                .font(.headline)
+                .font(JarvisFont.title)
+                .foregroundStyle(Color.jarvisTextPrimary)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: JarvisSpacing.sm) {
                 TextField("Server Name", text: $name)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(JarvisFont.mono)
+                    .padding(JarvisSpacing.sm)
+                    .background(Color.jarvisSurfaceDeep)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.small).stroke(Color.jarvisBorder, lineWidth: 1))
+                    .cornerRadius(JarvisRadius.small)
 
                 TextField("Command (e.g., npx, node, python)", text: $command)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(JarvisFont.mono)
+                    .padding(JarvisSpacing.sm)
+                    .background(Color.jarvisSurfaceDeep)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.small).stroke(Color.jarvisBorder, lineWidth: 1))
+                    .cornerRadius(JarvisRadius.small)
 
                 TextField("Arguments (space-separated)", text: $argsText)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(JarvisFont.mono)
+                    .padding(JarvisSpacing.sm)
+                    .background(Color.jarvisSurfaceDeep)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.small).stroke(Color.jarvisBorder, lineWidth: 1))
+                    .cornerRadius(JarvisRadius.small)
 
                 TextField("Environment (KEY=value, comma-separated)", text: $envText)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(JarvisFont.mono)
+                    .padding(JarvisSpacing.sm)
+                    .background(Color.jarvisSurfaceDeep)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.small).stroke(Color.jarvisBorder, lineWidth: 1))
+                    .cornerRadius(JarvisRadius.small)
             }
 
             if let error = validationError {
                 Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
+                    .font(JarvisFont.caption)
+                    .foregroundStyle(Color.jarvisRed)
             }
 
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .padding(.horizontal, JarvisSpacing.lg)
+                    .padding(.vertical, JarvisSpacing.sm)
+                    .background(Color.jarvisSurfaceLight)
+                    .cornerRadius(JarvisRadius.medium)
                 Button("Add") { addServer() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.jarvisTextPrimary)
+                    .padding(.horizontal, JarvisSpacing.lg)
+                    .padding(.vertical, JarvisSpacing.sm)
+                    .background(Color.jarvisBlue)
+                    .cornerRadius(JarvisRadius.medium)
                     .disabled(name.isEmpty || command.isEmpty)
             }
         }
         .padding()
         .frame(width: 400)
+        .background(Color.jarvisSurfaceDark)
     }
 
     private func addServer() {
@@ -393,22 +455,25 @@ struct JSONPasteSheet: View {
     let onSubmit: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: JarvisSpacing.lg) {
             Text("Paste MCP Config JSON")
-                .font(.headline)
+                .font(JarvisFont.title)
+                .foregroundStyle(Color.jarvisTextPrimary)
 
             Text("Paste a valid MCP config JSON below:")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(JarvisFont.caption)
+                .foregroundStyle(Color.jarvisTextSecondary)
 
             TextEditor(text: $jsonText)
-                .font(.system(.body, design: .monospaced))
+                .font(JarvisFont.code)
                 .frame(minHeight: 200)
-                .border(Color.secondary.opacity(0.3))
+                .background(Color.jarvisSurfaceDeep)
+                .overlay(RoundedRectangle(cornerRadius: JarvisRadius.small).stroke(Color.jarvisBorder, lineWidth: 1))
+                .cornerRadius(JarvisRadius.small)
 
             Text("Example format:")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(JarvisFont.caption)
+                .foregroundStyle(Color.jarvisTextSecondary)
 
             Text("""
             {
@@ -420,26 +485,37 @@ struct JSONPasteSheet: View {
               }
             }
             """)
-            .font(.system(.caption, design: .monospaced))
-            .foregroundColor(.secondary)
-            .padding(8)
-            .background(Color.secondary.opacity(0.1))
-            .cornerRadius(4)
+            .font(JarvisFont.captionMono)
+            .foregroundStyle(Color.jarvisTextDim)
+            .padding(JarvisSpacing.sm)
+            .background(Color.jarvisSurfaceDeep)
+            .cornerRadius(JarvisRadius.small)
 
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .padding(.horizontal, JarvisSpacing.lg)
+                    .padding(.vertical, JarvisSpacing.sm)
+                    .background(Color.jarvisSurfaceLight)
+                    .cornerRadius(JarvisRadius.medium)
                 Button("Import") {
                     onSubmit()
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.jarvisTextPrimary)
+                .padding(.horizontal, JarvisSpacing.lg)
+                .padding(.vertical, JarvisSpacing.sm)
+                .background(Color.jarvisBlue)
+                .cornerRadius(JarvisRadius.medium)
                 .disabled(jsonText.isEmpty)
             }
         }
         .padding()
         .frame(width: 500, height: 450)
+        .background(Color.jarvisSurfaceDark)
     }
 }
 
