@@ -105,6 +105,10 @@ struct GeneralSettingsView: View {
     @State private var llmStatusMessage: String?
     @State private var llmStatusIsError: Bool = false
     @State private var isVerifying: Bool = false
+    // Snapshot of the last successfully verified LLM config — used to revert on failure.
+    @State private var lastAppliedProvider: LLMProvider = .gemini
+    @State private var lastAppliedModel: String = ""
+    @State private var lastAppliedApiKey: String = ""
 
     var body: some View {
         ScrollView {
@@ -225,15 +229,10 @@ struct GeneralSettingsView: View {
             }
         }
         .onAppear {
-            setupLLMCallbacks()
-        }
-    }
-
-    private func setupLLMCallbacks() {
-        SocketClient.shared.onLLMSetResult = { success, message in
-            isVerifying = false
-            llmStatusIsError = !success
-            llmStatusMessage = message ?? (success ? "LLM configured" : "Failed to set LLM")
+            // Initialise the revert baseline from whatever is currently saved.
+            lastAppliedProvider = context.llmProvider
+            lastAppliedModel = context.llmModel
+            lastAppliedApiKey = context.aiApiKey
         }
     }
 
@@ -257,8 +256,24 @@ struct GeneralSettingsView: View {
             apiKey: context.llmProvider.requiresAPIKey ? context.aiApiKey : nil
         )
 
-        // Save settings
-        context.saveSettings()
+        // Register a one-time result handler.  Settings are only persisted on
+        // success; on failure the context is reverted to the last verified state
+        // so the UI reflects what the backend is actually using.
+        SocketClient.shared.onLLMSetResult = { success, message in
+            isVerifying = false
+            llmStatusIsError = !success
+            llmStatusMessage = message ?? (success ? "LLM configured" : "Failed to set LLM")
+            if success {
+                lastAppliedProvider = context.llmProvider
+                lastAppliedModel = context.llmModel
+                lastAppliedApiKey = context.aiApiKey
+                context.saveSettings()
+            } else {
+                context.llmProvider = lastAppliedProvider
+                context.llmModel = lastAppliedModel
+                context.aiApiKey = lastAppliedApiKey
+            }
+        }
     }
 }
 

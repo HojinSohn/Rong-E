@@ -175,10 +175,29 @@ pub async fn verify_llm(provider: &str, api_key: &str, model: &str) -> Result<()
             agent.chat(ping, vec![]).await.map(|_| ()).map_err(|e| e.to_string())
         }
         "ollama" => {
-            // Verify Ollama is reachable by making a real call
-            let client = ollama::Client::from_env();
-            let agent = client.agent(model).build();
-            agent.chat(ping, vec![]).await.map(|_| ()).map_err(|e| e.to_string())
+            // Check if Ollama is reachable before making a real API call.
+            // The rig client has no built-in timeout, so a missing Ollama would
+            // hang forever.  A quick TCP probe on the default port lets us fail
+            // fast with an actionable message.
+            let ollama_addr = std::env::var("OLLAMA_HOST")
+                .unwrap_or_else(|_| "127.0.0.1:11434".to_string());
+            let reachable = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                tokio::net::TcpStream::connect(&ollama_addr),
+            )
+            .await;
+            match reachable {
+                Ok(Ok(_)) => {
+                    let client = ollama::Client::from_env();
+                    let agent = client.agent(model).build();
+                    agent.chat(ping, vec![]).await.map(|_| ()).map_err(|e| e.to_string())
+                }
+                _ => Err(
+                    "Ollama is not running. Download and install it from https://ollama.com, \
+                     then start it with `ollama serve`."
+                        .to_string(),
+                ),
+            }
         }
         _ => Err(format!("Unsupported provider: {}", provider)),
     }

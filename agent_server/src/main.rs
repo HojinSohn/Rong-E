@@ -42,6 +42,12 @@ fn main() {
     #[cfg(unix)]
     fix_stdio_blocking();
 
+    // rig's ollama::Client::from_env() panics if OLLAMA_API_BASE_URL is absent.
+    // Default to localhost before any threads start (safe single-threaded context).
+    if std::env::var("OLLAMA_API_BASE_URL").is_err() {
+        unsafe { std::env::set_var("OLLAMA_API_BASE_URL", "http://localhost:11434") };
+    }
+
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
