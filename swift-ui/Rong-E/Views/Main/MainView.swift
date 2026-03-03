@@ -2443,7 +2443,11 @@ struct AgentLoadingView: View {
         }
         .frame(width: 280, height: 420)
         .clipShape(RoundedRectangle(cornerRadius: JarvisRadius.pill))
-        .shadow(color: accent.opacity(0.3), radius: 20, x: 0, y: 0)
+        .background(
+            RoundedRectangle(cornerRadius: JarvisRadius.pill)
+                .fill(Color.clear)
+                .shadow(color: accent.opacity(0.3), radius: 20, x: 0, y: 0)
+        )
         .onAppear {
             startBootSequence()
         }
