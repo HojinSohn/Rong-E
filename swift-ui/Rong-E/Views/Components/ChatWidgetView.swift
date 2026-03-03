@@ -118,8 +118,9 @@ struct LinkWidgetView: View {
     let widget: ChatWidgetData
     @Binding var isHovered: Bool
     @Binding var isPressed: Bool
+    @ObservedObject private var _theme = AppContext.shared
 
-    private let accentColor = Color.jarvisCyan
+    private var accentColor: Color { Color.jarvisCyan }
 
     var body: some View {
         Button(action: {
@@ -181,6 +182,7 @@ struct AppLaunchWidgetView: View {
     let widget: ChatWidgetData
     @Binding var isHovered: Bool
     @Binding var isPressed: Bool
+    @ObservedObject private var _theme = AppContext.shared
 
     private let accentColor = Color.jarvisGreen
 
@@ -243,6 +245,7 @@ struct ImageWidgetView: View {
     let widget: ChatWidgetData
     @State private var isExpanded = false
     @State private var loadedImage: NSImage?
+    @ObservedObject private var _theme = AppContext.shared
 
     private let accentColor = Color.jarvisPurple
 
@@ -322,6 +325,7 @@ struct FilePreviewWidgetView: View {
     let widget: ChatWidgetData
     @Binding var isHovered: Bool
     @Binding var isPressed: Bool
+    @ObservedObject private var _theme = AppContext.shared
 
     private let accentColor = Color.jarvisAmber
 
@@ -409,8 +413,9 @@ struct FilePreviewWidgetView: View {
 struct CodeBlockWidgetView: View {
     let widget: ChatWidgetData
     @Binding var showCopiedFeedback: Bool
+    @ObservedObject private var _theme = AppContext.shared
 
-    private let accentColor = Color.jarvisCyan
+    private var accentColor: Color { Color.jarvisCyan }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -471,6 +476,7 @@ struct ConfirmationWidgetView: View {
     let widget: ChatWidgetData
     var onConfirm: (() -> Void)?
     var onCancel: (() -> Void)?
+    @ObservedObject private var _theme = AppContext.shared
 
     @State private var confirmHovered = false
     @State private var cancelHovered = false
@@ -533,8 +539,9 @@ struct QuickActionWidgetView: View {
     let widget: ChatWidgetData
     @Binding var isHovered: Bool
     @Binding var isPressed: Bool
+    @ObservedObject private var _theme = AppContext.shared
 
-    private let accentColor = Color.jarvisCyan
+    private var accentColor: Color { Color.jarvisCyan }
 
     var body: some View {
         Button(action: {

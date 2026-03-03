@@ -10,26 +10,18 @@ struct WorkflowTask: Identifiable, Codable, Hashable {
 }
 
 class WorkflowManager: ObservableObject {
-    // Singleton instance
     static let shared = WorkflowManager()
-    
-    // Private initializer to enforce singleton
-    private init() {
-        loadTasks()
-    }
+    private init() { loadTasks() }
 
     @Published var tasks: [WorkflowTask] = []
     
     private let key = "StartupWorkflowTasks"
-    
-    // --- CRUD Operations ---
     
     func loadTasks() {
         if let data = UserDefaults.standard.data(forKey: key),
            let decoded = try? JSONDecoder().decode([WorkflowTask].self, from: data) {
             self.tasks = decoded.sorted { $0.order < $1.order }
         } else {
-            // Default "Demo" Tasks
             self.tasks = [
                 WorkflowTask(prompt: "Check my calendar for meetings today.", isEnabled: true, order: 0),
                 WorkflowTask(prompt: "Check unread emails and summarize'.", isEnabled: true, order: 1),

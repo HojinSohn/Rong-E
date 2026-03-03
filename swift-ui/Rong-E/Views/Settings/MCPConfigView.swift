@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct MCPConfigView: View {
     @ObservedObject var configManager = MCPConfigManager.shared
+    @ObservedObject private var _theme = AppContext.shared
     @State private var showFileImporter = false
     @State private var showAddServerSheet = false
     @State private var showJSONPasteSheet = false
@@ -249,6 +250,7 @@ struct ServerRowView: View {
     let status: MCPServerConnectionStatus
     let onDelete: () -> Void
     @State private var isExpanded = false
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: JarvisSpacing.xs) {
@@ -329,6 +331,7 @@ struct ServerRowView: View {
 struct AddServerSheet: View {
     @Environment(\.dismiss) var dismiss
     let onAdd: (MCPServerConfig) -> Void
+    @ObservedObject private var _theme = AppContext.shared
 
     @State private var name = ""
     @State private var command = ""
@@ -453,6 +456,7 @@ struct JSONPasteSheet: View {
     @Environment(\.dismiss) var dismiss
     @Binding var jsonText: String
     let onSubmit: () -> Void
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: JarvisSpacing.lg) {

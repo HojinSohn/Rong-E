@@ -40,9 +40,10 @@ class ToolFormatter {
 struct ToolConsoleView: View {
     let toolName: String
     let args: [String: AnyCodable]
+    @ObservedObject private var _theme = AppContext.shared
     
-    private let accentColor = Color.jarvisAmber
-    private let keyColor = Color.jarvisCyan
+    private var accentColor: Color { Color.jarvisAmber }
+    private var keyColor: Color { Color.jarvisCyan }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

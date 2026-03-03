@@ -42,14 +42,14 @@ struct SettingsView: View {
                 // Custom Header
                 HStack {
                     Circle()
-                        .fill(Color.jarvisBlue)
+                        .fill(context.themeAccentColor)
                         .frame(width: 8, height: 8)
                         .modifier(JarvisGlow(active: true))
                     
                     Text("SYSTEM // SETTINGS")
                         .font(.system(.subheadline, design: .monospaced))
                         .fontWeight(.bold)
-                        .foregroundColor(.jarvisBlue)
+                        .foregroundColor(context.themeAccentColor)
                         .tracking(2)
                     
                     Spacer()
@@ -67,16 +67,17 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 15)
-                .background(Color.jarvisBlue.opacity(0.05))
-                .overlay(Rectangle().frame(height: 1).foregroundColor(.jarvisBlue.opacity(0.3)), alignment: .bottom)
+                .background(context.themeAccentColor.opacity(0.05))
+                .overlay(Rectangle().frame(height: 1).foregroundColor(context.themeAccentColor.opacity(0.3)), alignment: .bottom)
                 
                 // Custom Tab Bar (Replacing standard TabView for styling control)
                 HStack(spacing: 0) {
                     JarvisTabButton(icon: "gearshape", title: "SYS", isSelected: selectedTab == 0) { selectedTab = 0 }
                     JarvisTabButton(icon: "slider.horizontal.3", title: "MOD", isSelected: selectedTab == 1) { selectedTab = 1 }
                     JarvisTabButton(icon: "server.rack", title: "MCP", isSelected: selectedTab == 2) { selectedTab = 2 }
-                    JarvisTabButton(icon: "brain", title: "MEM", isSelected: selectedTab == 3) { selectedTab = 3 }
-                    JarvisTabButton(icon: "info.circle", title: "DAT", isSelected: selectedTab == 4) { selectedTab = 4 }
+                    JarvisTabButton(icon: "paintbrush", title: "THM", isSelected: selectedTab == 3) { selectedTab = 3 }
+                    JarvisTabButton(icon: "brain", title: "MEM", isSelected: selectedTab == 4) { selectedTab = 4 }
+                    JarvisTabButton(icon: "info.circle", title: "DAT", isSelected: selectedTab == 5) { selectedTab = 5 }
                 }
                 .padding(.vertical, 10)
 
@@ -86,8 +87,9 @@ struct SettingsView: View {
                     case 0: GeneralSettingsView()
                     case 1: ModesSettingsView()
                     case 2: MCPSettingsView()
-                    case 3: MemorySettingsView()
-                    case 4: AboutSettingsView()
+                    case 3: ThemeSettingsView()
+                    case 4: MemorySettingsView()
+                    case 5: AboutSettingsView()
                     default: GeneralSettingsView()
                     }
                 }
@@ -133,7 +135,7 @@ struct GeneralSettingsView: View {
                             .background(Color.black.opacity(0.5))
                             .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
                             .foregroundColor(.jarvisTextPrimary)
-                            .onChange(of: context.userName) { _ in
+                            .onChange(of: context.userName) {
                                 context.saveSettings()
                             }
                     }
@@ -301,6 +303,7 @@ struct LLMProviderButton: View {
     let provider: LLMProvider
     let isSelected: Bool
     let action: () -> Void
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         Button(action: action) {
@@ -326,6 +329,7 @@ struct LLMModelSelector: View {
     let suggestedModels: [String]
     @State private var isExpanded: Bool = false
     @State private var customModel: String = ""
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -407,6 +411,7 @@ struct LLMModelSelector: View {
 // MARK: - MCP Settings View
 struct MCPSettingsView: View {
     @ObservedObject var configManager = MCPConfigManager.shared
+    @ObservedObject private var _theme = AppContext.shared
     @State private var showFileImporter = false
     @State private var showAddServerSheet = false
     @State private var showJSONPasteSheet = false
@@ -550,6 +555,7 @@ struct MCPServerRow: View {
     let status: MCPServerConnectionStatus
     let onDelete: () -> Void
     @State private var isExpanded = false
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -637,6 +643,7 @@ struct MCPActionButton: View {
     let icon: String
     let title: String
     let action: () -> Void
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         Button(action: action) {
@@ -658,6 +665,7 @@ struct MCPActionButton: View {
 struct MCPAddServerSheet: View {
     @Environment(\.dismiss) var dismiss
     let onAdd: (MCPServerConfig) -> Void
+    @ObservedObject private var _theme = AppContext.shared
 
     @State private var name = ""
     @State private var command = ""
@@ -753,6 +761,7 @@ struct MCPJSONPasteSheet: View {
     @Environment(\.dismiss) var dismiss
     @Binding var jsonText: String
     let onSubmit: () -> Void
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         ZStack {
@@ -817,6 +826,7 @@ struct MCPTextField: View {
     let label: String
     @Binding var text: String
     var placeholder: String = ""
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -837,6 +847,7 @@ struct MCPTextField: View {
 
 // MARK: - Memory Settings View
 struct MemorySettingsView: View {
+    @ObservedObject private var _theme = AppContext.shared
     @State private var memoryContent: String = ""
     @State private var isLoading: Bool = true
     @State private var isSaving: Bool = false
@@ -880,7 +891,7 @@ struct MemorySettingsView: View {
                 .background(Color.black.opacity(0.5))
                 .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
                 .frame(minHeight: 200)
-                .onChange(of: memoryContent) { _ in
+                .onChange(of: memoryContent) {
                     hasChanges = true
                 }
 
@@ -997,26 +1008,31 @@ struct MemorySettingsView: View {
 }
 
 struct AboutSettingsView: View {
+    @EnvironmentObject var context: AppContext
     @State private var rotation: Double = 0
 
     var body: some View {
+        let accent = context.themeAccentColor
+        let animationsOff = context.themeAnimationsDisabled
         VStack(spacing: 0) {
             ZStack {
                 // Arc Reactor / Core Animation
                 Circle()
                     .stroke(lineWidth: 3)
-                    .foregroundColor(.jarvisBlue.opacity(0.3))
+                    .foregroundColor(accent.opacity(0.3))
                     .frame(width: 80, height: 80)
                 
                 Circle()
                     .trim(from: 0, to: 0.8)
                     .stroke(style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .foregroundColor(.jarvisBlue)
+                    .foregroundColor(accent)
                     .frame(width: 80, height: 80)
                     .rotationEffect(.degrees(rotation))
                     .onAppear {
-                        withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
-                            rotation = 360
+                        if !animationsOff {
+                            withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
+                                rotation = 360
+                            }
                         }
                     }
                 
@@ -1034,7 +1050,7 @@ struct AboutSettingsView: View {
             
             Text("BUILD: V.1.0.0-BETA")
                 .font(.system(.caption, design: .monospaced))
-                .foregroundColor(.jarvisBlue)
+                .foregroundColor(accent)
                 .padding(.top, 2)
             
             Spacer()
@@ -1056,8 +1072,10 @@ struct AboutSettingsView: View {
 struct JarvisToggle: View {
     let title: String
     @Binding var isOn: Bool
+    @ObservedObject private var _theme = AppContext.shared
     
     var body: some View {
+        let accent = _theme.themeAccentColor
         // Wrap in a button to make the text clickable too
         Button(action: { withAnimation(.easeInOut(duration: 0.2)) { isOn.toggle() } }) {
             HStack {
@@ -1069,15 +1087,15 @@ struct JarvisToggle: View {
                 // Visual Switch
                 ZStack {
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(isOn ? Color.jarvisBlue.opacity(0.2) : Color.black)
+                        .fill(isOn ? accent.opacity(0.2) : Color.black)
                         .overlay(
                             RoundedRectangle(cornerRadius: 10)
-                                .stroke(isOn ? Color.jarvisBlue : Color.jarvisTextDim, lineWidth: 1)
+                                .stroke(isOn ? accent : Color.jarvisTextDim, lineWidth: 1)
                         )
                         .frame(width: 40, height: 20)
                     
                     Circle()
-                        .fill(isOn ? Color.jarvisBlue : Color.jarvisTextDim)
+                        .fill(isOn ? accent : Color.jarvisTextDim)
                         .frame(width: 14, height: 14)
                         .offset(x: isOn ? 10 : -10)
                         .modifier(JarvisGlow(active: isOn))
@@ -1089,4 +1107,5 @@ struct JarvisToggle: View {
         .buttonStyle(.plain) // Removes standard button click flash
     }
 }
+
 

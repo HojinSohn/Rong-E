@@ -172,7 +172,7 @@ struct ChatPayload: Codable {
 }
 
 // MARK: - Socket Client
-class SocketClient: ObservableObject {
+class SocketClient: ObservableObject, @unchecked Sendable {
     static let shared = SocketClient()
 
     private init() {

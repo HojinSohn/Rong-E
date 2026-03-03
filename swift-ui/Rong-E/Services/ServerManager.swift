@@ -77,6 +77,13 @@ class ServerManager: ObservableObject {
         newProcess.standardOutput = newPipe
         newProcess.standardError = newPipe
 
+        // Ensure OLLAMA_API_BASE_URL is set so rig's ollama client doesn't panic
+        var env = ProcessInfo.processInfo.environment
+        if env["OLLAMA_API_BASE_URL"] == nil {
+            env["OLLAMA_API_BASE_URL"] = "http://localhost:11434"
+        }
+        newProcess.environment = env
+
         // 3. Pipe stdout/stderr to Xcode console
         newPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -122,15 +129,37 @@ class ServerManager: ObservableObject {
 
     /// Find the compiled binary during development (not in bundle)
     private func findDevBinary() -> String? {
-        // Walk up from the app bundle to find agent_server/target/release/agent_server
+        // Strategy 1: Walk up from the app bundle (works when run from workspace)
         var url = Bundle.main.bundleURL
-        for _ in 0..<6 {
+        for _ in 0..<8 {
             url = url.deletingLastPathComponent()
             let candidate = url.appendingPathComponent("agent_server/target/release/agent_server").path
             if FileManager.default.isExecutableFile(atPath: candidate) {
                 return candidate
             }
         }
+
+        // Strategy 2: Look relative to the Xcode project source root
+        // The swift-ui dir sits next to agent_server in the workspace
+        if let srcRoot = Bundle.main.infoDictionary?["SOURCE_ROOT"] as? String {
+            let wsRoot = URL(fileURLWithPath: srcRoot).deletingLastPathComponent()
+            let candidate = wsRoot.appendingPathComponent("agent_server/target/release/agent_server").path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+
+        // Strategy 3: Use __FILE__ equivalent — the swift-ui package is a sibling of agent_server
+        let thisFile = #filePath
+        var dir = URL(fileURLWithPath: thisFile)
+        for _ in 0..<6 {
+            dir = dir.deletingLastPathComponent()
+            let candidate = dir.appendingPathComponent("agent_server/target/release/agent_server").path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+
         return nil
     }
 }

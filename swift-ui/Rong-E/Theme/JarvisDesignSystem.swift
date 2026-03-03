@@ -4,13 +4,15 @@ import SwiftUI
 
 // MARK: Color Palette
 extension Color {
-    // Primary
-    static let jarvisBlue = Color(red: 0/255, green: 240/255, blue: 255/255)   // Electric Cyan (primary accent)
+    static let jarvisCyanFixed = Color(red: 0/255, green: 240/255, blue: 255/255)
+
+    // Primary — now reads from theme settings
+    static var jarvisBlue: Color { AppContext.shared.themeAccentColor }
     static let jarvisDark = Color(red: 10/255, green: 20/255, blue: 30/255)    // Deep Navy/Black
     static let jarvisDim = Color.gray.opacity(0.3)
 
-    // Semantic Accents
-    static let jarvisCyan   = Color(red: 0.0, green: 0.9, blue: 1.0)          // HUD Cyan (≈ jarvisBlue)
+    // Semantic Accents — jarvisCyan follows the theme accent
+    static var jarvisCyan: Color   { AppContext.shared.themeAccentColor }
     static let jarvisGreen  = Color(red: 0.0, green: 1.0, blue: 0.6)          // Success / Launch
     static let jarvisAmber  = Color(red: 1.0, green: 0.8, blue: 0.0)          // Warning / Files
     static let jarvisPurple = Color(red: 0.7, green: 0.4, blue: 1.0)          // Images / Special
@@ -28,14 +30,14 @@ extension Color {
     static let jarvisSurfaceDeep   = Color.black.opacity(0.8)
 
     // Text
-    static let jarvisTextPrimary   = Color.white
-    static let jarvisTextSecondary = Color.white.opacity(0.7)
+    static var jarvisTextPrimary: Color   { AppContext.shared.themeChatFontColor }
+    static var jarvisTextSecondary: Color { AppContext.shared.themeChatFontColor.opacity(0.7) }
     static let jarvisTextTertiary  = Color.white.opacity(0.5)
     static let jarvisTextDim       = Color.white.opacity(0.3)
 
     // Borders
     static let jarvisBorder        = Color.white.opacity(0.05)
-    static let jarvisBorderActive  = Color.jarvisBlue.opacity(0.3)
+    static var jarvisBorderActive: Color  { AppContext.shared.themeAccentColor.opacity(0.3) }
 }
 
 // MARK: Font Tokens
@@ -105,23 +107,27 @@ enum JarvisDimension {
 // MARK: - View Modifiers
 
 struct JarvisPanel: ViewModifier {
+    @ObservedObject private var context = AppContext.shared
     func body(content: Content) -> some View {
+        let accent = context.themeAccentColor
         content
             .padding()
             .background(Color.jarvisSurface)
             .cornerRadius(JarvisRadius.small)
             .overlay(
                 RoundedRectangle(cornerRadius: JarvisRadius.small)
-                    .stroke(Color.jarvisBorderActive, lineWidth: 1)
+                    .stroke(accent.opacity(0.3), lineWidth: 1)
             )
     }
 }
 
 struct JarvisGlow: ViewModifier {
     var active: Bool
+    @ObservedObject private var context = AppContext.shared
     func body(content: Content) -> some View {
+        let accent = context.themeAccentColor
         content
-            .shadow(color: active ? .jarvisBlue : .clear, radius: 8, x: 0, y: 0)
+            .shadow(color: active ? accent : .clear, radius: 8, x: 0, y: 0)
     }
 }
 
@@ -215,7 +221,9 @@ struct JarvisSectionHeader: ViewModifier {
 
 // A technical background grid pattern
 struct TechGridBackground: View {
+    @ObservedObject private var context = AppContext.shared
     var body: some View {
+        let accent = context.themeAccentColor
         GeometryReader { geometry in
             Path { path in
                 let width = geometry.size.width
@@ -231,7 +239,7 @@ struct TechGridBackground: View {
                     path.addLine(to: CGPoint(x: width, y: CGFloat(i)*spacing))
                 }
             }
-            .stroke(Color.jarvisBlue.opacity(0.05), lineWidth: 1)
+            .stroke(accent.opacity(0.05), lineWidth: 1)
         }
     }
 }
@@ -255,14 +263,16 @@ struct VisualEffectBlur: NSViewRepresentable {
 struct CornerBracket: View {
     var topLeft: Bool
     var rotate: Bool = false
+    @ObservedObject private var context = AppContext.shared
     
     var body: some View {
+        let accent = context.themeAccentColor
         Path { path in
             path.move(to: CGPoint(x: 0, y: 20))
             path.addLine(to: CGPoint(x: 0, y: 0))
             path.addLine(to: CGPoint(x: 20, y: 0))
         }
-        .stroke(Color.jarvisBlue.opacity(0.6), lineWidth: 2)
+        .stroke(accent.opacity(0.6), lineWidth: 2)
         .frame(width: 20, height: 20)
         .rotationEffect(rotate ? .degrees(180) : .degrees(0))
         .scaleEffect(x: topLeft ? 1 : -1, y: 1)
@@ -274,8 +284,10 @@ struct JarvisTabButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
+    @ObservedObject private var context = AppContext.shared
     
     var body: some View {
+        let accent = context.themeAccentColor
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: icon)
@@ -285,14 +297,14 @@ struct JarvisTabButton: View {
                     .bold()
             }
             // Fix 1: Brighter gray for unselected state so it's visible on black
-            .foregroundColor(isSelected ? .jarvisBlue : .white.opacity(0.4))
+            .foregroundColor(isSelected ? accent : .white.opacity(0.4))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
-            .background(isSelected ? Color.jarvisBlue.opacity(0.1) : Color.clear)
+            .background(isSelected ? accent.opacity(0.1) : Color.clear)
             .overlay(
                 Rectangle()
                     .frame(height: 2)
-                    .foregroundColor(isSelected ? .jarvisBlue : .clear),
+                    .foregroundColor(isSelected ? accent : .clear),
                 alignment: .bottom
             )
             // Fix 2: Makes the entire area clickable even if background is clear
