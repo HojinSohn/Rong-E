@@ -111,6 +111,11 @@ struct GeneralSettingsView: View {
     @State private var lastAppliedProvider: LLMProvider = .gemini
     @State private var lastAppliedModel: String = ""
     @State private var lastAppliedApiKey: String = ""
+    @FocusState private var focusedField: GeneralSettingsField?
+
+    enum GeneralSettingsField: Hashable {
+        case userName, apiKey
+    }
 
     var body: some View {
         ScrollView {
@@ -135,6 +140,7 @@ struct GeneralSettingsView: View {
                             .background(Color.black.opacity(0.5))
                             .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
                             .foregroundColor(.jarvisTextPrimary)
+                            .focused($focusedField, equals: .userName)
                             .onChange(of: context.userName) {
                                 context.saveSettings()
                             }
@@ -159,7 +165,15 @@ struct GeneralSettingsView: View {
                     // Model Selector
                     LLMModelSelector(
                         selectedModel: $context.llmModel,
-                        suggestedModels: context.llmProvider.suggestedModels
+                        suggestedModels: context.llmProvider.suggestedModels,
+                        onSelected: {
+                            // Delay to run after popover finishes dismissing
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                focusedField = nil
+                                // Also resign first responder at the NSApp level
+                                NSApp.keyWindow?.makeFirstResponder(nil)
+                            }
+                        }
                     )
 
                     // API Key
@@ -327,6 +341,7 @@ struct LLMProviderButton: View {
 struct LLMModelSelector: View {
     @Binding var selectedModel: String
     let suggestedModels: [String]
+    var onSelected: (() -> Void)? = nil
     @State private var isExpanded: Bool = false
     @State private var customModel: String = ""
     @ObservedObject private var _theme = AppContext.shared
@@ -338,7 +353,7 @@ struct LLMModelSelector: View {
                 .foregroundColor(.jarvisTextDim)
 
             // Selected model display / dropdown toggle
-            Button(action: { withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() } }) {
+            Button(action: { isExpanded.toggle() }) {
                 HStack {
                     Text(selectedModel.isEmpty ? "Select a model" : selectedModel)
                         .font(.system(size: 11, design: .monospaced))
@@ -354,32 +369,39 @@ struct LLMModelSelector: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-
-            if isExpanded {
+            .popover(isPresented: $isExpanded, arrowEdge: .bottom) {
                 VStack(spacing: 0) {
-                    // Suggested models
-                    ForEach(suggestedModels, id: \.self) { model in
-                        Button(action: {
-                            selectedModel = model
-                            withAnimation(.easeInOut(duration: 0.15)) { isExpanded = false }
-                        }) {
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(selectedModel == model ? Color.jarvisBlue : Color.clear)
-                                    .overlay(Circle().stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
-                                    .frame(width: 6, height: 6)
-                                Text(model)
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(selectedModel == model ? .jarvisTextPrimary : .jarvisTextDim)
-                                Spacer()
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            // Suggested models
+                            ForEach(suggestedModels, id: \.self) { model in
+                                Button(action: {
+                                    selectedModel = model
+                                    isExpanded = false
+                                    onSelected?()
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(selectedModel == model ? Color.jarvisBlue : Color.clear)
+                                            .overlay(Circle().stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
+                                            .frame(width: 6, height: 6)
+                                        Text(model)
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(selectedModel == model ? .jarvisTextPrimary : .jarvisTextDim)
+                                        Spacer()
+                                    }
+                                    .padding(.vertical, 5)
+                                    .padding(.horizontal, 8)
+                                    .background(selectedModel == model ? Color.jarvisBlue.opacity(0.1) : Color.clear)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .padding(.vertical, 5)
-                            .padding(.horizontal, 8)
-                            .background(selectedModel == model ? Color.jarvisBlue.opacity(0.1) : Color.clear)
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
                     }
+                    .frame(maxHeight: 200)
+
+                    Divider()
 
                     // Custom model input
                     HStack(spacing: 6) {
@@ -390,7 +412,8 @@ struct LLMModelSelector: View {
                             if !customModel.trimmingCharacters(in: .whitespaces).isEmpty {
                                 selectedModel = customModel
                                 customModel = ""
-                                withAnimation(.easeInOut(duration: 0.15)) { isExpanded = false }
+                                isExpanded = false
+                                onSelected?()
                             }
                         })
                         .textFieldStyle(.plain)
@@ -399,10 +422,10 @@ struct LLMModelSelector: View {
                     }
                     .padding(.vertical, 5)
                     .padding(.horizontal, 8)
-                    .background(Color.black.opacity(0.3))
                 }
-                .background(Color.black.opacity(0.6))
-                .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+                .frame(width: 280)
+                .padding(.vertical, 4)
+                .background(Color.jarvisSurface)
             }
         }
     }
