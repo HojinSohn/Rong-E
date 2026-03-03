@@ -165,7 +165,7 @@ class AppContext: ObservableObject {
     @Published var themeOpaqueBackground: Bool = false
     @Published var themeAnimationsDisabled: Bool = false
     @Published var themeAccentColorName: String = "cyan" // cyan, green, purple, amber, orange, red
-    @Published var themeChatFontColorName: String = "white" // white, accent, green, amber, cyan
+    @Published var themeChatFontColorName: String = "white" // white, accent, green, amber, purple, orange
 
     /// The resolved accent color based on `themeAccentColorName`.
     var themeAccentColor: Color {
@@ -192,7 +192,9 @@ class AppContext: ObservableObject {
         case "accent": return themeAccentColor
         case "green":  return Color(red: 0.0, green: 1.0, blue: 0.6)
         case "amber":  return Color(red: 1.0, green: 0.8, blue: 0.0)
-        case "cyan":   return Color.jarvisCyanFixed
+        case "purple": return Color(red: 0.7, green: 0.4, blue: 1.0)
+        case "orange": return Color(red: 1.0, green: 0.6, blue: 0.2)
+        case "cyan":   return Color.jarvisCyanFixed  // legacy fallback
         default:       return .white
         }
     }

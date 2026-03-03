@@ -151,12 +151,12 @@ class WindowCoordinator: ObservableObject {
         print("Opening Permission Waiting Overlay")
         let id = "permission_waiting_overlay"
         if controllers[id] == nil {
-            let contentView = PermissionWaitingView(onRetry: onRetry, onCancel: onCancel, windowID: id, size: CGSize(width: 320, height: 200))
+            let contentView = PermissionWaitingView(onRetry: onRetry, onCancel: onCancel, windowID: id, size: CGSize(width: 340, height: 340))
             
             let controller = DynamicWindowController(
                 id: id,
                 view: AnyView(contentView),
-                size: CGSize(width: 320, height: 200)
+                size: CGSize(width: 340, height: 340)
             )
             controllers[id] = controller
         }
@@ -266,7 +266,7 @@ class WindowCoordinator: ObservableObject {
         let controller = DynamicWindowController(
             id: id,
             view: AnyView(contentView),
-            size: CGSize(width: 400, height: 500),
+            size: CGSize(width: 500, height: 500),
             location: nil
         )
         

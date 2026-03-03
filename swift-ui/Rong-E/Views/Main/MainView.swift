@@ -1020,34 +1020,34 @@ struct ModeBarView: View {
                     appContext.toggleCurrentModeVision()
                 }
             }) {
-                HStack(spacing: 4) {
-                    ZStack {
-                        Rectangle()
-                            .stroke(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextDim, lineWidth: 0.8)
-                            .frame(width: 10, height: 10)
+                HStack(spacing: 5) {
+                    Image(systemName: appContext.currentMode.isScreenshotEnabled ? "eye.fill" : "eye.slash")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextDim)
 
-                        if appContext.currentMode.isScreenshotEnabled {
-                            Rectangle()
-                                .fill(Color.jarvisCyan)
-                                .frame(width: 5, height: 5)
-                                .shadow(color: Color.jarvisCyan, radius: 3)
-                        }
-                    }
-
-                    Text(appContext.currentMode.isScreenshotEnabled ? "VISION: ON" : "VISION: OFF")
+                    Text(appContext.currentMode.isScreenshotEnabled ? "SCREEN CAPTURE: ON" : "SCREEN CAPTURE: OFF")
                         .font(JarvisFont.tag)
                         .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextTertiary)
 
-                    Image(systemName: "viewfinder")
-                        .font(.system(size: 8))
-                        .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextDim)
+                    // Status dot
+                    Circle()
+                        .fill(appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.jarvisTextDim.opacity(0.5))
+                        .frame(width: 5, height: 5)
+                        .shadow(color: appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.clear, radius: 3)
                 }
-                .padding(.vertical, 3)
-                .padding(.horizontal, 6)
-                .background(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.1) : Color.clear)
-                .cornerRadius(3)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.1) : Color.white.opacity(0.03))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.3) : Color.jarvisTextDim.opacity(0.2), lineWidth: 0.5)
+                )
             }
             .buttonStyle(.plain)
+            .help("When enabled, Rong-E captures your screen and sends it with your message so the AI can see what you see.")
 
             Button(action: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -1537,33 +1537,32 @@ struct MinimizedMessageView: View {
                     }
                 }) {
                     HStack(spacing: 6) {
-                        ZStack {
-                            Rectangle()
-                                .stroke(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextDim, lineWidth: 1)
-                                .frame(width: 12, height: 12)
-                            
-                            if appContext.currentMode.isScreenshotEnabled {
-                                Rectangle()
-                                    .fill(Color.jarvisCyan)
-                                    .frame(width: 6, height: 6)
-                                    .shadow(color: Color.jarvisCyan, radius: 4)
-                            }
-                        }
+                        Image(systemName: appContext.currentMode.isScreenshotEnabled ? "eye.fill" : "eye.slash")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextDim)
                         
-                        Text(appContext.currentMode.isScreenshotEnabled ? "VISION: ON" : "VISION: OFF")
+                        Text(appContext.currentMode.isScreenshotEnabled ? "SCREEN CAPTURE: ON" : "SCREEN CAPTURE: OFF")
                             .font(JarvisFont.captionMono)
                             .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextTertiary)
                         
-                        Image(systemName: "viewfinder")
-                            .font(.system(size: 10))
-                            .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextDim)
+                        Circle()
+                            .fill(appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.jarvisTextDim.opacity(0.5))
+                            .frame(width: 6, height: 6)
+                            .shadow(color: appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.clear, radius: 3)
                     }
                     .padding(.vertical, JarvisSpacing.xs)
                     .padding(.horizontal, JarvisSpacing.sm)
-                    .background(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.1) : Color.clear)
-                    .cornerRadius(JarvisRadius.small)
+                    .background(
+                        RoundedRectangle(cornerRadius: JarvisRadius.small)
+                            .fill(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.1) : Color.white.opacity(0.03))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: JarvisRadius.small)
+                            .stroke(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.3) : Color.jarvisTextDim.opacity(0.2), lineWidth: 0.5)
+                    )
                 }
                 .buttonStyle(.plain)
+                .help("When enabled, Rong-E captures your screen and sends it with your message so the AI can see what you see.")
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 4)
@@ -1873,237 +1872,180 @@ struct HeaderView: View {
     let toggleMinimized: () -> Void
 
     let toggleMessageView: () -> Void
-    
-    @State private var googleHovering = false
-    @State private var workflowHovering = false
-    @State private var settingsHovering = false
-    @State private var refreshHovering = false
-    @State private var shrinkHovering = false
-    @State private var chatMinimizeHovering = false
-    @State private var quitHovering = false
 
     var body: some View {
-        HStack {
-            Text("Rong-E System")
-                .font(JarvisFont.title)
-                .foregroundStyle(Color.jarvisTextPrimary)
-                .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
-            
+        HStack(spacing: 0) {
+            // --- Left: Brand ---
+            HStack(spacing: 8) {
+                // Accent dot with glow
+                Circle()
+                    .fill(appContext.themeAccentColor)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: appContext.themeAccentColor.opacity(0.8), radius: 6)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("RONG-E")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(appContext.themeAccentColor)
+                        .tracking(2)
+
+                    Text("v1.0.0 BETA")
+                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .foregroundColor(.jarvisTextDim)
+                        .tracking(1)
+                }
+            }
+
             Spacer()
-            
-            Text("v1.0.0 Beta")
-                .font(JarvisFont.subtitle)
-                .foregroundStyle(Color.jarvisTextPrimary)
-                .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
-            
+
+            // --- Center: Action Buttons ---
+            HStack(spacing: 3) {
+                HeaderButton(
+                    icon: "icloud.fill",
+                    label: "Google",
+                    action: { windowCoordinator.openGoogleService() }
+                )
+
+                HeaderButton(
+                    icon: "bolt.horizontal.fill",
+                    label: "Startup",
+                    action: { windowCoordinator.openWorkflowSettings() }
+                )
+
+                HeaderButton(
+                    icon: "slider.horizontal.3",
+                    label: "Settings",
+                    action: { windowCoordinator.openSettings() }
+                )
+
+                HeaderButton(
+                    icon: "arrow.triangle.2.circlepath",
+                    label: "Reset",
+                    accentOnHover: .jarvisAmber,
+                    action: {
+                        appContext.clearSession()
+                        socketClient.sendResetSession()
+                        configManager.sendConfigToPython()
+                    }
+                )
+
+                HeaderButton(
+                    icon: "bubble.left.and.text.bubble.right",
+                    label: "Chat",
+                    action: { toggleMessageView() }
+                )
+            }
+
             Spacer()
 
-            // Google Service Button
-            Button(action: {
-                windowCoordinator.openGoogleService()
-            }) {
-                ZStack {
-                    Color.white.opacity(googleHovering ? 0.25 : 0.15)
-                        .cornerRadius(JarvisRadius.medium)
-                    
-                    Image(systemName: "cloud.fill")
-                        .font(JarvisFont.icon)
-                        .foregroundStyle(Color.jarvisTextPrimary)
-                }
-                .modifier(JarvisHeaderButton(isHovered: googleHovering))
-                .scaleEffect(googleHovering ? 1.1 : 1.0)
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    googleHovering = hovering
-                }
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .contentShape(Rectangle())
-            .zIndex(10)
+            // --- Right: Window Controls ---
+            HStack(spacing: 4) {
+                HeaderButton(
+                    icon: "chevron.down",
+                    label: "Hide",
+                    style: .minimize,
+                    action: { toggleMinimized() }
+                )
 
-            // Workflow Settings Button
-            Button(action: {
-                windowCoordinator.openWorkflowSettings()
-            }) {
-                ZStack {
-                    Color.white.opacity(workflowHovering ? 0.25 : 0.15)
-                        .cornerRadius(JarvisRadius.medium)
-
-                    Image(systemName: "list.bullet.clipboard.fill")
-                        .font(JarvisFont.icon)
-                        .foregroundStyle(Color.jarvisTextPrimary)
-                }
-                .modifier(JarvisHeaderButton(isHovered: workflowHovering))
-                .scaleEffect(workflowHovering ? 1.1 : 1.0)
+                HeaderButton(
+                    icon: "power",
+                    label: "Quit",
+                    style: .quit,
+                    action: { NSApplication.shared.terminate(nil) }
+                )
             }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    workflowHovering = hovering
-                }
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .contentShape(Rectangle())
-            .zIndex(10)
-
-            // Settings Button
-            Button(action: {
-                windowCoordinator.openSettings()
-            }) {
-                ZStack {
-                    Color.white.opacity(settingsHovering ? 0.25 : 0.15)
-                        .cornerRadius(JarvisRadius.medium)
-                    
-                    Image(systemName: "gearshape.fill")
-                        .font(JarvisFont.icon)
-                        .foregroundStyle(Color.jarvisTextPrimary)
-                }
-                .modifier(JarvisHeaderButton(isHovered: settingsHovering))
-                .scaleEffect(settingsHovering ? 1.1 : 1.0)
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    settingsHovering = hovering
-                }
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .contentShape(Rectangle())
-            .zIndex(10)
-
-            // Refresh Session Button
-            Button(action: {
-                appContext.clearSession()
-                socketClient.sendResetSession()
-                configManager.sendConfigToPython()
-            }) {
-                ZStack {
-                    Color.white.opacity(refreshHovering ? 0.25 : 0.15)
-                        .cornerRadius(JarvisRadius.medium)
-
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(JarvisFont.icon)
-                        .foregroundStyle(Color.jarvisTextPrimary)
-                }
-                .modifier(JarvisHeaderButton(isHovered: refreshHovering))
-                .scaleEffect(refreshHovering ? 1.1 : 1.0)
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    refreshHovering = hovering
-                }
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .contentShape(Rectangle())
-            .zIndex(10)
-
-            // Minimized Chat View Button
-            Button(action: {
-                toggleMessageView()
-            }) {
-                ZStack {
-                    Color.white.opacity(chatMinimizeHovering ? 0.25 : 0.15)
-                        .cornerRadius(JarvisRadius.medium)
-                    
-                    Image(systemName: "rectangle.compress.vertical")
-                        .font(JarvisFont.icon)
-                        .foregroundStyle(Color.jarvisTextPrimary)
-                }
-                .modifier(JarvisHeaderButton(isHovered: chatMinimizeHovering))
-                .scaleEffect(chatMinimizeHovering ? 1.1 : 1.0)
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    chatMinimizeHovering = hovering
-                }
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .contentShape(Rectangle())
-            .zIndex(10)
-
-            // Shrink Button
-            Button(action: {
-                toggleMinimized()
-            }) {
-                ZStack {
-                    Color.white.opacity(shrinkHovering ? 0.9 : 1.0)
-                        .cornerRadius(JarvisRadius.medium)
-                    
-                    Image(systemName: "minus")
-                        .font(JarvisFont.icon)
-                        .foregroundStyle(shrinkHovering ? .black : .black)
-                }
-                .modifier(JarvisHeaderButton(isHovered: shrinkHovering))
-                .scaleEffect(shrinkHovering ? 1.1 : 1.0)
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    shrinkHovering = hovering
-                }
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .contentShape(Rectangle())
-            .zIndex(10)
-
-            // Quit Button
-            Button(action: {
-                NSApplication.shared.terminate(nil)
-            }) {
-                ZStack {
-                    Color.jarvisRed.opacity(quitHovering ? 0.6 : 0.4)
-                        .cornerRadius(JarvisRadius.medium)
-
-                    Image(systemName: "xmark")
-                        .font(JarvisFont.icon)
-                        .foregroundStyle(Color.jarvisTextPrimary)
-                }
-                .modifier(JarvisHeaderButton(isHovered: quitHovering))
-                .scaleEffect(quitHovering ? 1.1 : 1.0)
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    quitHovering = hovering
-                }
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .contentShape(Rectangle())
-            .zIndex(10)
         }
         .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Header Button Component
+private struct HeaderButton: View {
+    enum Style { case normal, minimize, quit }
+
+    let icon: String
+    var label: String = ""
+    var accentOnHover: Color? = nil
+    var style: Style = .normal
+    let action: () -> Void
+
+    @State private var isHovering = false
+    @ObservedObject private var context = AppContext.shared
+
+    private var accentColor: Color {
+        accentOnHover ?? context.themeAccentColor
+    }
+
+    private var bgColor: Color {
+        switch style {
+        case .normal:
+            return isHovering ? accentColor.opacity(0.18) : Color.white.opacity(0.05)
+        case .minimize:
+            return isHovering ? Color.white.opacity(0.85) : Color.white.opacity(0.12)
+        case .quit:
+            return Color.jarvisRed.opacity(isHovering ? 0.6 : 0.15)
+        }
+    }
+
+    private var fgColor: Color {
+        switch style {
+        case .normal:
+            return isHovering ? accentColor : Color.jarvisTextTertiary
+        case .minimize:
+            return isHovering ? .black : Color.jarvisTextTertiary
+        case .quit:
+            return isHovering ? .white : Color.jarvisTextTertiary
+        }
+    }
+
+    private var borderColor: Color {
+        switch style {
+        case .normal:
+            return isHovering ? accentColor.opacity(0.4) : Color.white.opacity(0.06)
+        case .minimize:
+            return isHovering ? Color.white.opacity(0.4) : Color.white.opacity(0.1)
+        case .quit:
+            return isHovering ? Color.jarvisRed.opacity(0.6) : Color.jarvisRed.opacity(0.1)
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(bgColor)
+
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(borderColor, lineWidth: 0.6)
+
+                    Image(systemName: icon)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(fgColor)
+                }
+                .frame(width: 28, height: 26)
+                .shadow(color: isHovering && style == .normal ? accentColor.opacity(0.3) : .clear, radius: 4, x: 0, y: 1)
+
+                Text(label.uppercased())
+                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+                    .foregroundStyle(isHovering ? fgColor : Color.jarvisTextDim.opacity(0.6))
+                    .lineLimit(1)
+            }
+            .scaleEffect(isHovering ? 1.06 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+        }
+        .buttonStyle(.plain)
+        .frame(width: 38)
+        .onHover { hovering in
+            isHovering = hovering
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .contentShape(Rectangle())
     }
 }
 
