@@ -18,7 +18,8 @@ struct ThemeSettingsView: View {
         ("accent", "ACCENT", .gray),  // placeholder – real color shown dynamically
         ("green",  "GREEN",  Color(red: 0.0, green: 1.0, blue: 0.6)),
         ("amber",  "AMBER",  Color(red: 1.0, green: 0.8, blue: 0.0)),
-        ("cyan",   "CYAN",   .jarvisCyanFixed),
+        ("purple", "PURPLE", Color(red: 0.7, green: 0.4, blue: 1.0)),
+        ("orange", "ORANGE", Color(red: 1.0, green: 0.6, blue: 0.2)),
     ]
 
     var body: some View {
