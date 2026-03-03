@@ -387,21 +387,28 @@ struct AddServerSheet: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .padding(.horizontal, JarvisSpacing.lg)
-                    .padding(.vertical, JarvisSpacing.sm)
-                    .background(Color.jarvisSurfaceLight)
-                    .cornerRadius(JarvisRadius.medium)
-                Button("Add") { addServer() }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.jarvisTextPrimary)
-                    .padding(.horizontal, JarvisSpacing.lg)
-                    .padding(.vertical, JarvisSpacing.sm)
-                    .background(Color.jarvisBlue)
-                    .cornerRadius(JarvisRadius.medium)
-                    .disabled(name.isEmpty || command.isEmpty)
+                Button(action: { dismiss() }) {
+                    Text("Cancel")
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .padding(.horizontal, JarvisSpacing.lg)
+                        .padding(.vertical, JarvisSpacing.sm)
+                        .background(Color.jarvisSurfaceLight)
+                        .cornerRadius(JarvisRadius.medium)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Button(action: { addServer() }) {
+                    Text("Add")
+                        .foregroundStyle(Color.jarvisTextPrimary)
+                        .padding(.horizontal, JarvisSpacing.lg)
+                        .padding(.vertical, JarvisSpacing.sm)
+                        .background(Color.jarvisBlue)
+                        .cornerRadius(JarvisRadius.medium)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(name.isEmpty || command.isEmpty)
             }
         }
         .padding()
@@ -497,23 +504,30 @@ struct JSONPasteSheet: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .padding(.horizontal, JarvisSpacing.lg)
-                    .padding(.vertical, JarvisSpacing.sm)
-                    .background(Color.jarvisSurfaceLight)
-                    .cornerRadius(JarvisRadius.medium)
-                Button("Import") {
-                    onSubmit()
-                    dismiss()
+                Button(action: { dismiss() }) {
+                    Text("Cancel")
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .padding(.horizontal, JarvisSpacing.lg)
+                        .padding(.vertical, JarvisSpacing.sm)
+                        .background(Color.jarvisSurfaceLight)
+                        .cornerRadius(JarvisRadius.medium)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.jarvisTextPrimary)
-                .padding(.horizontal, JarvisSpacing.lg)
-                .padding(.vertical, JarvisSpacing.sm)
-                .background(Color.jarvisBlue)
-                .cornerRadius(JarvisRadius.medium)
+
+                Button(action: {
+                    onSubmit()
+                    dismiss()
+                }) {
+                    Text("Import")
+                        .foregroundStyle(Color.jarvisTextPrimary)
+                        .padding(.horizontal, JarvisSpacing.lg)
+                        .padding(.vertical, JarvisSpacing.sm)
+                        .background(Color.jarvisBlue)
+                        .cornerRadius(JarvisRadius.medium)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 .disabled(jsonText.isEmpty)
             }
         }

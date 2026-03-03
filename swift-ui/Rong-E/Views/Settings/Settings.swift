@@ -701,23 +701,29 @@ struct MCPAddServerSheet: View {
 
                 HStack {
                     Spacer()
-                    Button("CANCEL") { dismiss() }
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.jarvisTextDim)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .overlay(Rectangle().stroke(Color.jarvisTextDim.opacity(0.5), lineWidth: 1))
-                        .buttonStyle(.plain)
+                    Button(action: { dismiss() }) {
+                        Text("CANCEL")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.jarvisTextDim)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .overlay(Rectangle().stroke(Color.jarvisTextDim.opacity(0.5), lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
 
-                    Button("ADD") { addServer() }
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.jarvisBlue)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.jarvisBlue.opacity(0.2))
-                        .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
-                        .buttonStyle(.plain)
-                        .disabled(name.isEmpty || command.isEmpty)
+                    Button(action: { addServer() }) {
+                        Text("ADD")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.jarvisBlue)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.jarvisBlue.opacity(0.2))
+                            .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(name.isEmpty || command.isEmpty)
                 }
             }
             .padding(24)
@@ -794,24 +800,30 @@ struct MCPJSONPasteSheet: View {
 
                 HStack {
                     Spacer()
-                    Button("CANCEL") { dismiss() }
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.jarvisTextDim)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .overlay(Rectangle().stroke(Color.jarvisTextDim.opacity(0.5), lineWidth: 1))
-                        .buttonStyle(.plain)
+                    Button(action: { dismiss() }) {
+                        Text("CANCEL")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.jarvisTextDim)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .overlay(Rectangle().stroke(Color.jarvisTextDim.opacity(0.5), lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
 
-                    Button("APPLY") {
+                    Button(action: {
                         onSubmit()
                         dismiss()
+                    }) {
+                        Text("APPLY")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.jarvisBlue)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.jarvisBlue.opacity(0.2))
+                            .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
+                            .contentShape(Rectangle())
                     }
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.jarvisBlue)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.jarvisBlue.opacity(0.2))
-                    .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
                     .buttonStyle(.plain)
                     .disabled(jsonText.isEmpty)
                 }
