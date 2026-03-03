@@ -2131,167 +2131,478 @@ struct AgentLoadingView: View {
     var onQuit: (() -> Void)?
     @ObservedObject private var _theme = AppContext.shared
 
-    // MARK: - Computed Styles
+    // MARK: - Animation State
+    @State private var bootLogs: [String] = []
+    @State private var bootPhase: Int = 0
+    @State private var scanlineOffset: CGFloat = -1.0
+    @State private var showContent: Bool = false
+    @State private var showOrb: Bool = false
+    @State private var showTitle: Bool = false
+    @State private var showControls: Bool = false
+    @State private var progressValue: CGFloat = 0
+    @State private var orbPulse: Bool = false
+    @State private var glitchOffset: CGFloat = 0
+    @State private var hasStartedSequence = false
 
-    // Logic to determine the color of the Orb based on state
+    // MARK: - Computed Styles
+    var accent: Color { _theme.themeAccentColor }
+
     var statusColor: Color {
-        if connectionFailed {
-            return Color.jarvisRed
-        }
+        if connectionFailed { return Color.jarvisRed }
         switch serverStatus {
-        case .running: return isConnected ? Color.jarvisGreen : Color.jarvisLightBlue
+        case .running: return isConnected ? Color.jarvisGreen : accent
         case .error: return Color.jarvisRed
         case .stopping: return Color.jarvisAmber
-        default: return Color.jarvisLightBlue
+        default: return accent
         }
     }
 
     var statusMessage: String {
-        if connectionFailed {
-            return "CONNECTION FAILED"
-        }
+        if connectionFailed { return "CONNECTION FAILED" }
         switch serverStatus {
-        case .stopped: return "SYSTEM INITIALIZING"
+        case .stopped: return "INITIALIZING"
         case .starting: return "BOOTING CORE"
-        case .running: return isConnected ? "SYSTEM ONLINE" : "CONNECTING"
+        case .running: return isConnected ? "ONLINE" : "CONNECTING"
         case .stopping: return "SHUTTING DOWN"
-        case .error(let msg): return "ERR: \(msg.prefix(12))"
+        case .error(let msg): return "ERR: \(msg.prefix(20))"
         }
     }
 
-    // Stop the outer rotation if we are just sitting in "Online" or "Error" state
     var isAnimating: Bool {
         if connectionFailed { return false }
         return serverStatus == .starting || serverStatus == .stopped || (serverStatus == .running && !isConnected)
     }
 
+    // MARK: - Boot Sequence Lines
+    private let bootSequence: [(String, TimeInterval)] = [
+        ("RONG-E AGENT v1.0.0", 0.0),
+        ("LOADING KERNEL MODULES...", 0.3),
+        ("CORE: RUST RUNTIME OK", 0.6),
+        ("NET: BINDING PORT 3000", 0.9),
+        ("ENGINE: AWAITING LLM HANDSHAKE", 1.2),
+        ("TOOLS: SCANNING MCP REGISTRY", 1.5),
+        ("SOCKET: ESTABLISHING LINK", 1.8),
+    ]
+
     var body: some View {
         ZStack {
-            // MARK: - Dark Transparent Glass Container
-            RoundedRectangle(cornerRadius: 30)
-                .fill(Color.black.opacity(0.2))
-                .background(.ultraThinMaterial.opacity(0.5))
-                .clipShape(RoundedRectangle(cornerRadius: 30))
-                .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 30)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    statusColor.opacity(0.3),
-                                    statusColor.opacity(0.05),
-                                    statusColor.opacity(0.0)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
+            // MARK: - Background (matches main theme: opaque or transparent)
+            RoundedRectangle(cornerRadius: JarvisRadius.pill)
+                .fill(Color.black.opacity(_theme.themeSurfaceOpacity))
+
+            // Tech grid (same as main window TechGridBackground)
+            BootTechGrid(accent: accent)
+                .opacity(showContent ? 0.6 : 0)
+                .clipShape(RoundedRectangle(cornerRadius: JarvisRadius.pill))
+
+            // Scanline sweep
+            if !_theme.themeAnimationsDisabled {
+                BootScanline(accent: accent, offset: scanlineOffset)
+                    .opacity(0.15)
+                    .clipShape(RoundedRectangle(cornerRadius: JarvisRadius.pill))
+            }
+
+            // MARK: - Border (matches main window accent gradient border)
+            RoundedRectangle(cornerRadius: JarvisRadius.pill)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            accent.opacity(showContent ? 0.4 : 0),
+                            accent.opacity(0.05)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
                 )
 
-            VStack(spacing: 25) {
-                // 1. The Glossy Orb
-                RongERing()
-                    .frame(width: 110, height: 110)
-                    .shadow(color: statusColor.opacity(0.8), radius: 80)
-                    
+            // Corner brackets
+            VStack {
+                HStack {
+                    BootCornerBracket(accent: accent, rotation: 0)
+                    Spacer()
+                    BootCornerBracket(accent: accent, rotation: 90)
+                }
+                Spacer()
+                HStack {
+                    BootCornerBracket(accent: accent, rotation: 270)
+                    Spacer()
+                    BootCornerBracket(accent: accent, rotation: 180)
+                }
+            }
+            .padding(16)
+            .opacity(showContent ? 1 : 0)
 
-                // 2. Status Information
-                VStack(spacing: 8) {
-                    Text("RONG-E AGENT")
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+            // MARK: - Content
+            VStack(spacing: 0) {
+                Spacer().frame(height: 20)
+
+                // Top: Title bar
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(accent)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: accent.opacity(0.8), radius: 4)
+                    Text("RONG-E")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(accent)
+                        .tracking(3)
+                    Spacer()
+                    Text("BOOT")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(accent.opacity(0.5))
                         .tracking(2)
-                        .foregroundStyle(Color.jarvisTextSecondary)
+                }
+                .padding(.horizontal, 20)
+                .opacity(showTitle ? 1 : 0)
+                .offset(y: showTitle ? 0 : -8)
 
-                    // Status Line with Dots
-                    HStack(spacing: 8) {
-                        Text(statusMessage)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(statusColor)
-                            .shadow(color: statusColor.opacity(0.5), radius: 6)
+                Spacer().frame(height: 12)
 
-                        if isAnimating {
-                            ModernLoadingDots(color: statusColor)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule()
-                            .fill(statusColor.opacity(0.1))
-                            .overlay(Capsule().stroke(statusColor.opacity(0.2), lineWidth: 0.5))
+                // Thin accent divider
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [accent.opacity(0), accent.opacity(0.4), accent.opacity(0)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
                     )
+                    .frame(height: 0.5)
+                    .padding(.horizontal, 16)
+                    .opacity(showTitle ? 1 : 0)
 
-                    // Retry button when connection fails
-                    if connectionFailed {
-                        Button(action: {
-                            onRetry?()
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 10, weight: .semibold))
-                                Text("RETRY")
-                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                    .tracking(1)
-                            }
-                            .foregroundStyle(Color.jarvisTextPrimary)
-                            .padding(.horizontal, JarvisSpacing.lg)
-                            .padding(.vertical, JarvisSpacing.sm)
-                            .background(
-                                Capsule()
-                                    .fill(Color.jarvisLightBlue.opacity(0.3))
-                                    .overlay(Capsule().stroke(Color.jarvisLightBlue.opacity(0.5), lineWidth: 1))
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 8)
+                Spacer().frame(height: 16)
+
+                // Center: Orb + Status
+                ZStack {
+                    // Outer glow ring
+                    Circle()
+                        .stroke(accent.opacity(orbPulse ? 0.3 : 0.1), lineWidth: 1.5)
+                        .frame(width: 120, height: 120)
+                        .scaleEffect(orbPulse ? 1.05 : 1.0)
+
+                    RongERing()
+                        .frame(width: 90, height: 90)
+                        .shadow(color: statusColor.opacity(0.6), radius: orbPulse ? 40 : 20)
+                }
+                .opacity(showOrb ? 1 : 0)
+                .scaleEffect(showOrb ? 1 : 0.6)
+
+                Spacer().frame(height: 14)
+
+                // Status badge
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 5, height: 5)
+                        .shadow(color: statusColor, radius: 3)
+
+                    Text(statusMessage)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(statusColor)
+                        .tracking(1.5)
+
+                    if isAnimating {
+                        ModernLoadingDots(color: statusColor)
                     }
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(statusColor.opacity(0.08))
+                        .overlay(Capsule().stroke(statusColor.opacity(0.2), lineWidth: 0.5))
+                )
+                .opacity(showOrb ? 1 : 0)
 
-                // Restart / Quit controls
-                HStack(spacing: 12) {
-                    Button(action: { onRestart?() }) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 9, weight: .semibold))
-                            Text("RESTART")
-                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                Spacer().frame(height: 14)
+
+                // MARK: - Boot Log Terminal
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(bootLogs.enumerated()), id: \.offset) { index, log in
+                        HStack(spacing: 4) {
+                            Text("›")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(accent.opacity(0.5))
+                            Text(log)
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundStyle(
+                                    index == bootLogs.count - 1
+                                        ? accent.opacity(0.9)
+                                        : Color.jarvisTextSecondary.opacity(0.5)
+                                )
+                        }
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(x: glitchOffset)),
+                            removal: .opacity
+                        ))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 22)
+                .frame(height: 70, alignment: .bottom)
+                .clipped()
+
+                Spacer().frame(height: 10)
+
+                // Progress Bar
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        // Track
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.jarvisDim)
+                            .frame(height: 3)
+
+                        // Fill
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(
+                                LinearGradient(
+                                    colors: [accent.opacity(0.4), accent],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: geo.size.width * progressValue, height: 3)
+                            .shadow(color: accent.opacity(0.5), radius: 4)
+                    }
+                }
+                .frame(height: 3)
+                .padding(.horizontal, 22)
+                .opacity(showContent ? 1 : 0)
+
+                Spacer().frame(height: 14)
+
+                // MARK: - Action Buttons
+                if connectionFailed {
+                    Button(action: { onRetry?() }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("RETRY CONNECTION")
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                 .tracking(1)
                         }
-                        .foregroundStyle(.white.opacity(0.75))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
+                        .foregroundStyle(Color.jarvisTextPrimary)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
                         .background(
                             Capsule()
-                                .fill(Color.white.opacity(0.07))
-                                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                                .fill(accent.opacity(0.2))
+                                .overlay(Capsule().stroke(accent.opacity(0.5), lineWidth: 1))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 4)
+                }
+
+                // Restart / Quit Row
+                HStack(spacing: 10) {
+                    Button(action: { onRestart?() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 8, weight: .semibold))
+                            Text("RESTART")
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                .tracking(1)
+                        }
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(Color.jarvisSurface)
+                                .overlay(Capsule().stroke(Color.jarvisBorder, lineWidth: 0.5))
                         )
                     }
                     .buttonStyle(.plain)
 
                     Button(action: { onQuit?() }) {
-                        HStack(spacing: 5) {
+                        HStack(spacing: 4) {
                             Image(systemName: "power")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: 8, weight: .semibold))
                             Text("QUIT")
-                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
                                 .tracking(1)
                         }
-                        .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4).opacity(0.85))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
+                        .foregroundStyle(Color.jarvisRed.opacity(0.8))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                         .background(
                             Capsule()
-                                .fill(Color(red: 1.0, green: 0.3, blue: 0.3).opacity(0.1))
-                                .overlay(Capsule().stroke(Color(red: 1.0, green: 0.3, blue: 0.3).opacity(0.25), lineWidth: 0.5))
+                                .fill(Color.jarvisRed.opacity(0.08))
+                                .overlay(Capsule().stroke(Color.jarvisRed.opacity(0.2), lineWidth: 0.5))
                         )
                     }
                     .buttonStyle(.plain)
                 }
+                .opacity(showControls ? 1 : 0)
+
+                Spacer().frame(height: 16)
             }
-            .padding(.vertical, 30)
         }
-        .frame(width: 240, height: 320)
+        .frame(width: 280, height: 420)
+        .clipShape(RoundedRectangle(cornerRadius: JarvisRadius.pill))
+        .shadow(color: accent.opacity(0.3), radius: 20, x: 0, y: 0)
+        .onAppear {
+            startBootSequence()
+        }
+        .onChange(of: serverStatus) { _, _ in updateProgress() }
+        .onChange(of: isConnected) { _, _ in updateProgress() }
+        .onChange(of: connectionFailed) { _, connected in
+            if connected {
+                withAnimation { bootLogs.append("ERR: HANDSHAKE TIMEOUT") }
+            }
+        }
+    }
+
+    // MARK: - Boot Animation Logic
+    private func startBootSequence() {
+        guard !hasStartedSequence else { return }
+        hasStartedSequence = true
+
+        let animationsOff = _theme.themeAnimationsDisabled
+
+        // Phase 1: Fade in container
+        withAnimation(animationsOff ? nil : .easeOut(duration: 0.4)) {
+            showContent = true
+        }
+
+        // Phase 2: Title
+        withAnimation(animationsOff ? nil : .easeOut(duration: 0.3).delay(0.2)) {
+            showTitle = true
+        }
+
+        // Phase 3: Orb scales in
+        withAnimation(animationsOff ? nil : .spring(response: 0.6, dampingFraction: 0.7).delay(0.4)) {
+            showOrb = true
+        }
+
+        // Phase 4: Boot logs appear one by one
+        for (index, entry) in bootSequence.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6 + entry.1) {
+                // Tiny glitch effect
+                if !animationsOff {
+                    glitchOffset = CGFloat.random(in: -3...3)
+                }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    bootLogs.append(entry.0)
+                    progressValue = min(CGFloat(index + 1) / CGFloat(bootSequence.count + 2), 0.85)
+                }
+                if !animationsOff {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                        withAnimation(.easeOut(duration: 0.1)) { glitchOffset = 0 }
+                    }
+                }
+            }
+        }
+
+        // Phase 5: Controls appear
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            withAnimation(animationsOff ? nil : .easeOut(duration: 0.3)) {
+                showControls = true
+            }
+        }
+
+        // Orb pulse animation
+        if !animationsOff {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                    orbPulse = true
+                }
+            }
+
+            // Scanline sweep
+            withAnimation(.linear(duration: 3.0).repeatForever(autoreverses: false)) {
+                scanlineOffset = 1.0
+            }
+        }
+    }
+
+    private func updateProgress() {
+        let animationsOff = _theme.themeAnimationsDisabled
+        if isConnected {
+            withAnimation(animationsOff ? nil : .easeOut(duration: 0.5)) {
+                progressValue = 1.0
+                bootLogs.append("STATUS: ALL SYSTEMS NOMINAL")
+            }
+        } else if connectionFailed {
+            withAnimation(animationsOff ? nil : .easeOut(duration: 0.3)) {
+                progressValue = max(progressValue, 0.6)
+            }
+        } else if serverStatus == .running {
+            withAnimation(animationsOff ? nil : .easeOut(duration: 0.3)) {
+                progressValue = max(progressValue, 0.9)
+                if !bootLogs.contains("SOCKET: HANDSHAKE IN PROGRESS") {
+                    bootLogs.append("SOCKET: HANDSHAKE IN PROGRESS")
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Boot Screen Sub-Components
+
+/// Decorative corner bracket for the boot screen HUD frame
+private struct BootCornerBracket: View {
+    let accent: Color
+    let rotation: Double
+
+    var body: some View {
+        Path { path in
+            path.move(to: CGPoint(x: 0, y: 14))
+            path.addLine(to: CGPoint(x: 0, y: 0))
+            path.addLine(to: CGPoint(x: 14, y: 0))
+        }
+        .stroke(accent.opacity(0.4), lineWidth: 1.5)
+        .frame(width: 14, height: 14)
+        .rotationEffect(.degrees(rotation))
+    }
+}
+
+/// Tech-grid background for boot screen (lighter version of TechGridBackground)
+private struct BootTechGrid: View {
+    let accent: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            Path { path in
+                let w = geo.size.width
+                let h = geo.size.height
+                let spacing: CGFloat = 30
+                for i in 0...Int(w / spacing) {
+                    path.move(to: CGPoint(x: CGFloat(i) * spacing, y: 0))
+                    path.addLine(to: CGPoint(x: CGFloat(i) * spacing, y: h))
+                }
+                for i in 0...Int(h / spacing) {
+                    path.move(to: CGPoint(x: 0, y: CGFloat(i) * spacing))
+                    path.addLine(to: CGPoint(x: w, y: CGFloat(i) * spacing))
+                }
+            }
+            .stroke(accent.opacity(0.04), lineWidth: 0.5)
+        }
+    }
+}
+
+/// Horizontal scanline that sweeps vertically across the boot screen
+private struct BootScanline: View {
+    let accent: Color
+    let offset: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [accent.opacity(0), accent.opacity(0.15), accent.opacity(0)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(height: 60)
+                .offset(y: offset * geo.size.height)
+        }
+        .clipped()
     }
 }
 
