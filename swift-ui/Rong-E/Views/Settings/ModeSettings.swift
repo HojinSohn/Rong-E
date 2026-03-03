@@ -149,6 +149,7 @@ struct ModeSidebarButton: View {
     let name: String
     let isSelected: Bool
     let action: () -> Void
+    @ObservedObject private var _theme = AppContext.shared
     
     var body: some View {
         Button(action: action) {
@@ -192,6 +193,7 @@ struct ModeSidebarButton: View {
 
 struct JarvisTextField: View {
     @Binding var text: String
+    @ObservedObject private var _theme = AppContext.shared
     
     var body: some View {
         TextField("", text: $text)
@@ -209,6 +211,7 @@ struct JarvisTextField: View {
 
 struct JarvisTextEditor: View {
     @Binding var text: String
+    @ObservedObject private var _theme = AppContext.shared
     
     var body: some View {
         TextEditor(text: $text)

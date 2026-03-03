@@ -3,6 +3,7 @@ import SwiftUI
 struct WorkflowSettingsView: View {
     @StateObject var manager = WorkflowManager.shared
     @State private var newTaskInput = ""
+    @ObservedObject private var _theme = AppContext.shared
 
     @EnvironmentObject var coordinator: WindowCoordinator
     

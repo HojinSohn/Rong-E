@@ -160,7 +160,49 @@ class AppContext: ObservableObject {
     @Published var llmProvider: LLMProvider = .gemini
     @Published var llmModel: String = "gemini-2.5-flash-lite"
     @Published var userName: String = NSFullUserName()
-    
+
+    // MARK: - Theme Settings
+    @Published var themeOpaqueBackground: Bool = false
+    @Published var themeAnimationsDisabled: Bool = false
+    @Published var themeAccentColorName: String = "cyan" // cyan, green, purple, amber, orange, red
+    @Published var themeChatFontColorName: String = "white" // white, accent, green, amber, cyan
+
+    /// The resolved accent color based on `themeAccentColorName`.
+    var themeAccentColor: Color {
+        switch themeAccentColorName {
+        case "cyan":   return Color.jarvisCyanFixed
+        case "green":  return Color(red: 0.0, green: 1.0, blue: 0.6)
+        case "amber":  return Color(red: 1.0, green: 0.8, blue: 0.0)
+        case "purple": return Color(red: 0.7, green: 0.4, blue: 1.0)
+        case "orange": return Color(red: 1.0, green: 0.6, blue: 0.2)
+        case "red":    return Color(red: 1.0, green: 0.4, blue: 0.4)
+        default:       return Color.jarvisCyanFixed
+        }
+    }
+
+    /// Background opacity: 1.0 for opaque, standard translucent values otherwise.
+    var themeSurfaceOpacity: Double {
+        themeOpaqueBackground ? 0.95 : 0.4
+    }
+
+    /// The resolved chat font color based on `themeChatFontColorName`.
+    var themeChatFontColor: Color {
+        switch themeChatFontColorName {
+        case "white":  return .white
+        case "accent": return themeAccentColor
+        case "green":  return Color(red: 0.0, green: 1.0, blue: 0.6)
+        case "amber":  return Color(red: 1.0, green: 0.8, blue: 0.0)
+        case "cyan":   return Color.jarvisCyanFixed
+        default:       return .white
+        }
+    }
+
+    /// A string key that changes whenever any visual theme setting changes.
+    /// Used by Equatable views to detect theme changes and force re-render.
+    var themeKey: String {
+        "\(themeAccentColorName)-\(themeChatFontColorName)-\(themeOpaqueBackground)"
+    }
+
     // We initialize these with placeholders, they get updated in init()
     @Published var overlayWidth: CGFloat = 0
     @Published var overlayHeight: CGFloat = 0
@@ -312,6 +354,11 @@ class AppContext: ObservableObject {
         UserDefaults.standard.set(llmModel, forKey: "llmModel")
         UserDefaults.standard.set(startUpWorkFinished, forKey: "startUpWorkFinished")
         UserDefaults.standard.set(userName, forKey: "userName")
+        // Theme settings
+        UserDefaults.standard.set(themeOpaqueBackground, forKey: "themeOpaqueBackground")
+        UserDefaults.standard.set(themeAnimationsDisabled, forKey: "themeAnimationsDisabled")
+        UserDefaults.standard.set(themeAccentColorName, forKey: "themeAccentColorName")
+        UserDefaults.standard.set(themeChatFontColorName, forKey: "themeChatFontColorName")
     }
 
     /// Save API key for a specific provider
@@ -373,6 +420,19 @@ class AppContext: ObservableObject {
         }
         if let savedUserName = UserDefaults.standard.string(forKey: "userName"), !savedUserName.isEmpty {
             self.userName = savedUserName
+        }
+        // Theme settings
+        if UserDefaults.standard.object(forKey: "themeOpaqueBackground") != nil {
+            self.themeOpaqueBackground = UserDefaults.standard.bool(forKey: "themeOpaqueBackground")
+        }
+        if UserDefaults.standard.object(forKey: "themeAnimationsDisabled") != nil {
+            self.themeAnimationsDisabled = UserDefaults.standard.bool(forKey: "themeAnimationsDisabled")
+        }
+        if let savedAccent = UserDefaults.standard.string(forKey: "themeAccentColorName"), !savedAccent.isEmpty {
+            self.themeAccentColorName = savedAccent
+        }
+        if let savedChatFont = UserDefaults.standard.string(forKey: "themeChatFontColorName"), !savedChatFont.isEmpty {
+            self.themeChatFontColorName = savedChatFont
         }
     }
     

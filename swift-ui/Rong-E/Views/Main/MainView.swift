@@ -50,47 +50,65 @@ struct MainView: View {
         let isMinimizing = !minimizedMode
 
         if isMinimizing {
-            // Phase A: Content exits immediately
-            withAnimation(.easeOut(duration: 0.25)) {
+            if appContext.themeAnimationsDisabled {
                 showColumns = false
                 showWaveform = false
                 showGreeting = false
-            }
+                minimizedMode = true
+                windowCoordinator.minimizeMainOverlay()
+            } else {
+                // Phase A: Content exits immediately
+                withAnimation(.easeOut(duration: 0.25)) {
+                    showColumns = false
+                    showWaveform = false
+                    showGreeting = false
+                }
 
-            // Phase B: Container morph
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                withAnimation(.spring(response: 0.7, dampingFraction: 0.85)) {
-                    minimizedMode = true
+                // Phase B: Container morph
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    withAnimation(.spring(response: 0.7, dampingFraction: 0.85)) {
+                        minimizedMode = true
+                    }
+                }
+
+                // Phase C: Window system sync
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    windowCoordinator.minimizeMainOverlay()
                 }
             }
 
-            // Phase C: Window system sync
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                windowCoordinator.minimizeMainOverlay()
-            }
-
         } else {
-            // Phase B (reverse): Container expands
-            windowCoordinator.expandMainOverlay()
-
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.85)) {
+            if appContext.themeAnimationsDisabled {
+                windowCoordinator.expandMainOverlay()
                 minimizedMode = false
-            }
-
-            // Phase A (reverse): Content re-enters
-            withAnimation(.easeOut(duration: 0.4).delay(0.25)) {
                 showGreeting = true
-            }
-
-            // Phase A (reverse): Content re-enters
-            withAnimation(.easeOut(duration: 0.4).delay(0.5)) {
                 showColumns = true
                 showWaveform = true
-            }
+                setShowMinimizedMessageView(false)
+                setShowMinimizedButtons(false)
+            } else {
+                // Phase B (reverse): Container expands
+                windowCoordinator.expandMainOverlay()
 
-            // Ensure minimized message view is hidden
-            setShowMinimizedMessageView(false)
-            setShowMinimizedButtons(false)
+                withAnimation(.spring(response: 0.7, dampingFraction: 0.85)) {
+                    minimizedMode = false
+                }
+
+                // Phase A (reverse): Content re-enters
+                withAnimation(.easeOut(duration: 0.4).delay(0.25)) {
+                    showGreeting = true
+                }
+
+                // Phase A (reverse): Content re-enters
+                withAnimation(.easeOut(duration: 0.4).delay(0.5)) {
+                    showColumns = true
+                    showWaveform = true
+                }
+
+                // Ensure minimized message view is hidden
+                setShowMinimizedMessageView(false)
+                setShowMinimizedButtons(false)
+            }
         }
         print("New minimizedMode: \(minimizedMode)")
     }
@@ -159,7 +177,7 @@ struct MainView: View {
                 toggleMinimized()
             }
         }
-        .onChange(of: socketClient.isConnected) { isConnected in
+        .onChange(of: socketClient.isConnected) { _, isConnected in
             // Trigger main content animations when WebSocket connects (and server is running)
             if isConnected && serverManager.status == .running {
                 toggleMinimized()
@@ -259,17 +277,17 @@ struct MainView: View {
             .background(
                 ZStack {
                     if !minimizedMode {
-                        // 1. Base Tint (Very Low Opacity for "See-Through")
+                        // 1. Base Tint (Opacity from theme setting)
                         RoundedRectangle(cornerRadius: JarvisRadius.pill)
-                            .fill(Color.jarvisSurface)
+                            .fill(Color.black.opacity(appContext.themeSurfaceOpacity))
 
                         // 2. High-Tech Border (Keeps layout defined without solid background)
                         RoundedRectangle(cornerRadius: JarvisRadius.pill)
                             .strokeBorder(
                                 LinearGradient(
                                     colors: [
-                                        appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.8) : Color.jarvisCyan.opacity(0.4),
-                                        Color.jarvisCyan.opacity(0.05)
+                                        appContext.currentMode.isScreenshotEnabled ? appContext.themeAccentColor.opacity(0.8) : appContext.themeAccentColor.opacity(0.4),
+                                        appContext.themeAccentColor.opacity(0.05)
                                     ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
@@ -280,7 +298,7 @@ struct MainView: View {
                         // Minimized Mode Background
                         RoundedRectangle(cornerRadius: JarvisRadius.pill)
                             .fill(Color.jarvisSurfaceDark)
-                            .shadow(color: Color.jarvisCyan.opacity(0.4), radius: 10)
+                            .shadow(color: appContext.themeAccentColor.opacity(0.4), radius: 10)
                     }
                 }
             )
@@ -580,6 +598,7 @@ struct MinimizedControlsView: View {
     let toggleMinimized: () -> Void
     let toggleMessages: () -> Void
     let onHoverChange: (Bool) -> Void
+    @ObservedObject private var _theme = AppContext.shared
 
     // Configuration
     private let radius: CGFloat = 70
@@ -722,7 +741,7 @@ struct LeftColumnView: View {
                         .padding(10)
                     }
                     // Auto-scroll to bottom when new steps arrive
-                    .onChange(of: appContext.reasoningSteps.count) { _ in
+                    .onChange(of: appContext.reasoningSteps.count) {
                         if let lastId = appContext.reasoningSteps.last?.id {
                             withAnimation { proxy.scrollTo(lastId, anchor: .bottom) }
                         }
@@ -901,6 +920,7 @@ struct ReasoningStepRow: View {
     let step: ReasoningStep
     let isExpanded: Bool
     let onTap: () -> Void
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1090,6 +1110,7 @@ struct MainColumnView: View {
 struct InputAreaView: View {
     @Binding var inputText: String
     var onSubmit: () -> Void
+    @ObservedObject private var _theme = AppContext.shared
 
     @State private var localText: String = "" // Local, fast state
 
@@ -1097,8 +1118,8 @@ struct InputAreaView: View {
     @State private var hasText: Bool = false
 
     // Aesthetic Constants
-    private let hudCyan = Color.jarvisCyan
-    private let hudDark = Color.jarvisSurfaceDeep
+    private var hudCyan: Color { Color.jarvisCyan }
+    private var hudDark: Color { Color.jarvisSurfaceDeep }
 
     var body: some View {
         HStack(spacing: 16) {
@@ -1157,13 +1178,13 @@ struct InputAreaView: View {
         }
         .padding(.horizontal)
         .padding(.bottom, 10)
-        .onChange(of: localText.isEmpty) { isEmpty in
+        .onChange(of: localText.isEmpty) { _, isEmpty in
             // Only update hasText when empty state changes, not on every keystroke
             if hasText == isEmpty {
                 hasText = !isEmpty
             }
         }
-        .onChange(of: inputText) { newValue in
+        .onChange(of: inputText) { _, newValue in
             // Sync from parent (e.g. when cleared after submit)
             if newValue != localText {
                 localText = newValue
@@ -1179,6 +1200,7 @@ struct InputActionButton: View {
     let onSubmit: () -> Void
 
     var body: some View {
+        let animationsOff = AppContext.shared.themeAnimationsDisabled
         Button(action: onSubmit) {
             ZStack {
                 // Outer Ring
@@ -1187,7 +1209,7 @@ struct InputActionButton: View {
                     .frame(width: 50, height: 50)
 
                 // Rotating/Active Ring - uses TimelineView for smooth, performant animation
-                if hasText {
+                if hasText && !animationsOff {
                     TimelineView(.animation) { timeline in
                         let seconds = timeline.date.timeIntervalSinceReferenceDate
                         let rotation = seconds.truncatingRemainder(dividingBy: 2) * 180 // 180 deg/sec
@@ -1221,32 +1243,34 @@ struct InputActionButton: View {
 }
 
 struct RongERing: View {
+    @EnvironmentObject var appContext: AppContext
     @State private var pulse = false
     @State private var rotate = false
     
-    // Use design system colors
-    let lightBlueGlow = Color.jarvisLightBlue
-    let deepBlue = Color.jarvisDeepBlue
-    
     var body: some View {
+        let accent = appContext.themeAccentColor
+        let lightGlow = accent.opacity(0.85)
+        let deepColor = accent.opacity(0.5)
+        let animationsOff = appContext.themeAnimationsDisabled
+        
         ZStack {
             // 1. Rotating Outer Ring (With Angular Gradient for motion effect)
             Circle()
                 .trim(from: 0.0, to: 0.75) // Not a full circle makes rotation visible
                 .stroke(
                     AngularGradient(
-                        gradient: Gradient(colors: [lightBlueGlow.opacity(0), lightBlueGlow]),
+                        gradient: Gradient(colors: [lightGlow.opacity(0), lightGlow]),
                         center: .center
                     ),
                     style: StrokeStyle(lineWidth: 3, lineCap: .round)
                 )
                 .frame(width: 110, height: 110)
-                .rotationEffect(.degrees(rotate ? 360 : 0))
-                .animation(.linear(duration: 3).repeatForever(autoreverses: false), value: rotate)
+                .rotationEffect(.degrees(animationsOff ? 0 : (rotate ? 360 : 0)))
+                .animation(animationsOff ? nil : .linear(duration: 3).repeatForever(autoreverses: false), value: rotate)
 
             // 2. Static Thin Ring
             Circle()
-                .stroke(lightBlueGlow.opacity(0.3), lineWidth: 1)
+                .stroke(lightGlow.opacity(0.3), lineWidth: 1)
                 .frame(width: 95, height: 95)
 
             // 3. Main Button Orb
@@ -1255,8 +1279,8 @@ struct RongERing: View {
                     RadialGradient(
                         gradient: Gradient(colors: [
                             Color.white.opacity(0.8), // Hot center
-                            lightBlueGlow,            // Bright Blue body
-                            deepBlue                  // Darker edges for 3D depth
+                            accent,                    // Accent color body
+                            accent.opacity(0.4)        // Darker edges for 3D depth
                         ]),
                         center: .center,
                         startRadius: 0,
@@ -1265,9 +1289,9 @@ struct RongERing: View {
                 )
                 .frame(width: 80, height: 80)
                 // Strong Glow Shadow
-                .shadow(color: lightBlueGlow.opacity(0.8), radius: pulse ? 25 : 15)
-                .shadow(color: deepBlue.opacity(0.5), radius: 5)
-                .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: pulse)
+                .shadow(color: lightGlow.opacity(0.8), radius: animationsOff ? 15 : (pulse ? 25 : 15))
+                .shadow(color: deepColor, radius: 5)
+                .animation(animationsOff ? nil : .easeInOut(duration: 2).repeatForever(autoreverses: true), value: pulse)
 
             // 4. Glossy Reflection (Top Left) - Makes it look like glass/button
             Circle()
@@ -1278,8 +1302,19 @@ struct RongERing: View {
                 .rotationEffect(.degrees(-45))
         }
         .onAppear {
-            pulse = true
-            rotate = true
+            if !animationsOff {
+                pulse = true
+                rotate = true
+            }
+        }
+        .onChange(of: appContext.themeAnimationsDisabled) { _, disabled in
+            if disabled {
+                pulse = false
+                rotate = false
+            } else {
+                pulse = true
+                rotate = true
+            }
         }
     }
 }
@@ -1295,7 +1330,8 @@ struct ChatView: View {
             // This allows the Equatable check to stop updates if the array hasn't changed.
             EquatabeChatList(
                 messages: appContext.currentSessionChatMessages,
-                fullChatViewMode: fullChatViewMode
+                fullChatViewMode: fullChatViewMode,
+                themeKey: appContext.themeKey
             )
             .environmentObject(appContext) // Pass env object down for assets/theme
             .background(Color.clear)
@@ -1312,13 +1348,15 @@ struct ChatView: View {
 struct EquatabeChatList: View, Equatable {
     let messages: [ChatMessage]
     let fullChatViewMode: Bool
+    let themeKey: String
     
     // Custom Equality Check
     static func == (lhs: EquatabeChatList, rhs: EquatabeChatList) -> Bool {
-        // Only redraw if the message count changes, the last message ID changes, or view mode toggles
+        // Only redraw if the message count changes, the last message ID changes, view mode toggles, or theme changes
         return lhs.messages.count == rhs.messages.count &&
                lhs.messages.last?.id == rhs.messages.last?.id &&
-               lhs.fullChatViewMode == rhs.fullChatViewMode
+               lhs.fullChatViewMode == rhs.fullChatViewMode &&
+               lhs.themeKey == rhs.themeKey
     }
     
     var body: some View {
@@ -1354,7 +1392,7 @@ struct MessageListContent: View {
 
                         // Dynamic Chat Stream
                         ForEach(messages) { message in
-                            RongEMessageRow(message: message)
+                            RongEMessageRow(message: message, themeKey: appContext.themeKey)
                                 // The ID is already here, which is perfect
                                 .id(message.id) 
                                 .transition(.asymmetric(
@@ -1373,10 +1411,10 @@ struct MessageListContent: View {
                 }
                 .frame(maxHeight: fullChatViewMode ? 450 : 300)
                 
-                .onChange(of: messages.last?.content) { _ in 
+                .onChange(of: messages.last?.content) {
                     scrollToBottom(proxy: proxy)
                 }
-                .onChange(of: messages.count) { _ in
+                .onChange(of: messages.count) {
                     scrollToBottom(proxy: proxy)
                 }
             }
@@ -1402,7 +1440,7 @@ struct MinimizedMessageView: View {
     @EnvironmentObject var appContext: AppContext
     
     // Theme Colors
-    private let hudCyan = Color.jarvisCyan
+    private var hudCyan: Color { Color.jarvisCyan }
     
     var body: some View {
         VStack(spacing: 0) { 
@@ -1606,7 +1644,7 @@ struct MessageView: View {
                         
                         // 3. Dynamic Chat Stream (system boot logs excluded — shown above)
                         ForEach(appContext.currentSessionChatMessages.filter { $0.role != "system" }) { message in
-                            EquatableView(content: RongEMessageRow(message: message))
+                            EquatableView(content: RongEMessageRow(message: message, themeKey: appContext.themeKey))
                                 .id(message.id)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
@@ -1620,7 +1658,7 @@ struct MessageView: View {
                 }
                 .frame(maxHeight: fullChatViewMode ? 450 : 300)
                 // Auto-scroll logic
-                .onChange(of: appContext.currentSessionChatMessages.count) { newCount in
+                .onChange(of: appContext.currentSessionChatMessages.count) { _, newCount in
                     if newCount == 0 {
                         // Session was cleared - reset and re-animate boot logs
                         Task { @MainActor in
@@ -1632,7 +1670,7 @@ struct MessageView: View {
                         scrollToBottom(proxy, useLastMessage: true)
                     }
                 }
-                .onChange(of: systemLogs.count) { _ in
+                .onChange(of: systemLogs.count) {
                     scrollToBottom(proxy, useLastMessage: false)
                 }
                 .task(id: bootAnimationId) { await animateBootLogs(proxy: proxy) }
@@ -1670,11 +1708,12 @@ struct MessageView: View {
 // MARK: - RongE Message Row
 struct RongEMessageRow: View, Equatable {
     let message: ChatMessage
+    var themeKey: String = AppContext.shared.themeKey
     var isUser: Bool   { message.role == "user" }
     var isSystem: Bool { message.role == "system" }
 
     static func == (lhs: RongEMessageRow, rhs: RongEMessageRow) -> Bool {
-        lhs.message.id == rhs.message.id
+        lhs.message.id == rhs.message.id && lhs.themeKey == rhs.themeKey
     }
 
     var body: some View {
@@ -1755,6 +1794,7 @@ struct RongEMessageRow: View, Equatable {
 /// The "Glass" background for bubbles
 struct HUDGlassPanel: View {
     var isAccent: Bool
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         ZStack {
@@ -1781,27 +1821,35 @@ struct HUDGlassPanel: View {
 
 /// The spinning arc icon for the AI
 struct RongEAvatarIcon: View {
+    @EnvironmentObject var appContext: AppContext
     @State private var rotate = false
     
     var body: some View {
+        let accent = appContext.themeAccentColor
+        let animationsOff = appContext.themeAnimationsDisabled
         ZStack {
             Circle()
-                .stroke(Color.jarvisCyan.opacity(0.3), lineWidth: 1)
+                .stroke(accent.opacity(0.3), lineWidth: 1)
                 .frame(width: 24, height: 24)
             
             Circle()
                 .trim(from: 0, to: 0.7)
-                .stroke(Color.jarvisCyan, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .stroke(accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                 .frame(width: 18, height: 18)
-                .rotationEffect(.degrees(rotate ? 360 : 0))
-                .animation(.linear(duration: 4).repeatForever(autoreverses: false), value: rotate)
+                .rotationEffect(.degrees(animationsOff ? 0 : (rotate ? 360 : 0)))
+                .animation(animationsOff ? nil : .linear(duration: 4).repeatForever(autoreverses: false), value: rotate)
             
             Circle()
                 .fill(Color.white)
                 .frame(width: 3, height: 3)
                 .shadow(color: .white, radius: 2)
         }
-        .onAppear { rotate = true }
+        .onAppear {
+            if !animationsOff { rotate = true }
+        }
+        .onChange(of: appContext.themeAnimationsDisabled) { _, disabled in
+            rotate = !disabled
+        }
     }
 }
 
@@ -2062,8 +2110,10 @@ struct HeaderView: View {
 // MARK: - Waveform Animation
 struct WaveformBar: View {
     @State private var phase: CGFloat = 0
+    @ObservedObject private var _theme = AppContext.shared
     
     var body: some View {
+        let animationsOff = _theme.themeAnimationsDisabled
         ZStack {
             // Main white glowing line
             Capsule()
@@ -2082,9 +2132,11 @@ struct WaveformBar: View {
         }
         .frame(height: 60)
         .onAppear {
-            // Start continuous animation with timer
-            Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { _ in
-                phase += 0.5
+            if !animationsOff {
+                // Start continuous animation with timer
+                Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { _ in
+                    phase += 0.5
+                }
             }
         }
     }
@@ -2094,6 +2146,7 @@ struct WaveformBar: View {
 struct WaveformBarItem: View {
     let index: Int
     let phase: CGFloat
+    @ObservedObject private var _theme = AppContext.shared
     
     var body: some View {
         Capsule()
@@ -2134,6 +2187,7 @@ struct AgentLoadingView: View {
     var onRetry: (() -> Void)?
     var onRestart: (() -> Void)?
     var onQuit: (() -> Void)?
+    @ObservedObject private var _theme = AppContext.shared
 
     // MARK: - Computed Styles
 
@@ -2305,14 +2359,16 @@ struct ModernLoadingDots: View {
     @State private var isAnimating = false
 
     var body: some View {
+        let animationsOff = AppContext.shared.themeAnimationsDisabled
         HStack(spacing: 3) {
             ForEach(0..<3) { index in
                 Circle()
                     .fill(color)
                     .frame(width: 3, height: 3)
-                    .scaleEffect(isAnimating ? 1.0 : 0.5)
-                    .opacity(isAnimating ? 1.0 : 0.3)
+                    .scaleEffect(animationsOff ? 1.0 : (isAnimating ? 1.0 : 0.5))
+                    .opacity(animationsOff ? 1.0 : (isAnimating ? 1.0 : 0.3))
                     .animation(
+                        animationsOff ? nil :
                         .easeInOut(duration: 0.6)
                         .repeatForever()
                         .delay(Double(index) * 0.2),
@@ -2321,7 +2377,9 @@ struct ModernLoadingDots: View {
             }
         }
         .onAppear {
-            isAnimating = true
+            if !animationsOff {
+                isAnimating = true
+            }
         }
     }
 }

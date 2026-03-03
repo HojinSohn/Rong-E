@@ -9,8 +9,10 @@ struct PermissionWaitingView: View {
     
     @State private var pulseAnimation = false
     @EnvironmentObject var coordinator: WindowCoordinator
+    @ObservedObject private var _theme = AppContext.shared
     
     var body: some View {
+        let animationsOff = _theme.themeAnimationsDisabled
         VStack(spacing: 0) {
             // Banner
             VStack(spacing: 12) {
@@ -19,8 +21,8 @@ struct PermissionWaitingView: View {
                     Image(systemName: "lock.shield")
                         .font(.system(size: 20))
                         .foregroundStyle(Color.jarvisAmber)
-                        .scaleEffect(pulseAnimation ? 1.1 : 1.0)
-                        .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: pulseAnimation)
+                        .scaleEffect(animationsOff ? 1.0 : (pulseAnimation ? 1.1 : 1.0))
+                        .animation(animationsOff ? nil : .easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: pulseAnimation)
                     
                     Text("Screen Recording Permission Required")
                         .font(JarvisFont.body)

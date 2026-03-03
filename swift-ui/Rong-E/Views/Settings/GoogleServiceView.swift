@@ -297,6 +297,7 @@ struct GoogleServiceView: View {
 struct ResourceRow: View {
     let sheet: SpreadsheetConfig
     var onDelete: (() -> Void)?
+    @ObservedObject private var _theme = AppContext.shared
 
     var body: some View {
         HStack {
@@ -357,6 +358,7 @@ struct ResourceRow: View {
 struct AddSheetModal: View {
     @Binding var isPresented: Bool
     var onSave: (SpreadsheetConfig) -> Void
+    @ObservedObject private var _theme = AppContext.shared
 
     @State private var urlInput = ""
     @State private var aliasInput = ""

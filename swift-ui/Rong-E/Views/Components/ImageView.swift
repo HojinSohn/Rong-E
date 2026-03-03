@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ImageView: View {
     @EnvironmentObject var coordinator: WindowCoordinator
+    @ObservedObject private var _theme = AppContext.shared
     
     let imageData: ImageData
     let windowID: String
@@ -180,6 +181,7 @@ struct ImageView: View {
 
 struct ImageViewFromBase64: View {
     @EnvironmentObject var coordinator: WindowCoordinator
+    @ObservedObject private var _theme = AppContext.shared
     
     let base64Data: String
     let windowID: String
