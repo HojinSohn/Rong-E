@@ -283,6 +283,40 @@ class WindowCoordinator: ObservableObject {
             self?.controllers.removeValue(forKey: id)
         }
     }
+
+    func openToolDetail(tool: ActiveToolInfo? = nil) {
+        let id = "tool_detail_window"
+        
+        // 1. If already open, bring to front
+        if let existing = controllers[id] {
+            existing.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        
+        // 2. Configure View
+        let contentView = ToolDetailWindowView(windowID: id, initialTool: tool)
+        
+        // 3. Configure Controller
+        let controller = DynamicWindowController(
+            id: id,
+            view: AnyView(contentView),
+            size: CGSize(width: 500, height: 500),
+            location: nil
+        )
+        
+        // 4. Store and Show
+        controllers[id] = controller
+        controller.showWindow(nil)
+        
+        // 5. Cleanup Hook
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: controller.window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.controllers.removeValue(forKey: id)
+        }
+    }
     
     func closeWindow(id: String) {
         controllers[id]?.close()

@@ -182,9 +182,11 @@ struct MainView: View {
             if isConnected && serverManager.status == .running {
                 toggleMinimized()
                 // Transition from "Starting up" to "Await input"
+                let now = Date()
                 for i in appContext.reasoningSteps.indices {
                     if appContext.reasoningSteps[i].status == .active {
                         appContext.reasoningSteps[i].status = .completed
+                        appContext.reasoningSteps[i].completedAt = now
                     }
                 }
                 appContext.reasoningSteps.append(ReasoningStep(description: "Await input", status: .active))
@@ -373,6 +375,7 @@ struct MainView: View {
             // Mark the last reasoning step as completed and add result details
             if let lastIndex = appContext.reasoningSteps.lastIndex(where: { $0.status == .active }) {
                 appContext.reasoningSteps[lastIndex].status = .completed
+                appContext.reasoningSteps[lastIndex].completedAt = Date()
                 // Append result to existing details or set as new details
                 let resultPreview = String(toolResultContent.result.prefix(500))
                 if let existingDetails = appContext.reasoningSteps[lastIndex].details {
@@ -541,9 +544,11 @@ struct MainView: View {
             inputMode = false
 
             // Mark active steps completed, append await input
+            let finishTime = Date()
             for i in appContext.reasoningSteps.indices {
                 if appContext.reasoningSteps[i].status == .active {
                     appContext.reasoningSteps[i].status = .completed
+                    appContext.reasoningSteps[i].completedAt = finishTime
                 }
             }
             appContext.reasoningSteps.append(ReasoningStep(description: "Await input", status: .active))
@@ -561,9 +566,11 @@ struct MainView: View {
         appContext.response = ""
 
         // Mark previous active steps as completed, keep history
+        let submitTime = Date()
         for i in appContext.reasoningSteps.indices {
             if appContext.reasoningSteps[i].status == .active {
                 appContext.reasoningSteps[i].status = .completed
+                appContext.reasoningSteps[i].completedAt = submitTime
             }
         }
         appContext.reasoningSteps.append(ReasoningStep(description: "Processing query", status: .active))
@@ -712,13 +719,46 @@ struct LeftColumnView: View {
             // 1. Reasoning Trace (EXPANDED SECTION)
             VStack(alignment: .leading, spacing: 0) {
                 // Header
-                HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.jarvisCyan.opacity(0.7))
+
                     Text("Reasoning Trace")
                         .modifier(JarvisSectionHeader())
+
                     Spacer()
-                    Image(systemName: "lines.measurement.horizontal")
-                        .font(.caption2)
-                        .foregroundStyle(Color.jarvisTextDim)
+
+                    // Step count badge
+                    let completedCount = appContext.reasoningSteps.filter { $0.status == .completed }.count
+                    HStack(spacing: 2) {
+                        Text("\(completedCount)")
+                            .foregroundStyle(Color.jarvisGreen)
+                        Text("/")
+                            .foregroundStyle(Color.jarvisTextDim)
+                        Text("\(appContext.reasoningSteps.count)")
+                            .foregroundStyle(Color.jarvisCyan)
+                    }
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.05))
+                    )
+
+                    // Clear trace button
+                    Button(action: {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            appContext.reasoningSteps = [ReasoningStep(description: "Await input", status: .active)]
+                            expandedStepIds.removeAll()
+                        }
+                    }) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Color.jarvisTextDim)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -727,14 +767,14 @@ struct LeftColumnView: View {
                 // Scrollable Content
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(appContext.reasoningSteps) { step in
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(appContext.reasoningSteps.enumerated()), id: \.element.id) { index, step in
                                 ReasoningStepRow(
                                     step: step,
-                                    isExpanded: expandedStepIds.contains(step.id)
-                                ) {
-                                    toggleExpansion(for: step.id)
-                                }
+                                    isExpanded: expandedStepIds.contains(step.id),
+                                    onTap: { toggleExpansion(for: step.id) },
+                                    isLast: index == appContext.reasoningSteps.count - 1
+                                )
                                 .id(step.id)
                             }
                         }
@@ -756,112 +796,13 @@ struct LeftColumnView: View {
                     .stroke(Color.jarvisBorder, lineWidth: 1)
             )
             
-            // 2. Agent Environment (New Useful Widget)
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Environment")
-                    .font(JarvisFont.captionMono)
-                    .foregroundStyle(Color.jarvisTextDim)
-                    .textCase(.uppercase)
-                
-                // Model Info
-                HStack {
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(.yellow)
-                    Text(appContext.llmProvider.displayName)
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                    Spacer()
-                    Text(appContext.llmModel)
-                        .font(JarvisFont.tag)
-                        .padding(.horizontal, JarvisSpacing.xs)
-                        .padding(.vertical, 2)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(JarvisRadius.small)
-                }
-                .font(.caption)
-                
-                Divider().overlay(Color.jarvisBorder)
-                
-                // Active MCP Servers Count
-                HStack {
-                    Image(systemName: "hammer.fill")
-                        .foregroundStyle(Color.jarvisOrange)
-                    Text("MCP Servers")
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                    Spacer()
-                    Text("\(mcpConfigManager.connectedServerCount) Active")
-                        .foregroundStyle(mcpConfigManager.connectedServerCount > 0 ? Color.jarvisGreen : .gray)
-                        .fontWeight(.medium)
-                }
-                .font(.caption)
-            }
-            .padding(14)
-            .background(Color.jarvisSurfaceLight)
-            .cornerRadius(JarvisRadius.card)
-            .overlay(
-                RoundedRectangle(cornerRadius: JarvisRadius.card)
-                    .stroke(Color.jarvisBorder, lineWidth: 1)
-            )
+            // 2. Agent Environment Dashboard
+            EnvironmentDashboard()
+                .environmentObject(appContext)
+                .environmentObject(socketClient)
 
             // 3. Active Tools
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("Active Tools")
-                        .modifier(JarvisSectionHeader())
-                    Spacer()
-                    Text("\(appContext.activeTools.count)")
-                        .font(JarvisFont.captionMono)
-                        .foregroundStyle(Color.jarvisCyan.opacity(0.7))
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color.jarvisSurfaceLight)
-
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 6) {
-                        if appContext.activeTools.isEmpty {
-                            Text("No tools loaded")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color.jarvisTextDim)
-                                .padding(.horizontal, 10)
-                        } else {
-                            // Group tools by source
-                            let grouped = Dictionary(grouping: appContext.activeTools, by: { $0.source })
-                            let sortedKeys = grouped.keys.sorted { a, b in
-                                if a == "base" { return true }
-                                if b == "base" { return false }
-                                return a < b
-                            }
-                            ForEach(sortedKeys, id: \.self) { source in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(source == "base" ? "BASE" : source.uppercased())
-                                        .font(JarvisFont.tag)
-                                        .foregroundStyle(source == "base" ? Color.jarvisCyan.opacity(0.5) : Color.jarvisOrange.opacity(0.5))
-                                        .padding(.top, JarvisSpacing.xs)
-
-                                    ForEach(grouped[source] ?? [], id: \.name) { tool in
-                                        HStack(spacing: 6) {
-                                            Circle()
-                                                .fill(source == "base" ? Color.jarvisCyan : Color.jarvisOrange)
-                                                .frame(width: 5, height: 5)
-                                            Text(tool.name)
-                                                .font(.system(size: 11, design: .monospaced))
-                                                .foregroundStyle(Color.jarvisTextSecondary)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(10)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: 140)
-            .background(Color.jarvisSurfaceLight)
-            .cornerRadius(JarvisRadius.card)
-            .overlay(
-                RoundedRectangle(cornerRadius: JarvisRadius.card)
-                    .stroke(Color.jarvisBorder, lineWidth: 1)
-            )
+            ActiveToolsPanel(tools: appContext.activeTools)
         }
         .frame(width: JarvisDimension.leftColumnWidth) // Slightly widened for better reading
         .padding(.vertical, 12)
@@ -883,6 +824,315 @@ struct LeftColumnView: View {
 }
 
 // MARK: - Helper Views
+
+// MARK: - Active Tools Panel
+struct ActiveToolsPanel: View {
+    let tools: [ActiveToolInfo]
+    @State private var collapsedSources: Set<String> = []
+    @State private var hoveredTool: String? = nil
+    @State private var selectedTool: ActiveToolInfo? = nil
+
+    private var grouped: [(key: String, tools: [ActiveToolInfo])] {
+        let dict = Dictionary(grouping: tools, by: { $0.source })
+        return dict.keys.sorted { a, b in
+            if a == "base" { return true }
+            if b == "base" { return false }
+            return a < b
+        }.map { (key: $0, tools: dict[$0] ?? []) }
+    }
+
+    private func accentColor(for source: String) -> Color {
+        if source == "base" || source == "built-in" { return Color.jarvisCyan }
+        if source == "google" { return Color.jarvisGreen }
+        return Color.jarvisOrange
+    }
+
+    private func icon(for source: String) -> String {
+        if source == "base" || source == "built-in" { return "wrench.and.screwdriver.fill" }
+        if source == "google" { return "globe" }
+        return "hammer.fill"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack(spacing: 6) {
+                Image(systemName: "square.stack.3d.up.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.jarvisCyan.opacity(0.7))
+
+                Text("Active Tools")
+                    .modifier(JarvisSectionHeader())
+
+                Spacer()
+
+                // Open detail window button
+                Button(action: {
+                    WindowCoordinator.shared.openToolDetail()
+                }) {
+                    Image(systemName: "arrow.up.forward.square")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.jarvisTextDim)
+                }
+                .buttonStyle(.plain)
+                .help("Open tools panel")
+
+                // Total count badge
+                Text("\(tools.count)")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(tools.isEmpty ? Color.jarvisTextDim : Color.jarvisCyan)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(tools.isEmpty ? Color.white.opacity(0.05) : Color.jarvisCyan.opacity(0.12))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(tools.isEmpty ? Color.clear : Color.jarvisCyan.opacity(0.2), lineWidth: 0.5)
+                    )
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+
+            // Content
+            if tools.isEmpty {
+                // Empty state
+                VStack(spacing: 8) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color.jarvisTextDim.opacity(0.5))
+                    Text("No tools loaded")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.jarvisTextDim)
+                    Text("Tools load when the server connects")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.jarvisTextDim.opacity(0.6))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+            } else {
+                // Thin separator
+                Rectangle()
+                    .fill(Color.jarvisBorder)
+                    .frame(height: 1)
+                    .padding(.horizontal, 10)
+
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(grouped, id: \.key) { group in
+                            let accent = accentColor(for: group.key)
+                            let isCollapsed = collapsedSources.contains(group.key)
+
+                            // Source group header — tappable to collapse
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    if isCollapsed {
+                                        collapsedSources.remove(group.key)
+                                    } else {
+                                        collapsedSources.insert(group.key)
+                                    }
+                                }
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: icon(for: group.key))
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(accent.opacity(0.8))
+
+                                    Text(group.key == "base" || group.key == "built-in" ? "BUILT-IN" : group.key.uppercased())
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(accent.opacity(0.9))
+
+                                    // Tool count per source
+                                    Text("×\(group.tools.count)")
+                                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(accent.opacity(0.5))
+
+                                    Spacer()
+
+                                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                                        .font(.system(size: 7, weight: .bold))
+                                        .foregroundStyle(Color.jarvisTextDim)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(accent.opacity(0.04))
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            // Tool rows (collapsible)
+                            if !isCollapsed {
+                                ForEach(group.tools, id: \.name) { tool in
+                                    ToolRow(
+                                        tool: tool,
+                                        accent: accent,
+                                        isHovered: hoveredTool == tool.name,
+                                        isSelected: selectedTool?.name == tool.name,
+                                        onHover: { h in
+                                            withAnimation(.easeOut(duration: 0.15)) {
+                                                hoveredTool = h ? tool.name : nil
+                                            }
+                                        },
+                                        onTap: {
+                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                                if selectedTool?.name == tool.name {
+                                                    selectedTool = nil
+                                                } else {
+                                                    selectedTool = tool
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 6)
+                }
+            }
+
+            // Tool detail panel (slides in at bottom when a tool is selected)
+            if let tool = selectedTool {
+                ToolDetailCard(tool: tool, accent: accentColor(for: tool.source)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        selectedTool = nil
+                    }
+                }
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .opacity
+                ))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: selectedTool != nil ? 240 : 160)
+        .background(Color.jarvisSurfaceLight)
+        .cornerRadius(JarvisRadius.card)
+        .overlay(
+            RoundedRectangle(cornerRadius: JarvisRadius.card)
+                .stroke(Color.jarvisBorder, lineWidth: 1)
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selectedTool?.name)
+    }
+}
+
+/// Individual tool row with info button
+struct ToolRow: View {
+    let tool: ActiveToolInfo
+    let accent: Color
+    let isHovered: Bool
+    let isSelected: Bool
+    let onHover: (Bool) -> Void
+    let onTap: () -> Void
+
+    var body: some View {
+        HStack(spacing: 7) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(accent.opacity(isSelected ? 1.0 : isHovered ? 0.9 : 0.45))
+                .frame(width: 2, height: 12)
+
+            Text(tool.name)
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(isSelected ? accent : isHovered ? Color.jarvisTextPrimary : Color.jarvisTextSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 2)
+
+            // Info button
+            Image(systemName: isSelected ? "info.circle.fill" : "info.circle")
+                .font(.system(size: 10))
+                .foregroundStyle(isSelected ? accent : isHovered ? Color.jarvisTextTertiary : Color.clear)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? accent.opacity(0.1) : isHovered ? accent.opacity(0.06) : Color.clear)
+        .cornerRadius(4)
+        .contentShape(Rectangle())
+        .onTapGesture { onTap() }
+        .onHover { h in onHover(h) }
+    }
+}
+
+/// Detail card shown when a tool is selected
+struct ToolDetailCard: View {
+    let tool: ActiveToolInfo
+    let accent: Color
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Separator
+            Rectangle()
+                .fill(accent.opacity(0.3))
+                .frame(height: 1)
+
+            VStack(alignment: .leading, spacing: 8) {
+                // Header with name + close
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(accent)
+
+                    Text(tool.name)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.jarvisTextPrimary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    // Open in window button
+                    Button(action: {
+                        WindowCoordinator.shared.openToolDetail(tool: tool)
+                    }) {
+                        Image(systemName: "arrow.up.forward.square")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Color.jarvisTextDim)
+                            .padding(4)
+                            .background(Color.white.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open in detail window")
+
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(Color.jarvisTextDim)
+                            .padding(4)
+                            .background(Color.white.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Source badge
+                HStack(spacing: 4) {
+                    Text("SOURCE")
+                        .font(.system(size: 7, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.jarvisTextDim)
+
+                    Text(tool.source.uppercased())
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(accent)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(accent.opacity(0.12))
+                        .cornerRadius(3)
+                }
+
+                // Description (uses fallback)
+                Text(tool.resolvedDescription)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+        }
+        .background(accent.opacity(0.04))
+    }
+}
 
 // A compact Ring chart for CPU/Mem
 struct MetricRing: View {
@@ -915,67 +1165,497 @@ struct MetricRing: View {
     }
 }
 
+// MARK: - Environment Dashboard
+struct EnvironmentDashboard: View {
+    @EnvironmentObject var appContext: AppContext
+    @EnvironmentObject var socketClient: SocketClient
+    @ObservedObject var serverManager = ServerManager.shared
+    @ObservedObject var mcpConfigManager = MCPConfigManager.shared
+    @State private var uptimeSeconds: Int = 0
+    @State private var uptimeTimer: Timer?
+    @State private var isExpanded: Bool = false
+
+    private var serverStatusColor: Color {
+        switch serverManager.status {
+        case .running: return Color.jarvisGreen
+        case .starting: return Color.jarvisAmber
+        case .stopped, .stopping: return .gray
+        case .error: return Color.jarvisRed
+        }
+    }
+
+    private var serverStatusText: String {
+        switch serverManager.status {
+        case .running: return "Online"
+        case .starting: return "Starting"
+        case .stopped: return "Offline"
+        case .stopping: return "Stopping"
+        case .error(let msg): return "Error"
+        }
+    }
+
+    private var serverStatusIcon: String {
+        switch serverManager.status {
+        case .running: return "checkmark.circle.fill"
+        case .starting: return "arrow.triangle.2.circlepath"
+        case .stopped, .stopping: return "moon.fill"
+        case .error: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var formattedUptime: String {
+        let h = uptimeSeconds / 3600
+        let m = (uptimeSeconds % 3600) / 60
+        let s = uptimeSeconds % 60
+        if h > 0 {
+            return String(format: "%dh %02dm", h, m)
+        } else if m > 0 {
+            return String(format: "%dm %02ds", m, s)
+        } else {
+            return "\(s)s"
+        }
+    }
+
+    private var hasApiKey: Bool {
+        !appContext.llmProvider.requiresAPIKey || !appContext.aiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Entire top section is tappable to expand/collapse
+            VStack(alignment: .leading, spacing: 0) {
+                // Header row
+                HStack(spacing: 8) {
+                    // Pulsing status dot
+                    Circle()
+                        .fill(serverStatusColor)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: serverStatusColor.opacity(0.8), radius: 4)
+
+                    Text("SYSTEM")
+                        .font(JarvisFont.captionMono)
+                        .foregroundStyle(Color.jarvisTextDim)
+
+                    Spacer()
+
+                    // API key warning badge
+                    if !hasApiKey {
+                        HStack(spacing: 3) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 7))
+                            Text("NO KEY")
+                                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                        }
+                        .foregroundStyle(Color.jarvisRed)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.jarvisRed.opacity(0.15))
+                        .cornerRadius(JarvisRadius.small)
+                    }
+
+                    // Quick status pill
+                    Text(serverStatusText)
+                        .font(JarvisFont.tag)
+                        .foregroundStyle(serverStatusColor)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(serverStatusColor.opacity(0.15))
+                        .cornerRadius(JarvisRadius.small)
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Color.jarvisTextDim)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+
+                // Compact row: always visible — LLM + Connection
+                HStack(spacing: 6) {
+                    // LLM Provider icon
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 9))
+                        .foregroundStyle(hasApiKey ? Color.jarvisAmber : Color.jarvisRed)
+
+                    Text(appContext.llmModel)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(hasApiKey ? Color.jarvisTextSecondary : Color.jarvisRed.opacity(0.8))
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    // WebSocket indicator
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(socketClient.isConnected ? Color.jarvisGreen : Color.jarvisRed)
+                            .frame(width: 5, height: 5)
+                        Text("WS")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundStyle(socketClient.isConnected ? Color.jarvisGreen.opacity(0.8) : Color.jarvisRed.opacity(0.8))
+                    }
+
+                    // MCP indicator
+                    HStack(spacing: 3) {
+                        Image(systemName: "hammer.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(mcpConfigManager.connectedServerCount > 0 ? Color.jarvisOrange : Color.jarvisTextDim)
+                        Text("\(mcpConfigManager.connectedServerCount)")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(mcpConfigManager.connectedServerCount > 0 ? Color.jarvisOrange : Color.jarvisTextDim)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, isExpanded ? 6 : 8)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
+                }
+            }
+
+            // Expanded details
+            if isExpanded {
+                VStack(spacing: 1) {
+                    // Divider line
+                    Rectangle()
+                        .fill(Color.jarvisBorder)
+                        .frame(height: 1)
+                        .padding(.horizontal, 8)
+
+                    VStack(alignment: .leading, spacing: 8) {
+
+                        // LLM Provider Row
+                        EnvRow(icon: "cpu", iconColor: Color.jarvisAmber, label: "Provider", value: appContext.llmProvider.displayName)
+
+                        // API Key status
+                        EnvRow(
+                            icon: hasApiKey ? "key.fill" : "key",
+                            iconColor: hasApiKey ? Color.jarvisGreen : Color.jarvisRed,
+                            label: "API Key",
+                            value: hasApiKey ? "Configured" : "Missing",
+                            valueColor: hasApiKey ? Color.jarvisGreen : Color.jarvisRed
+                        )
+
+                        // Server Uptime
+                        EnvRow(icon: "clock", iconColor: Color.jarvisCyan, label: "Uptime", value: serverManager.isRunning ? formattedUptime : "—")
+
+                        // Current Mode
+                        EnvRow(icon: "slider.horizontal.3", iconColor: Color.jarvisPurple, label: "Mode", value: appContext.currentMode.name)
+
+                        // Session Messages
+                        EnvRow(icon: "text.bubble", iconColor: Color.jarvisGreen, label: "Messages", value: "\(appContext.currentSessionChatMessages.count)")
+
+                        // Google Auth
+                        EnvRow(
+                            icon: appContext.isGoogleConnected ? "checkmark.shield.fill" : "xmark.shield",
+                            iconColor: appContext.isGoogleConnected ? Color.jarvisGreen : Color.jarvisTextDim,
+                            label: "Google",
+                            value: appContext.isGoogleConnected ? "Connected" : "Not connected"
+                        )
+
+                        // Active Tools Count
+                        EnvRow(icon: "wrench.and.screwdriver", iconColor: Color.jarvisOrange, label: "Tools", value: "\(appContext.activeTools.count) loaded")
+
+                        // Connected MCP Servers (names)
+                        if !mcpConfigManager.connectedServerNames.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "server.rack")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(Color.jarvisOrange)
+                                        .frame(width: 14, alignment: .center)
+                                    Text("MCP Servers")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Color.jarvisTextDim)
+                                }
+                                ForEach(mcpConfigManager.connectedServerNames, id: \.self) { name in
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(Color.jarvisGreen)
+                                            .frame(width: 4, height: 4)
+                                        Text(name)
+                                            .font(.system(size: 9, design: .monospaced))
+                                            .foregroundStyle(Color.jarvisTextSecondary)
+                                    }
+                                    .padding(.leading, 19)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(Color.jarvisSurfaceLight)
+        .cornerRadius(JarvisRadius.card)
+        .overlay(
+            RoundedRectangle(cornerRadius: JarvisRadius.card)
+                .stroke(Color.jarvisBorder, lineWidth: 1)
+        )
+        .onAppear { startUptimeTimer() }
+        .onDisappear { stopUptimeTimer() }
+    }
+
+    private func startUptimeTimer() {
+        uptimeSeconds = 0
+        uptimeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            if serverManager.isRunning {
+                uptimeSeconds += 1
+            }
+        }
+    }
+
+    private func stopUptimeTimer() {
+        uptimeTimer?.invalidate()
+        uptimeTimer = nil
+    }
+}
+
+/// A single key-value row in the environment dashboard
+struct EnvRow: View {
+    let icon: String
+    let iconColor: Color
+    let label: String
+    let value: String
+    var valueColor: Color? = nil
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 9))
+                .foregroundStyle(iconColor)
+                .frame(width: 14, alignment: .center)
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(Color.jarvisTextDim)
+            Spacer()
+            Text(value)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(valueColor ?? Color.jarvisTextSecondary)
+                .lineLimit(1)
+        }
+    }
+}
+
 // MARK: - Reasoning Step Row
 struct ReasoningStepRow: View {
     let step: ReasoningStep
     let isExpanded: Bool
     let onTap: () -> Void
+    let isLast: Bool
     @ObservedObject private var _theme = AppContext.shared
+    @State private var liveElapsedMs: Int = 0
+    @State private var elapsedTimer: Timer?
+    @State private var pulseScale: CGFloat = 1.0
+
+    private var accentColor: Color {
+        switch step.status {
+        case .completed: return Color.jarvisGreen
+        case .active: return Color.jarvisCyan
+        case .pending: return Color.jarvisTextDim
+        }
+    }
+
+    /// Steps that are just waiting for user input — no timer needed
+    private static let idleDescriptions: Set<String> = [
+        "Await input", "Ready", "Starting up"
+    ]
+
+    private var isIdleStep: Bool {
+        Self.idleDescriptions.contains(step.description)
+    }
+
+    /// Formatted duration string (hidden for idle/waiting steps)
+    private var durationText: String? {
+        if isIdleStep { return nil }
+        if let ms = step.durationMs {
+            return formatMs(ms)
+        } else if step.status == .active {
+            return formatMs(liveElapsedMs)
+        }
+        return nil
+    }
+
+    private func formatMs(_ ms: Int) -> String {
+        if ms < 1000 {
+            return "\(ms)ms"
+        } else if ms < 60_000 {
+            let sec = Double(ms) / 1000.0
+            return String(format: "%.1fs", sec)
+        } else {
+            let sec = ms / 1000
+            return String(format: "%dm %02ds", sec / 60, sec % 60)
+        }
+    }
+
+    /// Timestamp label (HH:mm:ss)
+    private var timeLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: step.timestamp)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 8) {
-                // Status Icon
-                statusIcon(for: step.status)
-                    .padding(.top, 2)
+        HStack(alignment: .top, spacing: 0) {
+            // Timeline connector
+            VStack(spacing: 0) {
+                // Status node
+                ZStack {
+                    statusNode
+                }
+                .frame(width: 18, height: 18)
 
-                // Description
-                Text(step.description)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.jarvisTextSecondary)
+                // Vertical line to next step
+                if !isLast {
+                    Rectangle()
+                        .fill(accentColor.opacity(0.2))
+                        .frame(width: 1.5)
+                        .frame(maxHeight: .infinity)
+                }
+            }
+            .frame(width: 18)
+            .padding(.trailing, 8)
 
-                Spacer()
+            // Content
+            VStack(alignment: .leading, spacing: 4) {
+                // Main row: description + timing
+                HStack(alignment: .top, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.description)
+                            .font(.system(size: 11.5, weight: step.status == .active ? .medium : .regular))
+                            .foregroundStyle(step.status == .active ? Color.jarvisTextPrimary : Color.jarvisTextSecondary)
+                            .lineLimit(2)
 
-                // Expand/collapse indicator if details exist
-                if step.details != nil {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
+                        // Timestamp
+                        Text(timeLabel)
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundStyle(Color.jarvisTextDim.opacity(0.7))
+                    }
+
+                    Spacer(minLength: 4)
+
+                    // Duration badge
+                    if let duration = durationText {
+                        HStack(spacing: 3) {
+                            if step.status == .active {
+                                Circle()
+                                    .fill(Color.jarvisCyan)
+                                    .frame(width: 4, height: 4)
+                                    .scaleEffect(pulseScale)
+                            }
+                            Text(duration)
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundStyle(step.status == .active ? Color.jarvisCyan : durationColor(for: step.durationMs ?? 0))
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(step.status == .active ? Color.jarvisCyan.opacity(0.1) : Color.white.opacity(0.05))
+                        )
+                    }
+
+                    // Expand/collapse chevron
+                    if step.details != nil {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(Color.jarvisTextDim)
+                            .padding(.top, 2)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if step.details != nil { onTap() }
+                }
+
+                // Expandable details
+                if isExpanded, let details = step.details {
+                    Text(details)
+                        .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(Color.jarvisTextTertiary)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.white.opacity(0.03))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(accentColor.opacity(0.1), lineWidth: 0.5)
+                                )
+                        )
                 }
             }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                if step.details != nil {
-                    onTap()
-                }
+            .padding(.bottom, isLast ? 0 : 6)
+        }
+        .onAppear {
+            if step.status == .active {
+                if !isIdleStep { startLiveTimer() }
+                startPulse()
             }
-
-            // Expandable details section
-            if isExpanded, let details = step.details {
-                Text(details)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.jarvisTextTertiary)
-                    .padding(.leading, 20)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(JarvisRadius.medium)
+        }
+        .onDisappear { stopLiveTimer() }
+        .onChange(of: step.status) {
+            if step.status == .active {
+                if !isIdleStep { startLiveTimer() }
+                startPulse()
+            } else {
+                stopLiveTimer()
             }
         }
     }
 
     @ViewBuilder
-    private func statusIcon(for status: ReasoningStep.StepStatus) -> some View {
-        switch status {
+    private var statusNode: some View {
+        switch step.status {
         case .completed:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.jarvisGreen).font(.caption)
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.jarvisGreen)
         case .active:
             ZStack {
-                Circle().stroke(Color.jarvisCyan, lineWidth: 2).frame(width: 10, height: 10)
-                Circle().fill(Color.jarvisCyan).frame(width: 4, height: 4)
+                Circle()
+                    .fill(Color.jarvisCyan.opacity(0.15))
+                    .frame(width: 16, height: 16)
+                Circle()
+                    .stroke(Color.jarvisCyan, lineWidth: 1.5)
+                    .frame(width: 12, height: 12)
+                Circle()
+                    .fill(Color.jarvisCyan)
+                    .frame(width: 5, height: 5)
+                    .scaleEffect(pulseScale)
             }
         case .pending:
-            Circle().stroke(Color.jarvisTextDim, lineWidth: 1).frame(width: 10, height: 10)
+            Circle()
+                .stroke(Color.jarvisTextDim.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+                .frame(width: 10, height: 10)
+        }
+    }
+
+    /// Color ramp for uration badge based on how long it took
+    private func durationColor(for ms: Int) -> Color {
+        if ms < 500 { return Color.jarvisGreen.opacity(0.8) }
+        if ms < 2000 { return Color.jarvisAmber.opacity(0.8) }
+        return Color.jarvisOrange.opacity(0.8)
+    }
+
+    private func startLiveTimer() {
+        liveElapsedMs = Int(Date().timeIntervalSince(step.timestamp) * 1000)
+        elapsedTimer?.invalidate()
+        elapsedTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            liveElapsedMs = Int(Date().timeIntervalSince(step.timestamp) * 1000)
+        }
+    }
+
+    private func stopLiveTimer() {
+        elapsedTimer?.invalidate()
+        elapsedTimer = nil
+    }
+
+    private func startPulse() {
+        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+            pulseScale = 1.4
         }
     }
 }
