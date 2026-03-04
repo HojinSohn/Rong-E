@@ -235,6 +235,29 @@ struct ActiveToolInfo: Codable, Identifiable {
     var id: String { name }
     let name: String
     let source: String
+    let description: String?
+
+    /// Returns a description, falling back to a built-in default when the backend doesn't provide one.
+    var resolvedDescription: String {
+        if let d = description, !d.isEmpty { return d }
+        return Self.builtInDescriptions[name] ?? "Tool provided by \(source)"
+    }
+
+    private static let builtInDescriptions: [String: String] = [
+        "calculator": "Evaluate mathematical expressions and perform calculations",
+        "open_application": "Launch a macOS application by name",
+        "open_chrome_tab": "Open a URL in Google Chrome browser",
+        "read_memory": "Read from the agent's persistent knowledge base",
+        "save_to_memory": "Save information to the agent's persistent knowledge base",
+        "append_to_memory": "Append content to an existing memory entry",
+        "google_agent": "Gmail · Calendar · Sheets sub-agent for Google Workspace",
+        "web_search": "Search the web and return results",
+        "get_current_date_time": "Get the current date and time",
+        "list_directory": "List contents of a directory on the local filesystem",
+        "read_file": "Read the contents of a file from the local filesystem",
+        "collect_files": "Collect and return contents of multiple files",
+        "search_knowledge_base": "Search the RAG knowledge base for relevant documents",
+    ]
 }
 
 struct ActiveToolsContent: Codable {

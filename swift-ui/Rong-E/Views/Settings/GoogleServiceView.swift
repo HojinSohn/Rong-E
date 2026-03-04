@@ -46,19 +46,36 @@ struct GoogleServiceView: View {
                 .opacity(0.8)
                 .ignoresSafeArea()
             
-            // 3. Content Frame
+            // 3. Decorative HUD Corners
+            VStack {
+                HStack {
+                    CornerBracket(topLeft: true)
+                    Spacer()
+                    CornerBracket(topLeft: false)
+                }
+                Spacer()
+                HStack {
+                    CornerBracket(topLeft: false, rotate: true)
+                    Spacer()
+                    CornerBracket(topLeft: true, rotate: true)
+                }
+            }
+            .padding(10)
+            .allowsHitTesting(false)
+
+            // 4. Content Frame
             VStack(spacing: 0) {
                 // Header
                 HStack {
                     Circle()
-                        .fill(Color.jarvisBlue)
+                        .fill(context.themeAccentColor)
                         .frame(width: 8, height: 8)
                         .modifier(JarvisGlow(active: true))
                     
                     Text("SYSTEM // GOOGLE_SERVICES")
                         .font(.system(.subheadline, design: .monospaced))
                         .fontWeight(.bold)
-                        .foregroundColor(.jarvisBlue)
+                        .foregroundColor(context.themeAccentColor)
                         .tracking(2)
                     
                     Spacer()
@@ -85,15 +102,16 @@ struct GoogleServiceView: View {
                     Button(action: { coordinator.closeWindow(id: windowID) }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title2)
-                            .foregroundColor(.jarvisBlue.opacity(0.8))
+                            .foregroundColor(.jarvisTextDim)
+                            .modifier(JarvisGlow(active: false))
                     }
                     .buttonStyle(BorderlessButtonStyle())
                     .contentShape(Rectangle())
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 15)
-                .background(Color.jarvisBlue.opacity(0.05))
-                .overlay(Rectangle().frame(height: 1).foregroundColor(.jarvisBlue.opacity(0.3)), alignment: .bottom)
+                .background(context.themeAccentColor.opacity(0.05))
+                .overlay(Rectangle().frame(height: 1).foregroundColor(context.themeAccentColor.opacity(0.3)), alignment: .bottom)
                 
                 // Main Content
                 ScrollView {
@@ -102,11 +120,11 @@ struct GoogleServiceView: View {
                         
                         // Section Divider
                         HStack {
-                            Rectangle().frame(height: 1).foregroundColor(.jarvisBlue.opacity(0.3))
+                            Rectangle().frame(height: 1).foregroundColor(context.themeAccentColor.opacity(0.3))
                             Text("RESOURCES")
                                 .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.jarvisBlue.opacity(0.7))
-                            Rectangle().frame(height: 1).foregroundColor(.jarvisBlue.opacity(0.3))
+                                .foregroundColor(context.themeAccentColor.opacity(0.7))
+                            Rectangle().frame(height: 1).foregroundColor(context.themeAccentColor.opacity(0.3))
                         }
                         .padding(.vertical, 5)
                         
@@ -117,10 +135,7 @@ struct GoogleServiceView: View {
             }
         }
         .frame(width: 500, height: 500)
-        .overlay(
-            RoundedRectangle(cornerRadius: 0)
-                .stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1)
-        )
+        .preferredColorScheme(.dark)
         // File Importer
         .fileImporter(
             isPresented: $isShowingFilePicker,
@@ -149,7 +164,7 @@ struct GoogleServiceView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("AUTHENTICATION PROTOCOL")
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.jarvisBlue.opacity(0.7))
+                .foregroundColor(context.themeAccentColor.opacity(0.7))
                 .tracking(1)
             
             HStack(spacing: 12) {
@@ -158,7 +173,7 @@ struct GoogleServiceView: View {
                     HStack {
                         Image(systemName: "doc.plaintext.fill")
                             .font(.title2)
-                            .foregroundColor(!googleAuthManager.credentialsFileExists ? .jarvisTextDim : .jarvisBlue)
+                            .foregroundColor(!googleAuthManager.credentialsFileExists ? .jarvisTextDim : context.themeAccentColor)
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text(googleAuthManager.credentialsFileExists ? "CREDENTIALS LOADED" : "LOAD CREDENTIALS")
@@ -173,8 +188,8 @@ struct GoogleServiceView: View {
                         Spacer()
                     }
                     .padding(12)
-                    .background(Color.jarvisBlue.opacity(0.05))
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+                    .background(context.themeAccentColor.opacity(0.05))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(context.themeAccentColor.opacity(0.3), lineWidth: 1))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(BorderlessButtonStyle())
@@ -189,9 +204,9 @@ struct GoogleServiceView: View {
                                 .fontWeight(.bold)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 10)
-                                .background(Color.jarvisBlue.opacity(0.2))
-                                .foregroundColor(.jarvisBlue)
-                                .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
+                                .background(context.themeAccentColor.opacity(0.2))
+                                .foregroundColor(context.themeAccentColor)
+                                .overlay(Rectangle().stroke(context.themeAccentColor, lineWidth: 1))
                                 .modifier(JarvisGlow(active: true))
                                 .contentShape(Rectangle())
                         }
@@ -238,7 +253,7 @@ struct GoogleServiceView: View {
             HStack {
                 Text("MANAGED SPREADSHEETS")
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.jarvisBlue.opacity(0.7))
+                    .foregroundColor(context.themeAccentColor.opacity(0.7))
                     .tracking(1)
                 Spacer()
                 
@@ -250,9 +265,9 @@ struct GoogleServiceView: View {
                     .font(.system(size: 10, design: .monospaced))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.jarvisBlue.opacity(0.1))
-                    .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
-                    .foregroundColor(.jarvisBlue)
+                    .background(context.themeAccentColor.opacity(0.1))
+                    .overlay(Rectangle().stroke(context.themeAccentColor.opacity(0.5), lineWidth: 1))
+                    .foregroundColor(context.themeAccentColor)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(BorderlessButtonStyle())
@@ -394,12 +409,12 @@ struct AddSheetModal: View {
                     Text("NEW RESOURCE ALLOCATION")
                         .font(.system(size: 12, design: .monospaced))
                         .fontWeight(.bold)
-                        .foregroundColor(.jarvisBlue)
+                        .foregroundColor(_theme.themeAccentColor)
                     Spacer()
                 }
                 .padding()
-                .background(Color.jarvisBlue.opacity(0.1))
-                .overlay(Rectangle().frame(height: 1).foregroundColor(.jarvisBlue.opacity(0.3)), alignment: .bottom)
+                .background(_theme.themeAccentColor.opacity(0.1))
+                .overlay(Rectangle().frame(height: 1).foregroundColor(_theme.themeAccentColor.opacity(0.3)), alignment: .bottom)
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
@@ -419,9 +434,9 @@ struct AddSheetModal: View {
                                         .fontWeight(.bold)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 10)
-                                        .background(urlInput.isEmpty ? Color.jarvisTextDim.opacity(0.2) : Color.jarvisBlue.opacity(0.2))
-                                        .foregroundColor(urlInput.isEmpty ? .jarvisTextDim : .jarvisBlue)
-                                        .overlay(Rectangle().stroke(urlInput.isEmpty ? Color.jarvisTextDim : Color.jarvisBlue, lineWidth: 1))
+                                        .background(urlInput.isEmpty ? Color.jarvisTextDim.opacity(0.2) : _theme.themeAccentColor.opacity(0.2))
+                                        .foregroundColor(urlInput.isEmpty ? .jarvisTextDim : _theme.themeAccentColor)
+                                        .overlay(Rectangle().stroke(urlInput.isEmpty ? Color.jarvisTextDim : _theme.themeAccentColor, lineWidth: 1))
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(BorderlessButtonStyle())
@@ -434,11 +449,11 @@ struct AddSheetModal: View {
                             HStack {
                                 Text("ESTABLISHING LINK...")
                                     .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(.jarvisBlue)
+                                    .foregroundColor(_theme.themeAccentColor)
                                 Spacer()
                                 Text(">>>")
                                     .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(.jarvisBlue)
+                                    .foregroundColor(_theme.themeAccentColor)
                             }
                         }
 
@@ -480,7 +495,7 @@ struct AddSheetModal: View {
                                     .pickerStyle(MenuPickerStyle())
                                     .frame(maxWidth: .infinity)
                                     .background(Color.black.opacity(0.4))
-                                    .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+                                    .overlay(Rectangle().stroke(_theme.themeAccentColor.opacity(0.3), lineWidth: 1))
                                 }
 
                                 // Alias
@@ -531,21 +546,21 @@ struct AddSheetModal: View {
                             .fontWeight(.bold)
                             .padding(.horizontal, 20)
                             .padding(.vertical, 10)
-                            .background((extractedID == nil || aliasInput.isEmpty) ? Color.jarvisTextDim.opacity(0.2) : Color.jarvisBlue.opacity(0.2))
-                            .foregroundColor((extractedID == nil || aliasInput.isEmpty) ? .jarvisTextDim : .jarvisBlue)
-                            .overlay(Rectangle().stroke((extractedID == nil || aliasInput.isEmpty) ? Color.jarvisTextDim : Color.jarvisBlue, lineWidth: 1))
+                            .background((extractedID == nil || aliasInput.isEmpty) ? Color.jarvisTextDim.opacity(0.2) : _theme.themeAccentColor.opacity(0.2))
+                            .foregroundColor((extractedID == nil || aliasInput.isEmpty) ? .jarvisTextDim : _theme.themeAccentColor)
+                            .overlay(Rectangle().stroke((extractedID == nil || aliasInput.isEmpty) ? Color.jarvisTextDim : _theme.themeAccentColor, lineWidth: 1))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(BorderlessButtonStyle())
                     .disabled(extractedID == nil || aliasInput.isEmpty)
                 }
                 .padding(20)
-                .background(Color.jarvisBlue.opacity(0.05))
-                .overlay(Rectangle().frame(height: 1).foregroundColor(.jarvisBlue.opacity(0.3)), alignment: .top)
+                .background(_theme.themeAccentColor.opacity(0.05))
+                .overlay(Rectangle().frame(height: 1).foregroundColor(_theme.themeAccentColor.opacity(0.3)), alignment: .top)
             }
         }
         .frame(width: 450, height: 550)
-        .border(Color.jarvisBlue.opacity(0.5))
+        .border(_theme.themeAccentColor.opacity(0.5))
         .onAppear {
             setupSheetTabsCallback()
         }

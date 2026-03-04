@@ -50,15 +50,24 @@ struct ReasoningStep: Identifiable {
     let description: String
     var details: String?
     var status: StepStatus
+    let timestamp: Date
+    var completedAt: Date?
 
     enum StepStatus {
         case completed, active, pending
     }
 
-    init(description: String, details: String? = nil, status: StepStatus) {
+    /// Duration in milliseconds from creation to completion (nil if not completed)
+    var durationMs: Int? {
+        guard let end = completedAt else { return nil }
+        return Int(end.timeIntervalSince(timestamp) * 1000)
+    }
+
+    init(description: String, details: String? = nil, status: StepStatus, timestamp: Date = Date()) {
         self.description = description
         self.details = details
         self.status = status
+        self.timestamp = timestamp
     }
 }
 
@@ -222,9 +231,11 @@ class AppContext: ObservableObject {
     func setIdle() {
         withAnimation {
             self.currentActivity = .idle
+            let now = Date()
             for i in reasoningSteps.indices {
                 if reasoningSteps[i].status == .active {
                     reasoningSteps[i].status = .completed
+                    reasoningSteps[i].completedAt = now
                 }
             }
             reasoningSteps.append(ReasoningStep(description: "Ready", status: .active))

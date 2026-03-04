@@ -364,12 +364,12 @@ async fn handle_config(
         "tools_request" => {
             let s = state.lock().await;
             let mut tools_list: Vec<serde_json::Value> = vec![
-                json!({"name": "calculator", "source": "built-in"}),
-                json!({"name": "open_application", "source": "built-in"}),
-                json!({"name": "open_chrome_tab", "source": "built-in"}),
-                json!({"name": "read_memory", "source": "built-in"}),
-                json!({"name": "save_to_memory", "source": "built-in"}),
-                json!({"name": "append_to_memory", "source": "built-in"}),
+                json!({"name": "calculator", "source": "built-in", "description": "Evaluate mathematical expressions and perform calculations"}),
+                json!({"name": "open_application", "source": "built-in", "description": "Launch a macOS application by name"}),
+                json!({"name": "open_chrome_tab", "source": "built-in", "description": "Open a URL in Google Chrome browser"}),
+                json!({"name": "read_memory", "source": "built-in", "description": "Read from the agent's persistent knowledge base"}),
+                json!({"name": "save_to_memory", "source": "built-in", "description": "Save information to the agent's persistent knowledge base"}),
+                json!({"name": "append_to_memory", "source": "built-in", "description": "Append content to an existing memory entry"}),
             ];
             if s.google_access_token.is_some() {
                 tools_list.push(
@@ -378,8 +378,9 @@ async fn handle_config(
             }
             for (server_name, conn) in &s.mcp_connections {
                 for tool in &conn.tools {
+                    let desc = tool.description.as_deref().unwrap_or("MCP tool");
                     tools_list
-                        .push(json!({"name": tool.name, "source": format!("mcp:{}", server_name)}));
+                        .push(json!({"name": tool.name, "source": format!("mcp:{}", server_name), "description": desc}));
                 }
             }
             drop(s);
