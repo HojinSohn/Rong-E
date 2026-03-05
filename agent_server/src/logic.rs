@@ -44,7 +44,7 @@ async fn handle_config(
             state.lock().await.api_key = Some(key.to_string());
             let _ = sender
                 .send(Message::Text(
-                    json!({"type": "credentials_success", "content": "API key saved — you're all set!"}).to_string(),
+                    json!({"type": "credentials_success", "content": "API Key stored."}).to_string(),
                 ))
                 .await;
         }
@@ -56,7 +56,7 @@ async fn handle_config(
             if dir_path.is_empty() {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "credentials_error", "content": "Please provide the path to your Google credentials folder."})
+                        json!({"type": "credentials_error", "content": "❌ Credentials directory path is missing."})
                             .to_string(),
                     ))
                     .await;
@@ -70,7 +70,7 @@ async fn handle_config(
             if !std::path::Path::new(&credentials_path).exists() {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "credentials_error", "content": format!("No credentials.json found at: {}. Please download it from Google Cloud Console and place it in that folder.", credentials_path)})
+                        json!({"type": "credentials_error", "content": format!("❌ credentials.json not found at: {}", credentials_path)})
                             .to_string(),
                     ))
                     .await;
@@ -88,7 +88,7 @@ async fn handle_config(
                     println!("✅ Google credentials authenticated.");
                     let _ = sender
                         .send(Message::Text(
-                            json!({"type": "credentials_success", "content": "Google account connected! You now have access to Gmail, Calendar, and Sheets."})
+                            json!({"type": "credentials_success", "content": "✅ Credentials received and stored successfully."})
                                 .to_string(),
                         ))
                         .await;
@@ -105,7 +105,7 @@ async fn handle_config(
                     }
                     let _ = sender
                         .send(Message::Text(
-                            json!({"type": "credentials_error", "content": "Could not authenticate with Google. Please double-check your credentials file and try again."})
+                            json!({"type": "credentials_error", "content": format!("❌ Error during authentication: {}", e)})
                                 .to_string(),
                         ))
                         .await;
@@ -135,7 +135,7 @@ async fn handle_config(
             }
             let _ = sender
                 .send(Message::Text(
-                    json!({"type": "credentials_revoked", "content": "Google account disconnected. Your stored session has been removed."})
+                    json!({"type": "credentials_revoked", "content": "✅ Credentials revoked successfully."})
                         .to_string(),
                 ))
                 .await;
@@ -150,7 +150,7 @@ async fn handle_config(
             if model.is_empty() {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "llm_set_error", "content": "Please specify which model you'd like to use (e.g. gemini-2.5-flash, gpt-4o, claude-sonnet-4-20250514)."})
+                        json!({"type": "llm_set_error", "content": "❌ Model name cannot be empty."})
                             .to_string(),
                     ))
                     .await;
@@ -160,7 +160,7 @@ async fn handle_config(
             if provider != "ollama" && api_key.is_empty() {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "llm_set_error", "content": format!("An API key is required for {}. Please add it in Settings.", provider)})
+                        json!({"type": "llm_set_error", "content": "❌ API key is required for this provider."})
                             .to_string(),
                     ))
                     .await;
@@ -179,7 +179,7 @@ async fn handle_config(
                     drop(s);
                     let _ = sender
                         .send(Message::Text(
-                            json!({"type": "llm_set_success", "content": format!("Now using {} via {}. Ready to chat!", model, provider)})
+                            json!({"type": "llm_set_success", "content": format!("✅ LLM verified and set to {}/{}", provider, model)})
                                 .to_string(),
                         ))
                         .await;
@@ -188,7 +188,7 @@ async fn handle_config(
                     println!("❌ Set LLM Error: {}", e);
                     let _ = sender
                         .send(Message::Text(
-                            json!({"type": "llm_set_error", "content": format!("Could not connect to {} ({}). Please verify your API key and model name.", model, e)})
+                            json!({"type": "llm_set_error", "content": format!("❌ {}", e)})
                                 .to_string(),
                         ))
                         .await;
@@ -200,7 +200,7 @@ async fn handle_config(
             chat_history.clear();
             let _ = sender
                 .send(Message::Text(
-                    json!({"type": "session_reset", "content": "Conversation cleared — starting fresh!"}).to_string(),
+                    json!({"type": "session_reset", "content": "Session cleared."}).to_string(),
                 ))
                 .await;
         }
@@ -215,7 +215,7 @@ async fn handle_config(
             let Some(servers) = servers else {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "mcp_sync_error", "content": "The MCP configuration couldn't be read. Please check your settings and try again."})
+                        json!({"type": "mcp_sync_error", "content": "Invalid MCP config format."})
                             .to_string(),
                     ))
                     .await;
@@ -337,7 +337,7 @@ async fn handle_config(
             // Send success
             let _ = sender
                 .send(Message::Text(
-                    json!({"type": "mcp_sync_success", "content": "MCP servers are connected and ready!"})
+                    json!({"type": "mcp_sync_success", "content": "MCP servers synced."})
                         .to_string(),
                 ))
                 .await;
@@ -378,14 +378,13 @@ async fn handle_config(
             }
             for (server_name, conn) in &s.mcp_connections {
                 for tool in &conn.tools {
-                    let safe_name = crate::mcp_proxy::sanitize_tool_name(&tool.name);
-                    let desc = tool
-                        .description
-                        .as_deref()
-                        .filter(|d| !d.is_empty())
+                    let tool_json = serde_json::to_value(tool).unwrap_or_default();
+                    let desc = tool_json
+                        .get("description") // Try to extract description from tool metadata
+                        .and_then(|v| v.as_str())
                         .unwrap_or("MCP tool");
                     tools_list
-                        .push(json!({"name": safe_name, "source": format!("mcp:{}", server_name), "description": desc}));
+                        .push(json!({"name": tool.name, "source": format!("mcp:{}", server_name), "description": desc}));
                 }
             }
             drop(s);
@@ -403,7 +402,7 @@ async fn handle_config(
             if spreadsheet_id.is_empty() {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Please provide a spreadsheet ID. You can find it in the spreadsheet's URL."}})
+                        json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Missing spreadsheet_id."}})
                             .to_string(),
                     ))
                     .await;
@@ -414,7 +413,7 @@ async fn handle_config(
             let Some(token) = access_token else {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Google account not connected. Please sign in via Settings first."}})
+                        json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Not authenticated with Google. Please connect your Google account first."}})
                             .to_string(),
                     ))
                     .await;
@@ -471,7 +470,7 @@ async fn handle_config(
                         .send(Message::Text(
                             json!({"type": "sheet_tabs_result", "content": {
                                 "success": false,
-                                "error": format!("Google Sheets API returned an error ({}). Please check the spreadsheet ID and your permissions.", status)
+                                "error": format!("Google API {} – {}", status, body)
                             }})
                             .to_string(),
                         ))
@@ -483,7 +482,7 @@ async fn handle_config(
                         .send(Message::Text(
                             json!({"type": "sheet_tabs_result", "content": {
                                 "success": false,
-                                "error": "Failed to reach Google Sheets. Please check your internet connection and try again."
+                                "error": format!("HTTP error: {}", e)
                             }})
                             .to_string(),
                         ))
@@ -518,7 +517,7 @@ async fn handle_config(
             state.lock().await.spreadsheet_configs = configs;
             let _ = sender
                 .send(Message::Text(
-                    json!({"type": "spreadsheets_synced", "content": format!("{} spreadsheet{} synced and ready to use.", count, if count == 1 { "" } else { "s" })})
+                    json!({"type": "spreadsheets_synced", "content": format!("✅ Synced {} spreadsheet(s)", count)})
                         .to_string(),
                 ))
                 .await;
@@ -548,7 +547,7 @@ async fn handle_config(
                 Ok(()) => {
                     let _ = sender
                         .send(Message::Text(
-                            json!({"type": "memory_saved", "content": "Memory updated successfully."})
+                            json!({"type": "memory_saved", "content": "✅ Memory saved successfully"})
                                 .to_string(),
                         ))
                         .await;
@@ -557,7 +556,7 @@ async fn handle_config(
                     println!("❌ Failed to save memory: {}", e);
                     let _ = sender
                         .send(Message::Text(
-                            json!({"type": "memory_error", "content": "Could not save your memory notes. Please try again."})
+                            json!({"type": "memory_error", "content": format!("❌ Error saving memory: {}", e)})
                                 .to_string(),
                         ))
                         .await;
@@ -570,7 +569,7 @@ async fn handle_config(
             if dir_path.is_empty() {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "credentials_error", "content": "Please provide the folder path where your Google credentials.json is stored."})
+                        json!({"type": "credentials_error", "content": "❌ dir_path is required for start_oauth."})
                             .to_string(),
                     ))
                     .await;
@@ -583,7 +582,7 @@ async fn handle_config(
             if !std::path::Path::new(&credentials_path).exists() {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "credentials_error", "content": format!("No credentials.json found at: {}. Please download it from Google Cloud Console and place it in that folder.", credentials_path)})
+                        json!({"type": "credentials_error", "content": format!("❌ credentials.json not found at: {}", credentials_path)})
                             .to_string(),
                     ))
                     .await;
@@ -619,7 +618,7 @@ async fn handle_config(
                             drop(s);
                             let _ = sender
                                 .send(Message::Text(
-                                    json!({"type": "credentials_success", "content": "Google account connected! You now have access to Gmail, Calendar, and Sheets."})
+                                    json!({"type": "credentials_success", "content": "✅ Google authentication successful."})
                                         .to_string(),
                                 ))
                                 .await;
@@ -628,7 +627,7 @@ async fn handle_config(
                             println!("❌ OAuth callback error: {}", e);
                             let _ = sender
                                 .send(Message::Text(
-                                    json!({"type": "credentials_error", "content": format!("Google sign-in was not completed: {}. Please try again.", e)})
+                                    json!({"type": "credentials_error", "content": format!("❌ OAuth failed: {}", e)})
                                         .to_string(),
                                 ))
                                 .await;
@@ -636,7 +635,7 @@ async fn handle_config(
                         Err(_) => {
                             let _ = sender
                                 .send(Message::Text(
-                                    json!({"type": "credentials_error", "content": "Sign-in timed out — the browser authorization wasn't completed within 5 minutes. Please try again."})
+                                    json!({"type": "credentials_error", "content": "❌ OAuth timed out (5 min). Please try again."})
                                         .to_string(),
                                 ))
                                 .await;
@@ -647,7 +646,7 @@ async fn handle_config(
                     println!("❌ Failed to prepare OAuth flow: {}", e);
                     let _ = sender
                         .send(Message::Text(
-                            json!({"type": "credentials_error", "content": "Could not start the sign-in process. Please verify your credentials.json file is valid and try again."})
+                            json!({"type": "credentials_error", "content": format!("❌ Failed to start OAuth: {}", e)})
                                 .to_string(),
                         ))
                         .await;
@@ -672,7 +671,7 @@ async fn handle_chat(
     if query.is_empty() {
         let _ = sender
             .send(Message::Text(
-                json!({"type": "response", "content": {"text": "Looks like your message was empty — type something and I'll help!", "images": [], "widgets": []}})
+                json!({"type": "response", "content": {"text": "Please enter a message.", "images": [], "widgets": []}})
                     .to_string(),
             ))
             .await;
@@ -699,7 +698,7 @@ async fn handle_chat(
     {
         let _ = sender
             .send(Message::Text(
-                json!({"type": "response", "content": {"text": "No API key set up yet. Please add your API key in Settings to get started.", "images": [], "widgets": []}})
+                json!({"type": "response", "content": {"text": "No API key configured. Please set your API key in Settings.", "images": [], "widgets": []}})
                     .to_string(),
             ))
             .await;
@@ -749,16 +748,7 @@ async fn handle_chat(
 
     let result = match llm_result {
         Ok(r) => r,
-        Err(join_err) => {
-            println!("❌ LLM task panicked: {}", join_err);
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "response", "content": {"text": "Something went wrong on my end. Please try your request again.", "images": [], "widgets": []}})
-                        .to_string(),
-                ))
-                .await;
-            return;
-        }
+        Err(join_err) => Err(format!("LLM task panicked: {}", join_err)),
     };
 
     match result {
@@ -781,7 +771,7 @@ async fn handle_chat(
             println!("❌ LLM error: {}", e);
             let _ = sender
                 .send(Message::Text(
-                    json!({"type": "response", "content": {"text": format!("I ran into an issue while processing your request: {}\n\nPlease try rephrasing or try again in a moment.", e), "images": [], "widgets": []}})
+                    json!({"type": "response", "content": {"text": format!("Error: {}", e), "images": [], "widgets": []}})
                         .to_string(),
                 ))
                 .await;
