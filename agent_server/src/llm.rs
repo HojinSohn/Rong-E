@@ -83,9 +83,9 @@ pub async fn call_llm(
     let mut proxied_mcp_tool_sets: Vec<(Vec<rmcp::model::Tool>, rmcp::service::ServerSink)> =
         Vec::new();
     for (tools, peer) in mcp_tool_sets {
-        match crate::mcp_proxy::create_notifying_proxy(tools.clone(), peer, tool_tx.clone()).await {
-            Ok((proxy_peer, guard)) => {
-                proxied_mcp_tool_sets.push((tools, proxy_peer));
+        match crate::mcp_proxy::create_notifying_proxy(tools, peer, tool_tx.clone()).await {
+            Ok((sanitized_tools, proxy_peer, guard)) => {
+                proxied_mcp_tool_sets.push((sanitized_tools, proxy_peer));
                 _proxy_guards.push(guard);
             }
             Err(e) => {
@@ -193,8 +193,8 @@ pub async fn verify_llm(provider: &str, api_key: &str, model: &str) -> Result<()
                     agent.chat(ping, vec![]).await.map(|_| ()).map_err(|e| e.to_string())
                 }
                 _ => Err(
-                    "Ollama is not running. Download and install it from https://ollama.com, \
-                     then start it with `ollama serve`."
+                    "Ollama doesn't appear to be running. Please install it from https://ollama.com \
+                     and start it with `ollama serve` before selecting an Ollama model."
                         .to_string(),
                 ),
             }
@@ -242,7 +242,7 @@ async fn chat_with_agent(
             // Return a graceful message instead of an error.
             if err_str.contains("empty") {
                 println!("⚠️ LLM returned empty response after tool execution (rig-core bug)");
-                Ok("I've completed the requested actions. Let me know if you need anything else.".to_string())
+                Ok("Done! I've completed everything you asked for. Let me know if there's anything else.".to_string())
             } else {
                 Err(err_str)
             }

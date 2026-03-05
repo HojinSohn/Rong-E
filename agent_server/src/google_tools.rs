@@ -28,17 +28,24 @@ async fn send_json(req: reqwest::RequestBuilder) -> Result<serde_json::Value, St
     let resp: reqwest::Response = req
         .send()
         .await
-        .map_err(|e| format!("HTTP error: {}", e))?;
+        .map_err(|e| format!("Network request failed: {}", e))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body: String = resp.text().await.unwrap_or_default();
-        return Err(format!("Google API {} – {}", status, body));
+        // Extract a clean message from the Google error body if possible
+        let google_msg = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v["error"]["message"].as_str().map(|s| s.to_string()));
+        return Err(match google_msg {
+            Some(msg) => format!("Google API error ({}): {}", status.as_u16(), msg),
+            None => format!("Google API returned status {}.", status.as_u16()),
+        });
     }
 
     resp.json::<serde_json::Value>()
         .await
-        .map_err(|e| format!("JSON parse error: {}", e))
+        .map_err(|_| "Failed to parse the response from Google.".to_string())
 }
 
 /// Send a request that returns no body (e.g. DELETE 204).
@@ -46,12 +53,18 @@ async fn send_empty(req: reqwest::RequestBuilder) -> Result<(), String> {
     let resp: reqwest::Response = req
         .send()
         .await
-        .map_err(|e| format!("HTTP error: {}", e))?;
+        .map_err(|e| format!("Network request failed: {}", e))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body: String = resp.text().await.unwrap_or_default();
-        return Err(format!("Google API {} – {}", status, body));
+        let google_msg = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v["error"]["message"].as_str().map(|s| s.to_string()));
+        return Err(match google_msg {
+            Some(msg) => format!("Google API error ({}): {}", status.as_u16(), msg),
+            None => format!("Google API returned status {}.", status.as_u16()),
+        });
     }
 
     Ok(())
@@ -723,7 +736,7 @@ impl Tool for UpdateCalendarEvent {
 
         let id = resp["id"].as_str().unwrap_or("?");
         let link = resp["htmlLink"].as_str().unwrap_or("");
-        Ok(format!("✅ Event updated.\nID: {id}\nLink: {link}"))
+        Ok(format!("Event updated (ID: {id}).\nOpen: {link}"))
     }
 }
 
@@ -786,7 +799,7 @@ impl Tool for DeleteCalendarEvent {
         .await
         .map_err(GoogleToolError)?;
 
-        Ok(format!("✅ Event {} deleted.", args.event_id))
+        Ok("Event deleted.".to_string())
     }
 }
 
@@ -865,7 +878,7 @@ impl Tool for ManageSpreadsheet {
                     .spreadsheet_id
                     .as_deref()
                     .filter(|s| !s.is_empty())
-                    .ok_or_else(|| GoogleToolError("spreadsheet_id is required for read".into()))?;
+                    .ok_or_else(|| GoogleToolError("spreadsheet_id is required for the read action.".into()))?;
 
                 let resp = send_json(
                     reqwest::Client::new()
@@ -881,7 +894,7 @@ impl Tool for ManageSpreadsheet {
 
                 let rows = resp["values"].as_array().cloned().unwrap_or_default();
                 Ok(format!(
-                    "✅ Read {} row(s) from {}.\nData: {}",
+                    "Read {} row(s) from {}.\n{}",
                     rows.len(),
                     args.range_name,
                     serde_json::to_string(&rows).unwrap_or_default()
@@ -893,7 +906,7 @@ impl Tool for ManageSpreadsheet {
                     .spreadsheet_id
                     .as_deref()
                     .filter(|s| !s.is_empty())
-                    .ok_or_else(|| GoogleToolError("spreadsheet_id is required for append".into()))?;
+                    .ok_or_else(|| GoogleToolError("spreadsheet_id is required for the append action.".into()))?;
                 let values = parse_values_json(args.values_json.as_deref())?;
 
                 let body = serde_json::json!({ "values": values });
@@ -913,7 +926,7 @@ impl Tool for ManageSpreadsheet {
                 let updated_rows = resp["updates"]["updatedRows"]
                     .as_u64()
                     .unwrap_or(0);
-                Ok(format!("✅ Appended {} row(s) to {}.", updated_rows, args.range_name))
+                Ok(format!("Appended {} row(s) to {}.", updated_rows, args.range_name))
             }
 
             "update" => {
@@ -921,7 +934,7 @@ impl Tool for ManageSpreadsheet {
                     .spreadsheet_id
                     .as_deref()
                     .filter(|s| !s.is_empty())
-                    .ok_or_else(|| GoogleToolError("spreadsheet_id is required for update".into()))?;
+                    .ok_or_else(|| GoogleToolError("spreadsheet_id is required for the update action.".into()))?;
                 let values = parse_values_json(args.values_json.as_deref())?;
 
                 let body = serde_json::json!({ "values": values });
@@ -939,7 +952,7 @@ impl Tool for ManageSpreadsheet {
                 .map_err(GoogleToolError)?;
 
                 let updated_cells = resp["updatedCells"].as_u64().unwrap_or(0);
-                Ok(format!("✅ Updated {} cell(s) in {}.", updated_cells, args.range_name))
+                Ok(format!("Updated {} cell(s) in {}.", updated_cells, args.range_name))
             }
 
             "create" => {
@@ -958,13 +971,13 @@ impl Tool for ManageSpreadsheet {
                 let new_id = resp["spreadsheetId"].as_str().unwrap_or("?");
                 let link = resp["spreadsheetUrl"].as_str().unwrap_or("");
                 Ok(format!(
-                    "✅ Created spreadsheet '{}'. ID: {}\nURL: {}",
+                    "Spreadsheet '{}' created.\nID: {}\nURL: {}",
                     args.range_name, new_id, link
                 ))
             }
 
             other => Err(GoogleToolError(format!(
-                "Unknown action '{}'. Use: read, append, update, create.",
+                "'{}' is not a valid action. Supported actions: read, append, update, create.",
                 other
             ))),
         }
@@ -978,12 +991,11 @@ fn parse_values_json(
 ) -> Result<Vec<Vec<serde_json::Value>>, GoogleToolError> {
     let raw = raw
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| GoogleToolError("values_json is required for this action".into()))?;
+        .ok_or_else(|| GoogleToolError("values_json is required to write data.".into()))?;
 
-    serde_json::from_str::<Vec<Vec<serde_json::Value>>>(raw).map_err(|e| {
-        GoogleToolError(format!(
-            "values_json must be a JSON array-of-arrays (e.g. [[\"a\",1]]). Parse error: {}",
-            e
-        ))
+    serde_json::from_str::<Vec<Vec<serde_json::Value>>>(raw).map_err(|_| {
+        GoogleToolError(
+            "values_json must be a JSON array-of-arrays, e.g. [[\"Name\",\"Age\"],[\"Alice\",30]].".into()
+        )
     })
 }

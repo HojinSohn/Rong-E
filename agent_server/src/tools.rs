@@ -180,7 +180,7 @@ impl Tool for OpenApplication {
             .await?;
 
         if !status.success() {
-            return Err(ToolError::CommandFailed(format!("Failed to open {}", args.app_name)));
+            return Err(ToolError::CommandFailed(format!("Could not open '{}'. Make sure the app is installed on this Mac.", args.app_name)));
         }
 
         let _ = tokio::process::Command::new("osascript")
@@ -244,7 +244,7 @@ end tell"#,
             .await?;
 
         if !status.success() {
-            return Err(ToolError::CommandFailed("Failed to open Chrome tab".into()));
+            return Err(ToolError::CommandFailed("Could not open the URL in Chrome. Make sure Google Chrome is installed.".into()));
         }
 
         Ok(format!("Opened {} in Chrome", args.url))
@@ -295,10 +295,10 @@ impl Tool for ReadMemory {
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
         match tokio::fs::read_to_string(&self.path).await {
-            Ok(content) if content.trim().is_empty() => Ok("Memory is empty.".to_string()),
+            Ok(content) if content.trim().is_empty() => Ok("No memories saved yet.".to_string()),
             Ok(content) => Ok(content),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Ok("Memory file does not exist yet. Use save_to_memory to create it.".to_string())
+                Ok("No memories saved yet.".to_string())
             }
             Err(e) => Err(ToolError::Io(e)),
         }
@@ -349,7 +349,7 @@ impl Tool for SaveToMemory {
             tokio::fs::create_dir_all(parent).await?;
         }
         tokio::fs::write(&self.path, &args.content).await?;
-        Ok(format!("Memory saved ({} characters)", args.content.len()))
+        Ok(format!("Saved to memory ({} characters).", args.content.len()))
     }
 }
 
@@ -410,6 +410,6 @@ impl Tool for AppendToMemory {
         };
 
         tokio::fs::write(&self.path, &new_content).await?;
-        Ok(format!("Appended to memory ({} characters added)", args.content.len()))
+        Ok(format!("Added to memory ({} characters appended).", args.content.len()))
     }
 }

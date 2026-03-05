@@ -239,6 +239,6 @@ async fn run_google_agent(
             res.map_err(|e| e.to_string())
         }
 
-        p => Err(format!("Unsupported provider for Google sub-agent: {}", p)),
+        p => Err(format!("The provider '{}' is not supported. Please use gemini, openai, anthropic, or ollama.", p)),
     }
 }
