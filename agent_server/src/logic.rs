@@ -378,7 +378,11 @@ async fn handle_config(
             }
             for (server_name, conn) in &s.mcp_connections {
                 for tool in &conn.tools {
-                    let desc = tool.description.as_deref().unwrap_or("MCP tool");
+                    let tool_json = serde_json::to_value(tool).unwrap_or_default();
+                    let desc = tool_json
+                        .get("description") // Try to extract description from tool metadata
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("MCP tool");
                     tools_list
                         .push(json!({"name": tool.name, "source": format!("mcp:{}", server_name), "description": desc}));
                 }
