@@ -71,7 +71,7 @@ pub async fn authenticate(
     let mut token = token_str
         .as_deref()
         .map(|s| serde_json::from_str::<GoogleToken>(s)
-            .map_err(|e| format!("Failed to parse token.json: {}", e)))
+            .map_err(|_| "Your saved login session appears to be corrupted. Please sign in again.".to_string()))
         .transpose()?
         .unwrap_or(GoogleToken {
             token: None,
@@ -101,7 +101,7 @@ pub async fn authenticate(
         .clone()
         .filter(|r| !r.is_empty())
         .ok_or_else(|| {
-            "Token expired and no refresh_token available. Re-authenticate from the app.".to_string()
+            "Your session has expired and cannot be renewed automatically. Please sign in again from Settings.".to_string()
         })?;
 
     // --- 3. Resolve client_id / client_secret ---
@@ -116,7 +116,7 @@ pub async fn authenticate(
         &token_uri,
     )
     .await
-    .map_err(|e| format!("Token refresh failed: {}", e))?;
+    .map_err(|_| "Failed to renew your Google session. Please sign in again.".to_string())?;
 
     // --- 5. Persist updated token ---
     let new_expiry =
@@ -126,11 +126,11 @@ pub async fn authenticate(
     token.expiry = Some(new_expiry.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string());
 
     let updated_json = serde_json::to_string_pretty(&token)
-        .map_err(|e| format!("Failed to serialize updated token: {}", e))?;
+        .map_err(|_| "An internal error occurred while updating your session.".to_string())?;
 
     tokio::fs::write(token_path, updated_json)
         .await
-        .map_err(|e| format!("Failed to save refreshed token.json: {}", e))?;
+        .map_err(|e| format!("Could not save your session to disk: {}", e))?;
 
     println!("✅ Google token refreshed and saved.");
     Ok(refreshed.access_token)
@@ -182,14 +182,14 @@ async fn resolve_client_creds(
     // Fall back to credentials.json
     let creds_str = tokio::fs::read_to_string(credentials_path)
         .await
-        .map_err(|e| format!("Failed to read credentials.json: {}", e))?;
+        .map_err(|_| "Could not read the credentials file. Please check it still exists.".to_string())?;
     let creds: CredentialsFile = serde_json::from_str(&creds_str)
-        .map_err(|e| format!("Failed to parse credentials.json: {}", e))?;
+        .map_err(|_| "The credentials file appears to be invalid. Please download a fresh copy from Google Cloud Console.".to_string())?;
 
     let cfg = creds
         .installed
         .or(creds.web)
-        .ok_or_else(|| "credentials.json has no 'installed' or 'web' section.".to_string())?;
+        .ok_or_else(|| "The credentials file is missing the required 'installed' or 'web' configuration. Please download a fresh copy from Google Cloud Console.".to_string())?;
 
     let uri = cfg
         .token_uri
@@ -209,21 +209,21 @@ pub async fn prepare_oauth_flow(
 ) -> Result<(String, tokio::net::TcpListener), String> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
-        .map_err(|e| format!("Failed to bind OAuth listener: {}", e))?;
+        .map_err(|e| format!("Could not start the local authentication server: {}", e))?;
     let port = listener
         .local_addr()
-        .map_err(|e| format!("Failed to get local port: {}", e))?
+        .map_err(|e| format!("Could not determine the local server port: {}", e))?
         .port();
 
     let creds_str = tokio::fs::read_to_string(credentials_path)
         .await
-        .map_err(|e| format!("Failed to read credentials.json: {}", e))?;
+        .map_err(|_| "Could not read the credentials file. Please check it still exists.".to_string())?;
     let creds: CredentialsFile = serde_json::from_str(&creds_str)
-        .map_err(|e| format!("Failed to parse credentials.json: {}", e))?;
+        .map_err(|_| "The credentials file appears to be invalid. Please download a fresh copy from Google Cloud Console.".to_string())?;
     let cfg = creds
         .installed
         .or(creds.web)
-        .ok_or_else(|| "credentials.json has no 'installed' or 'web' section.".to_string())?;
+        .ok_or_else(|| "The credentials file is missing the required 'installed' or 'web' configuration. Please download a fresh copy from Google Cloud Console.".to_string())?;
 
     let redirect_uri = format!("http://localhost:{}", port);
     let scopes = [
@@ -258,21 +258,21 @@ pub async fn await_oauth_callback(
 ) -> Result<String, String> {
     let port = listener
         .local_addr()
-        .map_err(|e| format!("Failed to get port: {}", e))?
+        .map_err(|e| format!("Could not determine the local server port: {}", e))?
         .port();
 
     // Accept exactly one connection (the browser redirect)
     let (mut stream, _) = listener
         .accept()
         .await
-        .map_err(|e| format!("Failed to accept OAuth callback: {}", e))?;
+        .map_err(|e| format!("Did not receive a response from the browser: {}", e))?;
 
     // Read the HTTP request
     let mut buf = vec![0u8; 8192];
     let n = stream
         .read(&mut buf)
         .await
-        .map_err(|e| format!("Failed to read callback request: {}", e))?;
+        .map_err(|e| format!("Could not read the browser response: {}", e))?;
     let request = String::from_utf8_lossy(&buf[..n]);
 
     // First line: "GET /?code=XXX&scope=... HTTP/1.1"
@@ -294,11 +294,22 @@ pub async fn await_oauth_callback(
             let _ = stream
                 .write_all(
                     b"HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n\
-                      <html><body><h2>Authentication cancelled or denied.</h2>\
-                      <p>You can close this tab.</p></body></html>",
+                      <html><head><meta charset=\"utf-8\">\
+                      <style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;\
+                      background:#f5f5f7;display:flex;align-items:center;justify-content:center;\
+                      min-height:100vh;margin:0;}\
+                      .card{background:#fff;border-radius:16px;padding:48px 40px;max-width:420px;\
+                      text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08);}\
+                      h2{margin:0 0 12px;color:#1d1d1f;font-size:22px;font-weight:600;}\
+                      p{color:#6e6e73;font-size:15px;line-height:1.5;margin:0;}\
+                      </style></head>\
+                      <body><div class=\"card\">\
+                      <h2>Sign-in Cancelled</h2>\
+                      <p>Access was not granted. You can close this tab and try again from the app.</p>\
+                      </div></body></html>",
                 )
                 .await;
-            return Err(format!("OAuth error: {}", decoded));
+            return Err("Sign-in was cancelled or access was denied. Please try again.".to_string());
         }
     }
 
@@ -312,27 +323,36 @@ pub async fn await_oauth_callback(
                 .map(|s| s.to_string())
                 .unwrap_or_else(|_| c.to_string())
         })
-        .ok_or_else(|| "No authorization code in callback URL".to_string())?;
+        .ok_or_else(|| "Sign-in failed: no authorization code was returned. Please try again.".to_string())?;
 
     // Respond to the browser immediately
     let success_html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n\
-              <html><body style=\"font-family:sans-serif;text-align:center;padding:60px\">\
-              <h2>\u{2705} Authentication Successful!</h2>\
+              <html><head><meta charset=\"utf-8\">\
+              <style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;\
+              background:#f5f5f7;display:flex;align-items:center;justify-content:center;\
+              min-height:100vh;margin:0;}\
+              .card{background:#fff;border-radius:16px;padding:48px 40px;max-width:420px;\
+              text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08);}\
+              h2{margin:0 0 12px;color:#1d1d1f;font-size:22px;font-weight:600;}\
+              p{color:#6e6e73;font-size:15px;line-height:1.5;margin:0;}\
+              </style></head>\
+              <body><div class=\"card\">\
+              <h2>Signed in successfully</h2>\
               <p>You can close this tab and return to Rong-E.</p>\
-              </body></html>";
+              </div></body></html>";
     let _ = stream.write_all(success_html.as_bytes()).await;
     drop(stream);
 
     // Load client credentials for the exchange
     let creds_str = tokio::fs::read_to_string(credentials_path)
         .await
-        .map_err(|e| format!("Failed to read credentials.json: {}", e))?;
+        .map_err(|_| "Could not read the credentials file. Please check it still exists.".to_string())?;
     let creds: CredentialsFile = serde_json::from_str(&creds_str)
-        .map_err(|e| format!("Failed to parse credentials.json: {}", e))?;
+        .map_err(|_| "The credentials file appears to be invalid. Please download a fresh copy from Google Cloud Console.".to_string())?;
     let cfg = creds
         .installed
         .or(creds.web)
-        .ok_or_else(|| "credentials.json has no 'installed' or 'web' section.".to_string())?;
+        .ok_or_else(|| "The credentials file is missing the required configuration. Please download a fresh copy from Google Cloud Console.".to_string())?;
 
     let token_uri = cfg
         .token_uri
@@ -354,18 +374,25 @@ pub async fn await_oauth_callback(
         .form(&params)
         .send()
         .await
-        .map_err(|e| format!("Token exchange request failed: {}", e))?;
+        .map_err(|_| "Could not reach Google's servers to complete sign-in. Please check your internet connection.".to_string())?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Token exchange failed {}: {}", status, body));
+        // Surface a clean message from Google's error body if available
+        let google_msg = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v["error_description"].as_str().or_else(|| v["error"].as_str()).map(|s| s.to_string()));
+        return Err(match google_msg {
+            Some(msg) => format!("Sign-in failed: {}", msg),
+            None => format!("Sign-in failed (Google returned status {}). Please try again.", status.as_u16()),
+        });
     }
 
     let token_resp: TokenExchangeResponse = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+        .map_err(|_| "Received an unexpected response from Google during sign-in. Please try again.".to_string())?;
 
     // Persist the new token.json
     let expiry = Utc::now() + Duration::seconds(token_resp.expires_in.unwrap_or(3599) as i64);
@@ -382,10 +409,10 @@ pub async fn await_oauth_callback(
     };
 
     let json_str = serde_json::to_string_pretty(&new_token)
-        .map_err(|e| format!("Failed to serialize token: {}", e))?;
+        .map_err(|_| "An internal error occurred while saving your session.".to_string())?;
     tokio::fs::write(token_path, &json_str)
         .await
-        .map_err(|e| format!("Failed to write token.json: {}", e))?;
+        .map_err(|e| format!("Could not save your session to disk: {}", e))?;
 
     println!("✅ OAuth flow complete. Token saved to {}", token_path);
     Ok(token_resp.access_token)
@@ -412,15 +439,21 @@ async fn refresh_access_token(
         .form(&params)
         .send()
         .await
-        .map_err(|e| format!("HTTP request to token endpoint failed: {}", e))?;
+        .map_err(|_| "Could not reach Google's servers to renew your session. Please check your internet connection.".to_string())?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body: String = resp.text().await.unwrap_or_default();
-        return Err(format!("Token endpoint returned {}: {}", status, body));
+        let google_msg = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v["error_description"].as_str().or_else(|| v["error"].as_str()).map(|s| s.to_string()));
+        return Err(match google_msg {
+            Some(msg) => format!("Could not renew your Google session: {}", msg),
+            None => format!("Could not renew your Google session (status {}). Please sign in again.", status.as_u16()),
+        });
     }
 
     resp.json::<RefreshResponse>()
         .await
-        .map_err(|e| format!("Failed to deserialize refresh response: {}", e))
+        .map_err(|_| "Received an unexpected response while renewing your Google session.".to_string())
 }
