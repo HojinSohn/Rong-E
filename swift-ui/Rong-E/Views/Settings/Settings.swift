@@ -148,7 +148,99 @@ struct GeneralSettingsView: View {
                 }
                 .modifier(JarvisPanel())
 
-                // Section 2: LLM Configuration
+                // Section 2: Permissions
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("PERMISSIONS")
+                        .font(.caption)
+                        .foregroundColor(.jarvisBlue.opacity(0.7))
+                        .tracking(1)
+
+                    // Screen Recording Permission
+                    HStack(spacing: 10) {
+                        Image(systemName: "rectangle.dashed.badge.record")
+                            .font(.system(size: 14))
+                            .foregroundColor(context.screenCapturePermissionGranted ? .jarvisGreen : .jarvisAmber)
+                            .frame(width: 20)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("SCREEN RECORDING")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(.jarvisTextPrimary)
+
+                            Text(context.screenCapturePermissionGranted
+                                 ? "Permission granted. Screen capture is available."
+                                 : "Required for screenshot capability. Grant access in System Settings.")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(.jarvisTextDim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer()
+
+                        if context.screenCapturePermissionGranted {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(Color.jarvisGreen)
+                                    .frame(width: 6, height: 6)
+                                    .shadow(color: .jarvisGreen, radius: 3)
+                                Text("GRANTED")
+                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.jarvisGreen)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.jarvisGreen.opacity(0.1))
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.jarvisGreen.opacity(0.3), lineWidth: 0.5))
+                        } else {
+                            Button(action: {
+                                ScreenshotManager.openScreenRecordingSettings()
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.up.forward.app")
+                                        .font(.system(size: 8))
+                                    Text("OPEN SETTINGS")
+                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                }
+                                .foregroundColor(.jarvisAmber)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.jarvisAmber.opacity(0.15))
+                                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.jarvisAmber.opacity(0.4), lineWidth: 0.5))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(10)
+                    .background(Color.black.opacity(0.3))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(context.screenCapturePermissionGranted ? Color.jarvisGreen.opacity(0.2) : Color.jarvisAmber.opacity(0.3), lineWidth: 0.5)
+                    )
+
+                    // Refresh button
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            context.recheckScreenCapturePermission()
+                        }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("REFRESH STATUS")
+                            }
+                            .font(.system(size: 10, design: .monospaced))
+                            .fontWeight(.bold)
+                            .foregroundColor(.jarvisBlue)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color.jarvisBlue.opacity(0.2))
+                            .overlay(Rectangle().stroke(Color.jarvisBlue, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .modifier(JarvisPanel())
+
+                // Section 3: LLM Configuration
                 VStack(alignment: .leading, spacing: 10) {
                     Text("LLM CONFIGURATION")
                         .font(.caption)
@@ -249,6 +341,9 @@ struct GeneralSettingsView: View {
             lastAppliedProvider = context.llmProvider
             lastAppliedModel = context.llmModel
             lastAppliedApiKey = context.aiApiKey
+            
+            // Check screen capture permission status
+            context.recheckScreenCapturePermission()
         }
     }
 

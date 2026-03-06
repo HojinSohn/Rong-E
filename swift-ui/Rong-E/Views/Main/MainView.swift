@@ -172,9 +172,18 @@ struct MainView: View {
             // Initialize connections and auth
             setUpConnection()
 
+            // Check screen capture permission on launch
+            appContext.recheckScreenCapturePermission()
+
             // Only toggle minimized when server is ready
             if isServerReady {
                 toggleMinimized()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // Re-check screen capture permission when user returns to the app (e.g. from System Settings)
+            if appContext.currentMode.isScreenshotEnabled {
+                appContext.recheckScreenCapturePermission()
             }
         }
         .onChange(of: socketClient.isConnected) { _, isConnected in
@@ -452,15 +461,18 @@ struct MainView: View {
             do {
                 base64Image = try await ScreenshotManager.captureMainScreen()
                 print("✅ Screenshot captured. Size: \(base64Image?.count ?? 0)")
+                // Permission confirmed — update status
+                appContext.screenCapturePermissionGranted = true
                 
             } catch {
                 let nsError = error as NSError
                 
                 if nsError.code == -3801 {
                     print("⚠️ Permission Denied. Opening Settings...")
+                    appContext.screenCapturePermissionGranted = false
 
-                    // Request permission once (opens System Settings to Screen Recording)
-                    ScreenshotManager.requestScreenCapturePermission()
+                    // Open System Settings directly to Screen Recording pane
+                    ScreenshotManager.openScreenRecordingSettings()
 
                     pendingQuery = query
                     pendingMode = selectedMode
@@ -475,6 +487,11 @@ struct MainView: View {
                     print("❌ Screenshot Error: \(nsError.localizedDescription)")
                 }
             }
+
+            // Append user message to chat history with attached screenshot
+            appContext.currentSessionChatMessages.append(
+                ChatMessage(role: "user", content: query, screenshotBase64: base64Image)
+            )
 
             let modeSystemPrompt = appContext.currentMode.systemPrompt.isEmpty ? nil : appContext.currentMode.systemPrompt
             let userName = appContext.userName.isEmpty ? nil : appContext.userName
@@ -495,6 +512,7 @@ struct MainView: View {
                         
                         // Success! Permission granted
                         print("✅ Manual retry successful!")
+                        appContext.screenCapturePermissionGranted = true
                         
                         if let query = pendingQuery, let mode = pendingMode {
                             pendingQuery = nil
@@ -508,6 +526,7 @@ struct MainView: View {
                         }
                     } catch {
                         print("❌ Still no permission on manual retry")
+                        appContext.screenCapturePermissionGranted = false
                     }
                 }
             },
@@ -517,6 +536,10 @@ struct MainView: View {
                     pendingQuery = nil
                     pendingMode = nil
                     waitingForPermission = false
+
+                    // Append user message to chat history (no screenshot)
+                    appContext.currentSessionChatMessages.append(ChatMessage(role: "user", content: query))
+
                     let modeSystemPrompt = appContext.currentMode.systemPrompt.isEmpty ? nil : appContext.currentMode.systemPrompt
                     let userName = appContext.userName.isEmpty ? nil : appContext.userName
                     socketClient.sendMessage(query, mode: mode, systemPrompt: modeSystemPrompt, userName: userName)
@@ -578,9 +601,6 @@ struct MainView: View {
         }
         appContext.reasoningSteps.append(ReasoningStep(description: "Processing query", status: .active))
 
-        // append user message to chat history
-        appContext.currentSessionChatMessages.append(ChatMessage(role: "user", content: query))
-
         let modeSystemPrompt = appContext.currentMode.systemPrompt.isEmpty ? nil : appContext.currentMode.systemPrompt
         let userName = appContext.userName.isEmpty ? nil : appContext.userName
 
@@ -588,6 +608,8 @@ struct MainView: View {
             print("📸 Screenshot tool is enabled for this mode. Capturing screenshot...")
             captureAndSendWithScreenshot(query: query, selectedMode: selectedMode)
         } else {
+            // append user message to chat history (no screenshot)
+            appContext.currentSessionChatMessages.append(ChatMessage(role: "user", content: query))
             print("ℹ️ Screenshot tool is NOT enabled for this mode. Sending query without screenshot.")
             socketClient.sendMessage(query, mode: selectedMode, systemPrompt: modeSystemPrompt, userName: userName)
             self.activeTool = "WS_STREAM"
@@ -1712,25 +1734,41 @@ struct ModeBarView: View {
                         .font(JarvisFont.tag)
                         .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextTertiary)
 
-                    // Status dot
-                    Circle()
-                        .fill(appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.jarvisTextDim.opacity(0.5))
-                        .frame(width: 5, height: 5)
-                        .shadow(color: appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.clear, radius: 3)
+                    // Status dot — orange/warning when enabled but no permission
+                    if appContext.currentMode.isScreenshotEnabled && !appContext.screenCapturePermissionGranted {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(Color.jarvisAmber)
+                            .shadow(color: Color.jarvisAmber, radius: 3)
+                    } else {
+                        Circle()
+                            .fill(appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.jarvisTextDim.opacity(0.5))
+                            .frame(width: 5, height: 5)
+                            .shadow(color: appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.clear, radius: 3)
+                    }
                 }
                 .padding(.vertical, 4)
                 .padding(.horizontal, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.1) : Color.white.opacity(0.03))
+                        .fill(appContext.currentMode.isScreenshotEnabled
+                              ? (appContext.screenCapturePermissionGranted ? Color.jarvisCyan.opacity(0.1) : Color.jarvisAmber.opacity(0.1))
+                              : Color.white.opacity(0.03))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
-                        .stroke(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.3) : Color.jarvisTextDim.opacity(0.2), lineWidth: 0.5)
+                        .stroke(appContext.currentMode.isScreenshotEnabled
+                                ? (appContext.screenCapturePermissionGranted ? Color.jarvisCyan.opacity(0.3) : Color.jarvisAmber.opacity(0.3))
+                                : Color.jarvisTextDim.opacity(0.2), lineWidth: 0.5)
                 )
             }
             .buttonStyle(.plain)
-            .help("When enabled, Rong-E captures your screen and sends it with your message so the AI can see what you see.")
+            .help(appContext.currentMode.isScreenshotEnabled && !appContext.screenCapturePermissionGranted
+                  ? "Screen Recording permission required. Click to open System Settings."
+                  : "When enabled, Rong-E captures your screen and sends it with your message so the AI can see what you see.")
+            .onAppear {
+                appContext.recheckScreenCapturePermission()
+            }
 
             Button(action: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -2228,24 +2266,38 @@ struct MinimizedMessageView: View {
                             .font(JarvisFont.captionMono)
                             .foregroundStyle(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan : Color.jarvisTextTertiary)
                         
-                        Circle()
-                            .fill(appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.jarvisTextDim.opacity(0.5))
-                            .frame(width: 6, height: 6)
-                            .shadow(color: appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.clear, radius: 3)
+                        // Status indicator — warning when enabled but no permission
+                        if appContext.currentMode.isScreenshotEnabled && !appContext.screenCapturePermissionGranted {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Color.jarvisAmber)
+                                .shadow(color: Color.jarvisAmber, radius: 3)
+                        } else {
+                            Circle()
+                                .fill(appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.jarvisTextDim.opacity(0.5))
+                                .frame(width: 6, height: 6)
+                                .shadow(color: appContext.currentMode.isScreenshotEnabled ? Color.jarvisGreen : Color.clear, radius: 3)
+                        }
                     }
                     .padding(.vertical, JarvisSpacing.xs)
                     .padding(.horizontal, JarvisSpacing.sm)
                     .background(
                         RoundedRectangle(cornerRadius: JarvisRadius.small)
-                            .fill(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.1) : Color.white.opacity(0.03))
+                            .fill(appContext.currentMode.isScreenshotEnabled
+                                  ? (appContext.screenCapturePermissionGranted ? Color.jarvisCyan.opacity(0.1) : Color.jarvisAmber.opacity(0.1))
+                                  : Color.white.opacity(0.03))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: JarvisRadius.small)
-                            .stroke(appContext.currentMode.isScreenshotEnabled ? Color.jarvisCyan.opacity(0.3) : Color.jarvisTextDim.opacity(0.2), lineWidth: 0.5)
+                            .stroke(appContext.currentMode.isScreenshotEnabled
+                                    ? (appContext.screenCapturePermissionGranted ? Color.jarvisCyan.opacity(0.3) : Color.jarvisAmber.opacity(0.3))
+                                    : Color.jarvisTextDim.opacity(0.2), lineWidth: 0.5)
                     )
                 }
                 .buttonStyle(.plain)
-                .help("When enabled, Rong-E captures your screen and sends it with your message so the AI can see what you see.")
+                .help(appContext.currentMode.isScreenshotEnabled && !appContext.screenCapturePermissionGranted
+                      ? "Screen Recording permission required. Click to open System Settings."
+                      : "When enabled, Rong-E captures your screen and sends it with your message so the AI can see what you see.")
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 4)
@@ -2441,12 +2493,25 @@ struct RongEMessageRow: View, Equatable {
                     .foregroundStyle(isUser ? Color.jarvisOrange.opacity(0.8) : Color.jarvisCyan.opacity(0.8))
 
 
-                // USE THE CACHED ATTRIBUTED STRING
-                Text(message.attributedContent) 
-                    .font(JarvisFont.body)
-                    .foregroundStyle(Color.jarvisTextPrimary)
-                    .padding(12)
-                    .background(HUDGlassPanel(isAccent: isUser))
+                // Message bubble with text and optional screenshot
+                VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
+                    // Attached screenshot inside the bubble (user messages only)
+                    if isUser, let screenshotBase64 = message.screenshotBase64,
+                       let data = Data(base64Encoded: screenshotBase64),
+                       let nsImage = NSImage(data: data) {
+                        ScreenshotThumbnailView(nsImage: nsImage)
+                            .padding(.horizontal, 8)
+                            .padding(.top, 8)
+                            .padding(.bottom, 4)
+                    }
+
+                    // USE THE CACHED ATTRIBUTED STRING
+                    Text(message.attributedContent) 
+                        .font(JarvisFont.body)
+                        .foregroundStyle(Color.jarvisTextPrimary)
+                        .padding(12)
+                }
+                .background(HUDGlassPanel(isAccent: isUser))
 
                 // Widgets (if present)
                 if let widgets = message.widgets, !widgets.isEmpty {
@@ -2468,6 +2533,24 @@ struct RongEMessageRow: View, Equatable {
         }
         .padding(.horizontal, 16)
         } // end else (non-system message)
+    }
+}
+
+// MARK: - Screenshot Thumbnail (clickable, opens detail window)
+struct ScreenshotThumbnailView: View {
+    let nsImage: NSImage
+
+    var body: some View {
+        Image(nsImage: nsImage)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(maxWidth: 250, maxHeight: 120)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.jarvisOrange.opacity(0.3), lineWidth: 0.8)
+            )
     }
 }
 

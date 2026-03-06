@@ -13,6 +13,25 @@ class ScreenshotManager {
         CGRequestScreenCaptureAccess()
     }
 
+    /// Check if screen capture permission is currently granted.
+    /// Attempts a lightweight SCShareableContent fetch; if it succeeds, permission is granted.
+    @MainActor
+    static func checkPermission() async -> Bool {
+        do {
+            let _ = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Open System Settings directly to the Screen Recording privacy pane
+    static func openScreenRecordingSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     /// Async function to capture the main screen
     /// Returns: Base64 JPEG String
     @MainActor
