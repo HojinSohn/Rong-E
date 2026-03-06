@@ -288,7 +288,7 @@ pub async fn await_oauth_callback(
     // Check for an error param before looking for the code
     for param in query.split('&') {
         if let Some(err) = param.strip_prefix("error=") {
-            let decoded = urlencoding::decode(err)
+            let _decoded = urlencoding::decode(err)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|_| err.to_string());
             let _ = stream
