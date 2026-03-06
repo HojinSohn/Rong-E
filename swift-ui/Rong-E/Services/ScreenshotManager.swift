@@ -31,7 +31,6 @@ class ScreenshotManager {
             NSWorkspace.shared.open(url)
         }
     }
-
     /// Async function to capture the main screen
     /// Returns: Base64 JPEG String
     @MainActor

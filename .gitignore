@@ -13,3 +13,17 @@ rust/
 instruction.txt
 target/
 .vscode/
+# Xcode/Swift build artifacts
+*.d
+*.dia
+*.swiftdeps
+*.swiftmodule
+*.swiftdoc
+*.o
+*.ll
+*.bc
+.build/
+DerivedData/
+
+# Xcode user state (binary, per-user)
+*.xcuserstate
