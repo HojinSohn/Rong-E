@@ -24,3 +24,6 @@ target/
 *.bc
 .build/
 DerivedData/
+
+# Xcode user state (binary, per-user)
+*.xcuserstate

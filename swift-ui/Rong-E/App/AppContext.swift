@@ -7,14 +7,16 @@ struct ChatMessage: Identifiable, Equatable {
     let role: String
     let content: String
     let widgets: [ChatWidgetData]?
+    let screenshotBase64: String?
     
     // 1. Change from 'AttributedString?' to 'AttributedString' (Non-optional)
     let attributedContent: AttributedString
     
-    init(role: String, content: String, widgets: [ChatWidgetData]? = nil) {
+    init(role: String, content: String, widgets: [ChatWidgetData]? = nil, screenshotBase64: String? = nil) {
         self.role = role
         self.content = content
         self.widgets = widgets
+        self.screenshotBase64 = screenshotBase64
         
         // Parse markdown while preserving newlines
         // Split by newlines, parse each line as markdown, then rejoin with line breaks
@@ -169,6 +171,9 @@ class AppContext: ObservableObject {
     @Published var llmProvider: LLMProvider = .gemini
     @Published var llmModel: String = "gemini-2.5-flash-lite"
     @Published var userName: String = NSFullUserName()
+    
+    // Screen capture permission status
+    @Published var screenCapturePermissionGranted: Bool = false
 
     // MARK: - Theme Settings
     @Published var themeOpaqueBackground: Bool = false
@@ -306,10 +311,40 @@ class AppContext: ObservableObject {
     }
 
     // Helper to toggle the setting for the ACTIVE mode
+    // When enabling, checks screen capture permission first.
     func toggleCurrentModeVision() {
         if let index = modes.firstIndex(where: { $0.id == currentModeId }) {
-            modes[index].isScreenshotEnabled.toggle()
-            saveSettings() // Persist the change
+            let willEnable = !modes[index].isScreenshotEnabled
+            
+            if willEnable {
+                // Check permission asynchronously before enabling
+                Task { @MainActor in
+                    let hasPermission = await ScreenshotManager.checkPermission()
+                    self.screenCapturePermissionGranted = hasPermission
+                    
+                    if hasPermission {
+                        self.modes[index].isScreenshotEnabled = true
+                        self.saveSettings()
+                    } else {
+                        // Enable the toggle but mark permission as missing —
+                        // the UI will show the permission-needed indicator
+                        self.modes[index].isScreenshotEnabled = true
+                        self.saveSettings()
+                        // Open System Settings to Screen Recording
+                        ScreenshotManager.openScreenRecordingSettings()
+                    }
+                }
+            } else {
+                modes[index].isScreenshotEnabled = false
+                saveSettings()
+            }
+        }
+    }
+    
+    /// Re-check screen capture permission (call after user returns from Settings)
+    func recheckScreenCapturePermission() {
+        Task { @MainActor in
+            self.screenCapturePermissionGranted = await ScreenshotManager.checkPermission()
         }
     }
 
