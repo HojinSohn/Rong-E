@@ -458,7 +458,10 @@ struct MainView: View {
                 
                 if nsError.code == -3801 {
                     print("⚠️ Permission Denied. Opening Settings...")
-                    
+
+                    // Request permission once (opens System Settings to Screen Recording)
+                    ScreenshotManager.requestScreenCapturePermission()
+
                     pendingQuery = query
                     pendingMode = selectedMode
                     waitingForPermission = true
