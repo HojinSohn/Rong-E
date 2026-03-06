@@ -216,6 +216,9 @@ async fn handle_config(
                 let _ = sender
                     .send(Message::Text(
                         json!({"type": "mcp_sync_error", "content": "The MCP configuration couldn't be read. Please check your settings and try again."})
+                            .to_string(),
+                    ))
+                    .await;
                 return;
             };
 
