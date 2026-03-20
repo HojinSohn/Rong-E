@@ -1,5 +1,5 @@
 use axum::{routing::get, Router};
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
@@ -66,9 +66,12 @@ async fn async_main() {
         .route("/ws", get(routes::ws_handler))
         .with_state(state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    println!("🚀 Rust Server listening on {}", addr);
+    // Bind to port 0 so the OS picks a guaranteed-free port
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    // Print the actual port so the Swift parent process can read it
+    println!("PORT={}", port);
+    println!("🚀 Rust Server listening on 127.0.0.1:{}", port);
 
-    let listener = TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

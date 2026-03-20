@@ -17,6 +17,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.showMainOverlay()
         coordinator.setMainWindowOpacity(opacity: AppContext.shared.themeWindowOpacity)
 
+        // 2b. Connect WebSocket once the server publishes its port
+        serverManager.$assignedPort
+            .compactMap { $0 }
+            .first()
+            .receive(on: DispatchQueue.main)
+            .sink { _ in
+                SocketClient.shared.connect()
+            }
+            .store(in: &cancellables)
+
         // Track readiness: both LLM and MCP must complete before startup workflow
         var llmReady = false
         var mcpReady = false

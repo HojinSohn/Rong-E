@@ -176,7 +176,7 @@ class SocketClient: ObservableObject, @unchecked Sendable {
     static let shared = SocketClient()
 
     private init() {
-        connect()
+        // Connection is triggered externally once ServerManager publishes an assignedPort
     }
 
     deinit {
@@ -230,7 +230,8 @@ class SocketClient: ObservableObject, @unchecked Sendable {
     }
 
     private func connectWithRetry(maxRetries: Int, delay: TimeInterval, attempt: Int = 0) {
-        let url = URL(string: "ws://127.0.0.1:3000/ws")!
+        let port = ServerManager.shared.assignedPort ?? 3000
+        let url = URL(string: "ws://127.0.0.1:\(port)/ws")!
         urlSession?.invalidateAndCancel()
         let session = URLSession(configuration: .default)
         urlSession = session
