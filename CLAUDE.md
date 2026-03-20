@@ -4,27 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Rong-E is a macOS AI assistant with a Python FastAPI/LangChain backend and a native SwiftUI frontend. The assistant ("Rong-E") runs as a floating overlay window and communicates with the backend via WebSocket.
+Rong-E is a macOS AI assistant with a Rust/Axum backend and a native SwiftUI frontend. The assistant runs as a floating overlay window and communicates with the backend via WebSocket. The Swift app launches the Rust binary as a subprocess on startup.
 
 ## Commands
 
-### Python Backend
+### Rust Backend
 ```bash
-# Install dependencies
-python -m pip install -r agent/requirements.txt
+# Build (from agent_server/)
+cargo build --release
 
-# Run WebSocket server (main deployment)
-python -m agent.server
-# Server runs on localhost:8000, WebSocket at ws://0.0.0.0:8000/ws
-
-# Run CLI agent for testing (no WebSocket)
-python -m agent.main
+# Run manually (for testing)
+cargo run --release
+# Server runs on ws://127.0.0.1:3000/ws
 ```
 
 ### macOS UI
 ```bash
 # Open Xcode project
-open macOS_UI/Rong-E.xcodeproj
+open swift-ui/Rong-E.xcodeproj
 # Build and run with Cmd+R in Xcode
 ```
 
@@ -32,82 +29,125 @@ open macOS_UI/Rong-E.xcodeproj
 
 ### Data Flow
 ```
-User Input (macOS UI)
+User Input (SwiftUI)
     ↓
 RongESocketClient (WebSocket)
     ↓
-FastAPI Server (server.py)
+Axum WebSocket Server (routes.rs → logic.rs)
     ↓
-Rong-E Agent (LangChain orchestrator)
-    ├── Gemini 2.5 Flash (LLM)
-    ├── Base Tools (web_search, file_ops, KB search)
-    ├── GoogleAgent (Gmail, Calendar, Sheets sub-agent)
-    └── MCP Servers (Filesystem, etc.)
+LLM Agent (llm.rs, via rig-core)
+    ├── Gemini / OpenAI / Anthropic / Ollama (configurable)
+    ├── Built-in Tools (calculator, open_application, open_chrome_tab, memory)
+    ├── GoogleSubAgent (Gmail, Calendar, Sheets)
+    └── MCP Servers (dynamically started/stopped)
     ↓
-Streaming callbacks → WebSocket → UI
+tool_call / tool_result events + final response → WebSocket → UI
 ```
 
-### Python Backend (`agent/`)
+### Rust Backend (`agent_server/src/`)
 
-- **`server.py`**: FastAPI WebSocket server. Accepts `{text, mode, base64_image}`, streams responses as `{type: "thought"|"tool_call"|"tool_result"|"response", content}`.
+- **`main.rs`**: Entry point. Fixes stdio blocking (Swift subprocess pipes), sets `OLLAMA_API_BASE_URL`, starts Tokio runtime and Axum server on port 3000.
 
-- **`agent/agent.py`**: Main EchoAgent orchestrator using LangChain. Max 15 iterations per task.
+- **`routes.rs`**: WebSocket upgrade handler. Maintains per-connection `chat_history` and dispatches each message to `logic.rs`.
 
-- **`agent/google_agent.py`**: Specialized sub-agent for Google APIs (Gmail read-only, Calendar, Sheets). Max 10 iterations.
+- **`logic.rs`**: Core message dispatcher. Routes on `data_type` field for config messages (api key, LLM config, credentials, MCP, memory, spreadsheets) or falls through to `handle_chat`. Spawns the LLM task and forwards tool events concurrently.
 
-- **`tools.py`**: Base tool definitions - `web_search`, `get_current_date_time`, `list_directory`, `read_file`, `collect_files`, `search_knowledge_base`, `open_application`, `open_chrome_tab`.
+- **`state.rs`**: `AppState` — holds `current_provider`, `current_model`, `api_key`, Google OAuth tokens, MCP connections, and spreadsheet configs.
 
-- **`services/google_service.py`**: Google OAuth management and toolkit factory.
+- **`llm.rs`**: Builds the rig-core agent for the configured provider (gemini/openai/anthropic/ollama), injects system prompt with user name + current datetime, attaches all tools, and runs the agent loop.
 
-- **`services/rag.py`**: RAG retriever using Ollama embeddings (`nomic-embed-text`) + Chroma vector store.
+- **`tools.rs`**: Built-in tool definitions (`Calculator`, `OpenApplication`, `OpenChromeTab`, `ReadMemory`, `SaveToMemory`, `AppendToMemory`) plus `NotifyingTool` wrapper that emits `tool_call`/`tool_result` WebSocket events.
 
-- **`prompts/`**: System prompts. Main persona in `system_prompt.txt`, Google specialist in `google_agent_prompt.txt`.
+- **`google_agent.rs`**: `GoogleSubAgent` — a rig-core tool that delegates to a specialized sub-agent for Gmail, Calendar, and Sheets.
 
-- **`config/`**: Google OAuth credentials (`credentials.json`, `token.json`).
+- **`google_auth.rs`**: Google OAuth2 flow (token refresh + browser-based consent).
 
-### macOS UI (`macOS_UI/Rong-E/`)
+- **`google_tools.rs`**: Individual Google API tool implementations.
 
-- **`RongEApp.swift`**: Entry point. Triggers startup workflow after launch.
+- **`mcp_proxy.rs`**: Proxies tool calls to dynamically-spawned MCP child processes via `rmcp`.
 
-- **`AppContext.swift`**: Singleton global state (auth status, modes, settings). Persists to UserDefaults.
+- **`prompts/`**: System prompts embedded at compile time. `system_prompt.txt` (main persona), `google_agent_prompt.txt` (Google sub-agent).
 
-- **`RongESocketClient.swift`**: Singleton WebSocket client. Connects to backend, decodes streaming messages.
+### macOS UI (`swift-ui/Rong-E/`)
 
-- **`MainView.swift`**: Primary overlay UI - input field, response display, tool visualization.
+- **`App/RongEApp.swift`**: Entry point. Launches server subprocess and triggers startup workflow.
 
-- **`WindowCoordinator.swift`**: NSPanel window management, minimize/expand animations.
+- **`App/AppContext.swift`**: Singleton global state — modes, LLM provider/model/API keys (stored per-provider in UserDefaults), theme, user name.
 
-- **`WorkflowManager.swift`**: Startup task orchestration ("Morning Briefing").
+- **`App/Constants.swift`**: Shared constants.
 
-- **`FloatingViews/`**: Settings panels (Google OAuth, mode config, workflow settings).
+- **`Services/ServerManager.swift`**: Starts/stops the Rust binary as a subprocess. Locates the binary from the cargo release build or app bundle.
 
-### External Dependencies
+- **`Services/RongESocketClient.swift`**: Singleton WebSocket client. Connects to `ws://127.0.0.1:3000/ws`, encodes outgoing messages, decodes streaming responses.
 
-- **RAG Storage**: `/Users/hojinsohn/Echo_RAG/chroma_db` (Chroma vector DB)
-- **RAG Documents**: `/Users/hojinsohn/Echo_RAG/Echo_documents`
-- **Ollama**: Required for embeddings (`nomic-embed-text` model)
-- **Piper + SoX**: Required for TTS (`play` command)
+- **`Services/GoogleAuthManager.swift`**: Handles Google OAuth credential path management from the Swift side.
+
+- **`Services/ScreenshotManager.swift`**: Screen capture utilities.
+
+- **`Services/WorkflowManager.swift`**: Startup task orchestration ("Morning Briefing").
+
+- **`Views/Main/MainView.swift`**: Primary overlay UI — input field, response display, tool step visualization.
+
+- **`Views/Settings/Settings.swift`**: LLM config (provider/model/API key), permissions.
+
+- **`Views/Settings/GoogleServiceView.swift`**: Google OAuth settings panel.
+
+- **`Views/Settings/ThemeSettingsView.swift`**: Theme customization.
+
+- **`Views/Settings/MCPConfigView.swift`**: MCP server configuration.
+
+- **`Views/Settings/ModeSettings.swift`**: Mode (system prompt) configuration.
+
+- **`Views/Settings/WorkflowSettingView.swift`**: Morning briefing workflow settings.
+
+- **`Views/Components/`**: `ChatWidgetView`, `ToolDetailWindowView`, `ToolFormatter`, `PermissionWaitingView`, `ImageView`.
+
+- **`Overlay/OverlayManager.swift`**: NSPanel window management and animations.
+
+- **`Theme/JarvisDesignSystem.swift`**: Design tokens (colors, modifiers).
+
+- **`Models/`**: `SpreadsheetConfig.swift`, `MCPConfig.swift`.
 
 ## Key Patterns
 
-### Adding New Tools
-1. Define tool in `tools.py` with `@tool` decorator
-2. Register in `get_tool_map()` function
-3. Tool will be automatically available to EchoAgent
+### Adding New Built-in Tools
+1. Define a struct in `tools.rs` implementing `rig::tool::Tool`
+2. Wrap it with `NotifyingTool` in `llm.rs` when building the agent
+3. Add to the `tools_list` in the `tools_request` handler in `logic.rs`
 
 ### Modifying Agent Behavior
-- Prompts: Edit files in `agent/prompts/`
-- Agent logic: Modify `agent/agent/agent.py` or `google_agent.py`
-- Iteration limits: Hardcoded in agent classes (EchoAgent: 15, GoogleAgent: 10)
+- Prompts: Edit `agent_server/prompts/system_prompt.txt` (embedded at compile time — requires rebuild)
+- LLM logic: `agent_server/src/llm.rs`
+- Google sub-agent: `agent_server/src/google_agent.rs` + `google_agent_prompt.txt`
 
 ### WebSocket Message Protocol
-```python
-# Client → Server
-{"text": str, "mode": str, "base64_image": Optional[str]}
+```json
+// Client → Server (chat)
+{"text": "...", "system_prompt": "...", "base64_image": "...", "user_name": "..."}
 
-# Server → Client (streaming)
-{"type": "thought"|"tool_call"|"tool_result"|"response", "content": str}
+// Client → Server (config, keyed by data_type)
+{"data_type": "set_llm", "provider": "gemini", "model": "gemini-2.5-flash", "api_key": "..."}
+{"data_type": "credentials", "content": "/path/to/google/creds/folder"}
+{"data_type": "start_oauth", "dir_path": "/path/to/google/creds/folder"}
+{"data_type": "revoke_credentials"}
+{"data_type": "mcp_config", "config": {"mcpServers": {...}}}
+{"data_type": "sync_spreadsheets", "configs": [...]}
+{"data_type": "get_memory"} / {"data_type": "save_memory", "content": "..."}
+{"data_type": "reset_session"}
+
+// Server → Client
+{"type": "response", "content": {"text": "...", "images": [], "widgets": []}}
+{"type": "tool_call", "content": {"toolName": "...", "toolArgs": {...}}}
+{"type": "tool_result", "content": {"toolName": "...", "result": "..."}}
+{"type": "llm_set_success"|"llm_set_error", "content": "..."}
+{"type": "credentials_success"|"credentials_error"|"credentials_revoked", "content": "..."}
+{"type": "mcp_sync_success"|"mcp_sync_error"|"mcp_server_status", "content": {...}}
+{"type": "memory_content"|"memory_saved"|"memory_error", "content": "..."}
+{"type": "session_reset"|"oauth_url"|"active_tools"|"spreadsheets_synced", "content": "..."}
 ```
 
+### LLM Providers
+Supported: `gemini`, `openai`, `anthropic`, `ollama`. Provider and model are set at runtime via `set_llm`. Ollama requires no API key. API keys are stored per-provider in UserDefaults (`apiKey_<provider>`).
+
 ### MCP Integration
-MCP servers are dynamically started/stopped. Currently configured for `@modelcontextprotocol/server-filesystem`. Tools from MCP servers are aggregated with base tools in the agent.
+MCP servers are spawned as child processes when the Swift app sends `mcp_config`. The Rust backend resolves `npx`/`node`/`python` by building an expanded PATH (including nvm, Homebrew, cargo, etc.). Tools from all connected MCP servers are aggregated with built-in tools.

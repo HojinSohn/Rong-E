@@ -106,12 +106,43 @@ struct ThemeSettingsView: View {
 
                     JarvisToggle(title: "Opaque Background", isOn: $context.themeOpaqueBackground)
                         .onChange(of: context.themeOpaqueBackground) {
+                            if context.themeOpaqueBackground {
+                                context.themeWindowOpacity = 1.0
+                                WindowCoordinator.shared.setMainWindowOpacity(opacity: 1.0)
+                            }
                             context.saveSettings()
                         }
                 }
                 .modifier(JarvisPanel())
 
-                // MARK: Section 4 – Animations
+                // MARK: Section 4 – Window Transparency
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("WINDOW TRANSPARENCY")
+                        .font(.caption)
+                        .foregroundColor(context.themeAccentColor.opacity(!context.themeOpaqueBackground ? 0.7 : 0.3))
+                        .tracking(1)
+
+                    Text("Adjust the overall opacity of the Rong-E window. Disabled when using opaque background.")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.jarvisTextDim.opacity(!context.themeOpaqueBackground ? 1.0 : 0.4))
+
+                    HStack(spacing: 10) {
+                        Slider(value: $context.themeWindowOpacity, in: 0.2...1.0, step: 0.05)
+                            .accentColor(context.themeAccentColor)
+                            .disabled(context.themeOpaqueBackground)
+                            .onChange(of: context.themeWindowOpacity) {
+                                WindowCoordinator.shared.setMainWindowOpacity(opacity: context.themeWindowOpacity)
+                                context.saveSettings()
+                            }
+                        Text("\(Int(context.themeWindowOpacity * 100))%")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.jarvisTextDim.opacity(!context.themeOpaqueBackground ? 1.0 : 0.4))
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                }
+                .modifier(JarvisPanel())
+
+                // MARK: Section 5 – Animations
                 VStack(alignment: .leading, spacing: 10) {
                     Text("ANIMATIONS")
                         .font(.caption)

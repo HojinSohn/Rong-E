@@ -15,6 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 2. Safe to show window now that AppKit is ready
         coordinator.showMainOverlay()
+        coordinator.setMainWindowOpacity(opacity: AppContext.shared.themeWindowOpacity)
 
         // Track readiness: both LLM and MCP must complete before startup workflow
         var llmReady = false

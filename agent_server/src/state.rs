@@ -22,7 +22,7 @@ pub struct McpConnection {
 pub struct AppState {
     pub current_model: String,
     pub current_provider: String,
-    pub api_key: Option<String>,
+    pub api_keys: HashMap<String, String>,
     pub credentials_file_path: Option<String>,
     pub token_file_path: Option<String>,
     pub google_access_token: Option<String>,
@@ -37,7 +37,7 @@ impl AppState {
         Self {
             current_model: "gemini-2.5-flash".to_string(),
             current_provider: "gemini".to_string(),
-            api_key: None,
+            api_keys: HashMap::new(),
             credentials_file_path: None,
             token_file_path: None,
             google_access_token: None,

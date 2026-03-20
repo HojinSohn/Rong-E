@@ -282,6 +282,7 @@ struct GeneralSettingsView: View {
                                 .background(Color.black.opacity(0.5))
                                 .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.jarvisBlue.opacity(0.5), lineWidth: 1))
                                 .foregroundColor(.jarvisTextPrimary)
+                                .id(context.llmProvider)
                         }
                     } else {
                         HStack(spacing: 4) {
