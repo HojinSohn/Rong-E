@@ -1,5 +1,5 @@
 use axum::{routing::get, Router};
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
