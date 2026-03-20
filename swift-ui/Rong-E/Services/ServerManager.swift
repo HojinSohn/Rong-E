@@ -21,14 +21,12 @@ class ServerManager: ObservableObject {
     }
 
     @Published private(set) var status: ServerStatus = .stopped
+    @Published private(set) var assignedPort: UInt16? = nil
 
     var isRunning: Bool { status == .running }
 
     private var process: Process?
     private var outputPipe: Pipe?
-
-    // Default URL for your websocket
-    let socketURL = URL(string: "ws://127.0.0.1:3000/ws")!
 
     private init() {}
 
@@ -84,11 +82,18 @@ class ServerManager: ObservableObject {
         }
         newProcess.environment = env
 
-        // 3. Pipe stdout/stderr to Xcode console
-        newPipe.fileHandleForReading.readabilityHandler = { handle in
+        // 3. Pipe stdout/stderr to Xcode console; parse PORT= announcement
+        newPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty, let line = String(data: data, encoding: .utf8) else { return }
-            print("[Rust]: \(line.trimmingCharacters(in: .whitespacesAndNewlines))")
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Parse "PORT=<number>" line emitted by the Rust binary on startup
+            for part in trimmed.components(separatedBy: .newlines) {
+                if part.hasPrefix("PORT="), let port = UInt16(part.dropFirst("PORT=".count)) {
+                    DispatchQueue.main.async { self?.assignedPort = port }
+                }
+            }
+            print("[Rust]: \(trimmed)")
         }
 
         // 4. Handle termination
@@ -124,6 +129,7 @@ class ServerManager: ObservableObject {
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         outputPipe = nil
         self.process = nil
+        assignedPort = nil
         status = .stopped
     }
 
