@@ -41,7 +41,8 @@ async fn handle_config(
         "api_key" => {
             let key = data["content"].as_str().unwrap_or("");
             println!("🔑 Received API Key");
-            state.lock().await.api_key = Some(key.to_string());
+            let provider = state.lock().await.current_provider.clone();
+            state.lock().await.api_keys.insert(provider, key.to_string());
             let _ = sender
                 .send(Message::Text(
                     json!({"type": "credentials_success", "content": "API key saved — you're all set!"}).to_string(),
@@ -117,7 +118,6 @@ async fn handle_config(
             println!("🔓 Received Revoke Credentials");
             {
                 let mut s = state.lock().await;
-                s.api_key = None;
                 // Delete token file if present, then clear stored paths
                 if let Some(ref token_path) = s.token_file_path {
                     let token_path = token_path.clone();
@@ -174,7 +174,7 @@ async fn handle_config(
                     s.current_provider = provider.to_string();
                     s.current_model = model.to_string();
                     if !api_key.is_empty() {
-                        s.api_key = Some(api_key.to_string());
+                        s.api_keys.insert(provider.to_string(), api_key.to_string());
                     }
                     drop(s);
                     let _ = sender
@@ -681,8 +681,9 @@ async fn handle_chat(
 
     let (api_key, model, provider, mcp_tool_sets, google_access_token, spreadsheet_configs) = {
         let s = state.lock().await;
+        let key = s.api_keys.get(&s.current_provider).cloned();
         (
-            s.api_key.clone(),
+            key,
             s.current_model.clone(),
             s.current_provider.clone(),
             s.all_mcp_tools(),

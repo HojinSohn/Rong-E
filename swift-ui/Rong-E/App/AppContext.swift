@@ -168,7 +168,12 @@ class AppContext: ObservableObject {
     
     @Published var currentSessionChatMessages: [ChatMessage] = []
     @Published var activeTools: [ActiveToolInfo] = []
-    @Published var llmProvider: LLMProvider = .gemini
+    @Published var llmProvider: LLMProvider = .gemini {
+        didSet {
+            guard llmProvider != oldValue else { return }
+            aiApiKey = loadApiKeyForProvider(llmProvider)
+        }
+    }
     @Published var llmModel: String = "gemini-2.5-flash-lite"
     @Published var userName: String = NSFullUserName()
     
@@ -180,6 +185,7 @@ class AppContext: ObservableObject {
     @Published var themeAnimationsDisabled: Bool = false
     @Published var themeAccentColorName: String = "cyan" // cyan, green, purple, amber, orange, red
     @Published var themeChatFontColorName: String = "white" // white, accent, green, amber, purple, orange
+    @Published var themeWindowOpacity: Double = 1.0
 
     /// The resolved accent color based on `themeAccentColorName`.
     var themeAccentColor: Color {
@@ -407,6 +413,7 @@ class AppContext: ObservableObject {
         UserDefaults.standard.set(themeAnimationsDisabled, forKey: "themeAnimationsDisabled")
         UserDefaults.standard.set(themeAccentColorName, forKey: "themeAccentColorName")
         UserDefaults.standard.set(themeChatFontColorName, forKey: "themeChatFontColorName")
+        UserDefaults.standard.set(themeWindowOpacity, forKey: "themeWindowOpacity")
     }
 
     /// Save API key for a specific provider
@@ -427,12 +434,9 @@ class AppContext: ObservableObject {
         // Save current API key for the current provider before switching
         saveApiKeyForProvider(llmProvider, apiKey: aiApiKey)
 
-        // Switch provider
+        // Switch provider (didSet on llmProvider auto-loads the saved API key)
         llmProvider = provider
         llmModel = provider.defaultModel
-
-        // Load the API key for the new provider
-        aiApiKey = loadApiKeyForProvider(provider)
 
         saveSettings()
     }
@@ -481,6 +485,9 @@ class AppContext: ObservableObject {
         }
         if let savedChatFont = UserDefaults.standard.string(forKey: "themeChatFontColorName"), !savedChatFont.isEmpty {
             self.themeChatFontColorName = savedChatFont
+        }
+        if UserDefaults.standard.object(forKey: "themeWindowOpacity") != nil {
+            self.themeWindowOpacity = UserDefaults.standard.double(forKey: "themeWindowOpacity")
         }
     }
     
