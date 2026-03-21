@@ -468,11 +468,8 @@ struct MainView: View {
                 let nsError = error as NSError
                 
                 if nsError.code == -3801 {
-                    print("⚠️ Permission Denied. Opening Settings...")
+                    print("⚠️ Permission Denied. Showing permission overlay...")
                     appContext.screenCapturePermissionGranted = false
-
-                    // Open System Settings directly to Screen Recording pane
-                    ScreenshotManager.openScreenRecordingSettings()
 
                     pendingQuery = query
                     pendingMode = selectedMode

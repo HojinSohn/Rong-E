@@ -336,8 +336,6 @@ class AppContext: ObservableObject {
                         // the UI will show the permission-needed indicator
                         self.modes[index].isScreenshotEnabled = true
                         self.saveSettings()
-                        // Open System Settings to Screen Recording
-                        ScreenshotManager.openScreenRecordingSettings()
                     }
                 }
             } else {
