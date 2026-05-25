@@ -33,22 +33,16 @@ fn clean_llm_error(raw: &str) -> String {
                 _ => {}
             }
         }
-        if let Some(end) = end {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw[start..end]) {
-                // OpenAI / Anthropic style: {"error": {"message": "..."}}
-                if let Some(msg) = v.pointer("/error/message").and_then(|m| m.as_str()) {
-                    return msg.to_string();
-                }
-                // Anthropic top-level style: {"type":"error","error":{"type":"...","message":"..."}}
-                if let Some(msg) = v.pointer("/error/message").and_then(|m| m.as_str()) {
-                    return msg.to_string();
-                }
-                // Gemini style: {"error": {"message": "...", "status": "..."}}
-                // (same pointer as above, already covered)
-                // Simple: {"message": "..."}
-                if let Some(msg) = v.get("message").and_then(|m| m.as_str()) {
-                    return msg.to_string();
-                }
+        if let Some(end) = end
+            && let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw[start..end])
+        {
+            // OpenAI / Anthropic / Gemini style: {"error": {"message": "..."}}
+            if let Some(msg) = v.pointer("/error/message").and_then(|m| m.as_str()) {
+                return msg.to_string();
+            }
+            // Simple: {"message": "..."}
+            if let Some(msg) = v.get("message").and_then(|m| m.as_str()) {
+                return msg.to_string();
             }
         }
         search_start = start + 1;
