@@ -247,15 +247,19 @@ struct MainView: View {
                 // Content Layer (Header + Columns) — removed from layout when minimized
                 if !minimizedMode {
                     VStack(spacing: 0) {
-                        HeaderView(toggleMinimized: toggleMinimized, toggleMessageView: toggleMessageView)
+                        HeaderView(toggleMinimized: toggleMinimized, toggleMessageView: toggleMessageView, fullChatViewMode: fullChatViewMode)
                             .padding(.top, 20)
                             .padding(.horizontal, 24)
-                            .opacity(showColumns ? 1 : 0) // Stagger entry
+                            .opacity(showColumns ? 1 : 0)
+                            .animation(.easeInOut(duration: 0.4), value: fullChatViewMode)
 
                         HStack(alignment: .top, spacing: 16) {
-                            LeftColumnView()
-                                .offset(x: showColumns ? 0 : -100)
-                                .opacity(showColumns ? 1 : 0)
+                            if !fullChatViewMode {
+                                LeftColumnView()
+                                    .offset(x: showColumns ? 0 : -100)
+                                    .opacity(showColumns ? 1 : 0)
+                                    .transition(.move(edge: .leading).combined(with: .opacity))
+                            }
 
                             MainColumnView(
                                 inputText: $inputText,
@@ -265,7 +269,9 @@ struct MainView: View {
                             .offset(y: showColumns ? 0 : 30)
                             .opacity(showColumns ? 1 : 0)
                         }
-                        .padding(24)
+                        .padding(.horizontal, fullChatViewMode ? 12 : 24)
+                        .padding(.vertical, fullChatViewMode ? 8 : 24)
+                        .animation(.easeInOut(duration: 0.4), value: fullChatViewMode)
                         .background(
 
                             RongERing()
@@ -468,11 +474,8 @@ struct MainView: View {
                 let nsError = error as NSError
                 
                 if nsError.code == -3801 {
-                    print("⚠️ Permission Denied. Opening Settings...")
+                    print("⚠️ Permission Denied. Showing permission overlay...")
                     appContext.screenCapturePermissionGranted = false
-
-                    // Open System Settings directly to Screen Recording pane
-                    ScreenshotManager.openScreenRecordingSettings()
 
                     pendingQuery = query
                     pendingMode = selectedMode
@@ -2113,9 +2116,8 @@ struct MessageListContent: View {
 
                         // Dynamic Chat Stream
                         ForEach(messages) { message in
-                            RongEMessageRow(message: message, themeKey: appContext.themeKey)
-                                // The ID is already here, which is perfect
-                                .id(message.id) 
+                            RongEMessageRow(message: message, themeKey: appContext.themeKey, fullChatViewMode: fullChatViewMode)
+                                .id(message.id)
                                 .transition(.asymmetric(
                                     insertion: .opacity.combined(with: .move(edge: .bottom)),
                                     removal: .opacity
@@ -2443,11 +2445,14 @@ struct MessageView: View {
 struct RongEMessageRow: View, Equatable {
     let message: ChatMessage
     var themeKey: String = AppContext.shared.themeKey
+    var fullChatViewMode: Bool = false
     var isUser: Bool   { message.role == "user" }
     var isSystem: Bool { message.role == "system" }
 
     static func == (lhs: RongEMessageRow, rhs: RongEMessageRow) -> Bool {
-        lhs.message.id == rhs.message.id && lhs.themeKey == rhs.themeKey
+        lhs.message.id == rhs.message.id &&
+        lhs.themeKey == rhs.themeKey &&
+        lhs.fullChatViewMode == rhs.fullChatViewMode
     }
 
     var body: some View {
@@ -2516,10 +2521,10 @@ struct RongEMessageRow: View, Equatable {
                 // Widgets (if present)
                 if let widgets = message.widgets, !widgets.isEmpty {
                     ChatWidgetsContainer(widgets: widgets)
-                        .frame(maxWidth: 280)
+                        .frame(maxWidth: fullChatViewMode ? .infinity : 280)
                 }
             }
-            .frame(maxWidth: 280, alignment: isUser ? .trailing : .leading)
+            .frame(maxWidth: fullChatViewMode ? .infinity : 280, alignment: isUser ? .trailing : .leading)
 
             // User Decorator (Right side)
             if isUser {
@@ -2636,14 +2641,13 @@ struct HeaderView: View {
     @ObservedObject var configManager = MCPConfigManager.shared
 
     let toggleMinimized: () -> Void
-
     let toggleMessageView: () -> Void
+    var fullChatViewMode: Bool = false
 
     var body: some View {
         HStack(spacing: 0) {
             // --- Left: Brand ---
             HStack(spacing: 8) {
-                // Accent dot with glow
                 Circle()
                     .fill(appContext.themeAccentColor)
                     .frame(width: 7, height: 7)
@@ -2661,48 +2665,52 @@ struct HeaderView: View {
                         .tracking(1)
                 }
             }
+            .transition(.move(edge: .leading).combined(with: .opacity))
 
             Spacer()
 
             // --- Center: Action Buttons ---
-            HStack(spacing: 3) {
-                HeaderButton(
-                    icon: "icloud.fill",
-                    label: "Google",
-                    action: { windowCoordinator.openGoogleService() }
-                )
+            if !fullChatViewMode {
+                HStack(spacing: 3) {
+                    HeaderButton(
+                        icon: "icloud.fill",
+                        label: "Google",
+                        action: { windowCoordinator.openGoogleService() }
+                    )
 
-                HeaderButton(
-                    icon: "bolt.horizontal.fill",
-                    label: "Startup",
-                    action: { windowCoordinator.openWorkflowSettings() }
-                )
+                    HeaderButton(
+                        icon: "bolt.horizontal.fill",
+                        label: "Startup",
+                        action: { windowCoordinator.openWorkflowSettings() }
+                    )
 
-                HeaderButton(
-                    icon: "slider.horizontal.3",
-                    label: "Settings",
-                    action: { windowCoordinator.openSettings() }
-                )
+                    HeaderButton(
+                        icon: "slider.horizontal.3",
+                        label: "Settings",
+                        action: { windowCoordinator.openSettings() }
+                    )
 
-                HeaderButton(
-                    icon: "arrow.triangle.2.circlepath",
-                    label: "Reset",
-                    accentOnHover: .jarvisAmber,
-                    action: {
-                        appContext.clearSession()
-                        socketClient.sendResetSession()
-                        configManager.sendConfigToPython()
-                    }
-                )
+                    HeaderButton(
+                        icon: "arrow.triangle.2.circlepath",
+                        label: "Reset",
+                        accentOnHover: .jarvisAmber,
+                        action: {
+                            appContext.clearSession()
+                            socketClient.sendResetSession()
+                            configManager.sendConfigToPython()
+                        }
+                    )
 
-                HeaderButton(
-                    icon: "bubble.left.and.text.bubble.right",
-                    label: "Chat",
-                    action: { toggleMessageView() }
-                )
+                    HeaderButton(
+                        icon: "bubble.left.and.text.bubble.right",
+                        label: "Chat",
+                        action: { toggleMessageView() }
+                    )
+                }
+                .transition(.opacity)
+
+                Spacer()
             }
-
-            Spacer()
 
             // --- Right: Window Controls ---
             HStack(spacing: 4) {

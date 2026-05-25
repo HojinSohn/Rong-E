@@ -9,6 +9,55 @@ use rmcp::transport::TokioChildProcess;
 use rmcp::ServiceExt;
 use serde_json::json;
 
+/// Extract a human-readable message from a rig/API error string.
+/// Rig wraps API errors as e.g. "status code 404 Not Found with message: {...}".
+/// This function tries several strategies to pull out just the inner message text.
+fn clean_llm_error(raw: &str) -> String {
+    // Try every `{` position so trailing non-JSON text doesn't block parsing.
+    let mut search_start = 0;
+    while let Some(offset) = raw[search_start..].find('{') {
+        let start = search_start + offset;
+        // Find the matching closing brace by tracking depth.
+        let mut depth = 0usize;
+        let mut end = None;
+        for (i, ch) in raw[start..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        end = Some(start + i + 1);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(end) = end
+            && let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw[start..end])
+        {
+            // OpenAI / Anthropic / Gemini style: {"error": {"message": "..."}}
+            if let Some(msg) = v.pointer("/error/message").and_then(|m| m.as_str()) {
+                return msg.to_string();
+            }
+            // Simple: {"message": "..."}
+            if let Some(msg) = v.get("message").and_then(|m| m.as_str()) {
+                return msg.to_string();
+            }
+        }
+        search_start = start + 1;
+    }
+    // No JSON found — return the raw error but trim boilerplate prefix if present.
+    // e.g. "status code 404 Not Found with message: some text"
+    if let Some(after) = raw.find("with message:") {
+        let msg = raw[after + "with message:".len()..].trim();
+        if !msg.is_empty() {
+            return msg.to_string();
+        }
+    }
+    raw.to_string()
+}
+
 pub async fn process_message(
     text: &str,
     sender: &mut SplitSink<WebSocket, Message>,
@@ -186,9 +235,10 @@ async fn handle_config(
                 }
                 Err(e) => {
                     println!("❌ Set LLM Error: {}", e);
+                    let readable = clean_llm_error(&e);
                     let _ = sender
                         .send(Message::Text(
-                            json!({"type": "llm_set_error", "content": format!("Could not connect to {} ({}). Please verify your API key and model name.", model, e)})
+                            json!({"type": "llm_set_error", "content": format!("Could not connect to {} — {}. Please verify your API key and model name.", model, readable)})
                                 .to_string(),
                         ))
                         .await;
