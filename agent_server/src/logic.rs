@@ -753,6 +753,61 @@ async fn handle_config(
             }
         }
 
+        "set_composio" => {
+            let api_key = data["api_key"].as_str().unwrap_or("").trim().to_string();
+
+            if api_key.is_empty() {
+                // Disconnect: clear stored key and drop connection
+                let mut s = state.lock().await;
+                s.composio_api_key = None;
+                if let Some(conn) = s.mcp_connections.remove("composio") {
+                    let _ = conn._service.cancel().await;
+                    println!("🛑 Composio MCP server disconnected");
+                }
+                drop(s);
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "disconnected", "error": null}]}})
+                            .to_string(),
+                    ))
+                    .await;
+            } else {
+                // Connect: store key and establish HTTP/SSE connection
+                println!("🔗 Connecting to Composio MCP server");
+                state.lock().await.composio_api_key = Some(api_key.clone());
+
+                match connect_http_mcp_server("https://mcp.composio.dev", &api_key).await {
+                    Ok(conn) => {
+                        println!(
+                            "✅ Composio MCP connected with {} tools",
+                            conn.tools.len()
+                        );
+                        state
+                            .lock()
+                            .await
+                            .mcp_connections
+                            .insert("composio".to_string(), conn);
+                        let _ = sender
+                            .send(Message::Text(
+                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "connected", "error": null}]}})
+                                    .to_string(),
+                            ))
+                            .await;
+                    }
+                    Err(e) => {
+                        println!("❌ Failed to connect to Composio MCP: {}", e);
+                        state.lock().await.composio_api_key = None;
+                        let _ = sender
+                            .send(Message::Text(
+                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "error", "error": e}]}})
+                                    .to_string(),
+                            ))
+                            .await;
+                    }
+                }
+            }
+        }
+
         _ => {
             println!("⚠️ Unknown data_type: {}", data_type);
         }
