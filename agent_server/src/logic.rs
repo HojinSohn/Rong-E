@@ -833,10 +833,17 @@ async fn handle_config(
             let mut statuses: Vec<serde_json::Value> = Vec::new();
 
             for name in &enabled {
-                // Skip if already running
-                if state.lock().await.builtin_servers.contains_key(name) {
-                    statuses.push(json!({"name": name, "status": "connected", "error": null}));
-                    continue;
+                // For filesystem: always restart so path changes take effect.
+                // For other built-ins: skip if already running.
+                if state.lock().await.builtin_servers.contains_key(name.as_str()) {
+                    if name != "filesystem" {
+                        statuses.push(json!({"name": name, "status": "connected", "error": null}));
+                        continue;
+                    }
+                    // Stop the existing filesystem server so it can be restarted with updated paths.
+                    if let Some(conn) = state.lock().await.builtin_servers.remove(name.as_str()) {
+                        let _ = conn._service.cancel().await;
+                    }
                 }
 
                 // Look up the server definition

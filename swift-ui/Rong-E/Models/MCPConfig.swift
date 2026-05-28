@@ -323,11 +323,6 @@ class MCPConfigManager: ObservableObject {
                 serverStatuses[info.name] = .idle
             }
         }
-        // Remove statuses for servers no longer in the list
-        let activeNames = Set(serverInfos.map { $0.name })
-        for key in serverStatuses.keys where !activeNames.contains(key) {
-            serverStatuses.removeValue(forKey: key)
-        }
     }
 
     private let configKey = "mcp_config"
