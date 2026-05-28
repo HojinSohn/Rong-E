@@ -27,6 +27,8 @@ pub struct AppState {
     pub token_file_path: Option<String>,
     pub google_access_token: Option<String>,
     pub mcp_connections: HashMap<String, McpConnection>,
+    pub builtin_servers: HashMap<String, McpConnection>,
+    pub composio_api_key: Option<String>,
     pub spreadsheet_configs: Vec<SpreadsheetConfig>,
 }
 
@@ -42,14 +44,17 @@ impl AppState {
             token_file_path: None,
             google_access_token: None,
             mcp_connections: HashMap::new(),
+            builtin_servers: HashMap::new(),
+            composio_api_key: None,
             spreadsheet_configs: Vec::new(),
         }
     }
 
-    /// Collect all MCP tools + peers for agent building
+    /// Collect all MCP tools + peers for agent building (user-configured + built-in)
     pub fn all_mcp_tools(&self) -> Vec<(Vec<rmcp::model::Tool>, rmcp::service::ServerSink)> {
         self.mcp_connections
             .values()
+            .chain(self.builtin_servers.values())
             .map(|c| (c.tools.clone(), c.peer.clone()))
             .collect()
     }

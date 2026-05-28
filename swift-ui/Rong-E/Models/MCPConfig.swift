@@ -9,16 +9,24 @@ struct MCPServerConfig: Codable, Identifiable, Equatable {
     let command: String
     let args: [String]
     let env: [String: String]?
+    var transport: String?
+    var url: String?
+    var apiKey: String?
 
-    init(name: String, command: String, args: [String], env: [String: String]? = nil) {
+    init(name: String, command: String, args: [String], env: [String: String]? = nil,
+         transport: String? = nil, url: String? = nil, apiKey: String? = nil) {
         self.name = name
         self.command = command
         self.args = args
         self.env = env
+        self.transport = transport
+        self.url = url
+        self.apiKey = apiKey
     }
 
     enum CodingKeys: String, CodingKey {
-        case command, args, env
+        case command, args, env, transport, url
+        case apiKey = "api_key"
     }
 
     init(from decoder: Decoder) throws {
@@ -28,6 +36,9 @@ struct MCPServerConfig: Codable, Identifiable, Equatable {
         self.command = try container.decode(String.self, forKey: .command)
         self.args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
         self.env = try container.decodeIfPresent([String: String].self, forKey: .env)
+        self.transport = try container.decodeIfPresent(String.self, forKey: .transport)
+        self.url = try container.decodeIfPresent(String.self, forKey: .url)
+        self.apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -36,6 +47,15 @@ struct MCPServerConfig: Codable, Identifiable, Equatable {
         try container.encode(args, forKey: .args)
         if let env = env {
             try container.encode(env, forKey: .env)
+        }
+        if let transport = transport {
+            try container.encode(transport, forKey: .transport)
+        }
+        if let url = url {
+            try container.encode(url, forKey: .url)
+        }
+        if let apiKey = apiKey {
+            try container.encode(apiKey, forKey: .apiKey)
         }
     }
 }
@@ -303,11 +323,6 @@ class MCPConfigManager: ObservableObject {
                 serverStatuses[info.name] = .idle
             }
         }
-        // Remove statuses for servers no longer in the list
-        let activeNames = Set(serverInfos.map { $0.name })
-        for key in serverStatuses.keys where !activeNames.contains(key) {
-            serverStatuses.removeValue(forKey: key)
-        }
     }
 
     private let configKey = "mcp_config"
@@ -401,5 +416,66 @@ class MCPConfigManager: ObservableObject {
               let config = try? JSONDecoder().decode(MCPConfig.self, from: data) else { return }
         self.currentConfig = config
         self.servers = config.toServerList()
+    }
+}
+
+// MARK: - Built-in Server Configuration
+
+struct BuiltinServerConfig: Codable {
+    var enabledServers: Set<String>
+    var filesystemPaths: [String]
+
+    init(enabledServers: Set<String> = [], filesystemPaths: [String] = [NSHomeDirectory()]) {
+        self.enabledServers = enabledServers
+        self.filesystemPaths = filesystemPaths
+    }
+}
+
+class BuiltinServerManager: ObservableObject {
+    static let shared = BuiltinServerManager()
+    private let configKey = "builtin_server_config"
+
+    @Published var config: BuiltinServerConfig = BuiltinServerConfig()
+
+    private init() {
+        load()
+    }
+
+    func isEnabled(_ name: String) -> Bool {
+        config.enabledServers.contains(name)
+    }
+
+    func setEnabled(_ name: String, _ enabled: Bool) {
+        if enabled {
+            config.enabledServers.insert(name)
+        } else {
+            config.enabledServers.remove(name)
+        }
+        save()
+        sync()
+    }
+
+    func setFilesystemPaths(_ paths: [String]) {
+        config.filesystemPaths = paths
+        save()
+        if config.enabledServers.contains("filesystem") {
+            sync()
+        }
+    }
+
+    func sync() {
+        SocketClient.shared.sendBuiltinServersConfig(config)
+    }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(config) {
+            UserDefaults.standard.set(data, forKey: configKey)
+        }
+    }
+
+    private func load() {
+        guard let data = UserDefaults.standard.data(forKey: configKey),
+              let decoded = try? JSONDecoder().decode(BuiltinServerConfig.self, from: data) else { return }
+        self.config = decoded
     }
 }

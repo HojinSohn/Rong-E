@@ -34,7 +34,7 @@ struct AgentMessage: Codable {
         case "tool_result":
             let val = try container.decode(ToolResultContent.self, forKey: .content)
             content = .toolResult(val)
-        case "credentials_success", "credentials_error", "oauth_url", "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error":
+        case "credentials_success", "credentials_error", "oauth_url", "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error", "builtin_warning":
             // Handle simple string content for status messages
             if let stringContent = try? container.decode(String.self, forKey: .content) {
                 content = .response(ResponseContent(text: stringContent, images: []))
@@ -207,6 +207,7 @@ class SocketClient: ObservableObject, @unchecked Sendable {
     var onSheetTabsResult: ((Bool, String?, [String]?) -> Void)?  // (success, title/error, tabs)
     var onMemoryContent: ((String) -> Void)?
     var onMemorySaved: ((Bool, String) -> Void)?  // (success, message)
+    var onBuiltinWarning: ((String) -> Void)?  // server name
 
     func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
@@ -357,6 +358,18 @@ class SocketClient: ObservableObject, @unchecked Sendable {
            let content = json["content"] as? String {
             DispatchQueue.main.async { [weak self] in
                 self?.onMemorySaved?(true, content)
+            }
+            return
+        }
+
+        // Handle builtin_warning (content is an object with a "server" key)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let msgType = json["type"] as? String,
+           msgType == "builtin_warning",
+           let contentObj = json["content"] as? [String: Any],
+           let serverName = contentObj["server"] as? String {
+            DispatchQueue.main.async { [weak self] in
+                self?.onBuiltinWarning?(serverName)
             }
             return
         }
@@ -634,6 +647,38 @@ class SocketClient: ObservableObject, @unchecked Sendable {
             webSocketTask?.send(message) { error in
                 if let error = error { print("❌ Memory Save Send Error: \(error)") }
             }
+        }
+    }
+
+    func sendBuiltinServersConfig(_ config: BuiltinServerConfig) {
+        let enabledArray = Array(config.enabledServers)
+        let json: [String: Any] = [
+            "data_type": "set_builtin_servers",
+            "enabled": enabledArray,
+            "filesystem_paths": config.filesystemPaths
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: json),
+              let text = String(data: data, encoding: .utf8) else { return }
+        webSocketTask?.send(.string(text)) { error in
+            if let error = error { print("❌ Built-in servers send error: \(error)") }
+        }
+    }
+
+    func sendComposioKey(_ apiKey: String) {
+        let json: [String: Any] = ["data_type": "set_composio", "api_key": apiKey]
+        guard let data = try? JSONSerialization.data(withJSONObject: json),
+              let text = String(data: data, encoding: .utf8) else { return }
+        webSocketTask?.send(.string(text)) { error in
+            if let error = error { print("❌ Composio key send error: \(error)") }
+        }
+    }
+
+    func disconnectComposio() {
+        let json: [String: Any] = ["data_type": "set_composio", "api_key": ""]
+        guard let data = try? JSONSerialization.data(withJSONObject: json),
+              let text = String(data: data, encoding: .utf8) else { return }
+        webSocketTask?.send(.string(text)) { error in
+            if let error = error { print("❌ Composio disconnect error: \(error)") }
         }
     }
 }
