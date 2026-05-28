@@ -5,13 +5,11 @@ struct GoogleServiceView: View {
     @EnvironmentObject var context: AppContext
     @EnvironmentObject var coordinator: WindowCoordinator
     @EnvironmentObject var googleAuthManager: GoogleAuthManager
-    
+
     let windowID: String
-    
-    @State private var isShowingFilePicker = false
+
     @State private var isShowingAddSheet = false
     @StateObject var sheetManager = SpreadsheetConfigManager.shared
-    @State private var currentSelectedFileName: String = "NO_DATA"
 
     var connectionStatus: ConnectionStatus {
         context.isGoogleConnected ? .connected : .disconnected
@@ -116,8 +114,20 @@ struct GoogleServiceView: View {
                 // Main Content
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
+                        backendSection
+
+                        // Section Divider
+                        HStack {
+                            Rectangle().frame(height: 1).foregroundColor(context.themeAccentColor.opacity(0.3))
+                            Text("AUTH")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(context.themeAccentColor.opacity(0.7))
+                            Rectangle().frame(height: 1).foregroundColor(context.themeAccentColor.opacity(0.3))
+                        }
+                        .padding(.vertical, 5)
+
                         authSection
-                        
+
                         // Section Divider
                         HStack {
                             Rectangle().frame(height: 1).foregroundColor(context.themeAccentColor.opacity(0.3))
@@ -127,7 +137,7 @@ struct GoogleServiceView: View {
                             Rectangle().frame(height: 1).foregroundColor(context.themeAccentColor.opacity(0.3))
                         }
                         .padding(.vertical, 5)
-                        
+
                         resourcesSection
                     }
                     .padding(20)
@@ -136,21 +146,6 @@ struct GoogleServiceView: View {
         }
         .frame(width: 500, height: 500)
         .preferredColorScheme(.dark)
-        // File Importer
-        .fileImporter(
-            isPresented: $isShowingFilePicker,
-            allowedContentTypes: [.json],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                self.currentSelectedFileName = url.lastPathComponent.uppercased()
-                googleAuthManager.importCredentials(from: url)
-            case .failure(let error):
-                print("Import failed: \(error)")
-            }
-        }
         .sheet(isPresented: $isShowingAddSheet) {
             AddSheetModal(isPresented: $isShowingAddSheet) { newSheet in
                 sheetManager.addConfig(newSheet)
@@ -159,33 +154,100 @@ struct GoogleServiceView: View {
     }
     
     // --- Sub-Views ---
-    
+
+    var backendSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("BACKEND ENDPOINT")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(context.themeAccentColor.opacity(0.7))
+                .tracking(1)
+
+            HStack(spacing: 8) {
+                TextField("https://api.rong-e.app", text: $context.backendUrl)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.jarvisTextPrimary)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .padding(8)
+                    .background(Color.black.opacity(0.4))
+                    .overlay(Rectangle().stroke(context.themeAccentColor.opacity(0.3), lineWidth: 1))
+                    .onSubmit { applyBackendUrl() }
+
+                Button(action: { applyBackendUrl() }) {
+                    Text("APPLY")
+                        .font(.system(size: 10, design: .monospaced))
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(context.themeAccentColor.opacity(0.15))
+                        .foregroundColor(context.themeAccentColor)
+                        .overlay(Rectangle().stroke(context.themeAccentColor.opacity(0.5), lineWidth: 1))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(BorderlessButtonStyle())
+            }
+
+            Text("USE http://localhost:8080 FOR LOCAL DEVELOPMENT")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.jarvisTextDim)
+        }
+        .modifier(JarvisPanel())
+    }
+
+    private func applyBackendUrl() {
+        context.saveSettings()
+        SocketClient.shared.sendSetBackendUrl(context.backendUrl)
+    }
+
     var authSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("AUTHENTICATION PROTOCOL")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(context.themeAccentColor.opacity(0.7))
                 .tracking(1)
-            
-            HStack(spacing: 12) {
-                // File Picker
-                Button(action: { isShowingFilePicker = true }) {
+
+            if context.isGoogleConnected {
+                HStack {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundColor(.jarvisGreen)
+                    Text("GOOGLE ACCOUNT CONNECTED")
+                        .font(.system(size: 11, design: .monospaced))
+                        .fontWeight(.bold)
+                        .foregroundColor(.jarvisTextPrimary)
+                    Spacer()
+                    Button(action: { googleAuthManager.revoke() }) {
+                        Text("TERMINATE")
+                            .font(.system(size: 11, design: .monospaced))
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 15)
+                            .padding(.vertical, 10)
+                            .background(Color.jarvisRed.opacity(0.2))
+                            .foregroundColor(.jarvisRed)
+                            .overlay(Rectangle().stroke(Color.jarvisRed, lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                }
+                .padding(12)
+                .background(Color.jarvisGreen.opacity(0.05))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.jarvisGreen.opacity(0.3), lineWidth: 1))
+            } else {
+                Button(action: { googleAuthManager.startOAuth() }) {
                     HStack {
-                        Image(systemName: "doc.plaintext.fill")
+                        Image(systemName: "person.badge.key.fill")
                             .font(.title2)
-                            .foregroundColor(!googleAuthManager.credentialsFileExists ? .jarvisTextDim : context.themeAccentColor)
-                        
+                            .foregroundColor(context.themeAccentColor)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(googleAuthManager.credentialsFileExists ? "CREDENTIALS LOADED" : "LOAD CREDENTIALS")
+                            Text("SIGN IN WITH GOOGLE")
                                 .font(.system(size: 11, design: .monospaced))
                                 .fontWeight(.bold)
                                 .foregroundColor(.jarvisTextPrimary)
-                            
-                            Text(googleAuthManager.credentialsFileExists ? currentSelectedFileName : "SELECT .JSON FILE")
+                            Text("OPENS BROWSER · NO API KEY REQUIRED")
                                 .font(.system(size: 9, design: .monospaced))
                                 .foregroundColor(.jarvisTextDim)
                         }
                         Spacer()
+                        Image(systemName: "arrow.right")
+                            .foregroundColor(context.themeAccentColor)
                     }
                     .padding(12)
                     .background(context.themeAccentColor.opacity(0.05))
@@ -193,56 +255,7 @@ struct GoogleServiceView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(BorderlessButtonStyle())
-                .disabled(context.isGoogleConnected)
-                
-                // Connect / Revoke Buttons
-                if !context.isGoogleConnected {
-                    VStack(spacing: 6) {
-                        Button(action: { googleAuthManager.connect() }) {
-                            Text("INITIATE LINK")
-                                .font(.system(size: 11, design: .monospaced))
-                                .fontWeight(.bold)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(context.themeAccentColor.opacity(0.2))
-                                .foregroundColor(context.themeAccentColor)
-                                .overlay(Rectangle().stroke(context.themeAccentColor, lineWidth: 1))
-                                .modifier(JarvisGlow(active: true))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(BorderlessButtonStyle())
-
-                        if googleAuthManager.credentialsFileExists {
-                            Button(action: { googleAuthManager.startOAuth() }) {
-                                Text("RE-AUTHENTICATE")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .fontWeight(.bold)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                                    .background(Color.jarvisOrange.opacity(0.15))
-                                    .foregroundColor(.jarvisOrange)
-                                    .overlay(Rectangle().stroke(Color.jarvisOrange.opacity(0.6), lineWidth: 1))
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(BorderlessButtonStyle())
-                        }
-                    }
-                    .frame(width: 130)
-                } else {
-                    Button(action: { googleAuthManager.revoke() }) {
-                        Text("TERMINATE")
-                            .font(.system(size: 11, design: .monospaced))
-                            .fontWeight(.bold)
-                            .frame(maxHeight: .infinity)
-                            .padding(.horizontal, 15)
-                            .background(Color.jarvisRed.opacity(0.2))
-                            .foregroundColor(.jarvisRed)
-                            .overlay(Rectangle().stroke(Color.jarvisRed, lineWidth: 1))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(BorderlessButtonStyle())
-                    .frame(height: 54)
-                }
+                .modifier(JarvisGlow(active: true))
             }
         }
         .modifier(JarvisPanel())

@@ -21,3 +21,5 @@ chrono = "0.4"
 dirs = "6"
 reqwest = { version = "0.13", features = ["json", "form"] }
 urlencoding = "2"
+rand = "0.8"
+sha2 = "0.10"

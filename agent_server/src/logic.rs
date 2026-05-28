@@ -11,6 +11,7 @@ use rmcp::transport::streamable_http_client::{
 use rmcp::transport::TokioChildProcess;
 use rmcp::ServiceExt;
 use serde_json::json;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 struct BuiltinServerDef {
     name: &'static str,
@@ -42,14 +43,10 @@ const BUILTIN_SERVERS: &[BuiltinServerDef] = &[
 ];
 
 /// Extract a human-readable message from a rig/API error string.
-/// Rig wraps API errors as e.g. "status code 404 Not Found with message: {...}".
-/// This function tries several strategies to pull out just the inner message text.
 fn clean_llm_error(raw: &str) -> String {
-    // Try every `{` position so trailing non-JSON text doesn't block parsing.
     let mut search_start = 0;
     while let Some(offset) = raw[search_start..].find('{') {
         let start = search_start + offset;
-        // Find the matching closing brace by tracking depth.
         let mut depth = 0usize;
         let mut end = None;
         for (i, ch) in raw[start..].char_indices() {
@@ -68,19 +65,15 @@ fn clean_llm_error(raw: &str) -> String {
         if let Some(end) = end
             && let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw[start..end])
         {
-            // OpenAI / Anthropic / Gemini style: {"error": {"message": "..."}}
             if let Some(msg) = v.pointer("/error/message").and_then(|m| m.as_str()) {
                 return msg.to_string();
             }
-            // Simple: {"message": "..."}
             if let Some(msg) = v.get("message").and_then(|m| m.as_str()) {
                 return msg.to_string();
             }
         }
         search_start = start + 1;
     }
-    // No JSON found — return the raw error but trim boilerplate prefix if present.
-    // e.g. "status code 404 Not Found with message: some text"
     if let Some(after) = raw.find("with message:") {
         let msg = raw[after + "with message:".len()..].trim();
         if !msg.is_empty() {
@@ -119,6 +112,7 @@ async fn handle_config(
     state: &SharedState,
 ) {
     match data_type {
+        // ── API key (manual entry) ──────────────────────────────────────────
         "api_key" => {
             let key = data["content"].as_str().unwrap_or("");
             println!("🔑 Received API Key");
@@ -131,97 +125,7 @@ async fn handle_config(
                 .await;
         }
 
-        "credentials" => {
-            let dir_path = data["content"].as_str().unwrap_or("").trim().to_string();
-            println!("🔑 Received credentials, dir: {}", dir_path);
-
-            if dir_path.is_empty() {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "credentials_error", "content": "Please provide the path to your Google credentials folder."})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            }
-
-            let credentials_path = format!("{}/credentials.json", dir_path);
-            let token_path = format!("{}/token.json", dir_path);
-
-            // Validate that credentials.json exists
-            if !std::path::Path::new(&credentials_path).exists() {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "credentials_error", "content": format!("No credentials.json found at: {}. Please download it from Google Cloud Console and place it in that folder.", credentials_path)})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            }
-
-            // Attempt authentication: validates token.json, refreshes if expired
-            match crate::google_auth::authenticate(&credentials_path, &token_path).await {
-                Ok(access_token) => {
-                    let mut s = state.lock().await;
-                    s.credentials_file_path = Some(credentials_path.clone());
-                    s.token_file_path = Some(token_path.clone());
-                    s.google_access_token = Some(access_token);
-                    drop(s);
-                    println!("✅ Google credentials authenticated.");
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_success", "content": "Google account connected! You now have access to Gmail, Calendar, and Sheets."})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-                Err(e) => {
-                    println!("❌ Authentication error: {}", e);
-                    // Delete invalid token file (mirrors Python behaviour)
-                    if std::path::Path::new(&token_path).exists() {
-                        if let Err(re) = std::fs::remove_file(&token_path) {
-                            println!("⚠️ Failed to delete invalid token file: {}", re);
-                        } else {
-                            println!("🗑️ Deleted invalid token file.");
-                        }
-                    }
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_error", "content": "Could not authenticate with Google. Please double-check your credentials file and try again."})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-            }
-        }
-
-        "revoke_credentials" => {
-            println!("🔓 Received Revoke Credentials");
-            {
-                let mut s = state.lock().await;
-                // Delete token file if present, then clear stored paths
-                if let Some(ref token_path) = s.token_file_path {
-                    let token_path = token_path.clone();
-                    if std::path::Path::new(&token_path).exists() {
-                        if let Err(e) = std::fs::remove_file(&token_path) {
-                            println!("⚠️ Failed to delete token file: {}", e);
-                        } else {
-                            println!("🗑️ Deleted token file: {}", token_path);
-                        }
-                    }
-                }
-                s.credentials_file_path = None;
-                s.token_file_path = None;
-                s.google_access_token = None;
-            }
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "credentials_revoked", "content": "Google account disconnected. Your stored session has been removed."})
-                        .to_string(),
-                ))
-                .await;
-        }
-
+        // ── Set LLM provider / model ────────────────────────────────────────
         "set_llm" => {
             let provider = data["provider"].as_str().unwrap_or("gemini");
             let model = data["model"].as_str().unwrap_or("");
@@ -231,14 +135,31 @@ async fn handle_config(
             if model.is_empty() {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "llm_set_error", "content": "Please specify which model you'd like to use (e.g. gemini-2.5-flash, gpt-4o, claude-sonnet-4-20250514)."})
+                        json!({"type": "llm_set_error", "content": "Please specify which model you'd like to use."})
                             .to_string(),
                     ))
                     .await;
                 return;
             }
 
-            if provider != "ollama" && api_key.is_empty() {
+            // For OpenRouter, use the OAuth-stored key when none is provided.
+            // For Ollama, no key is needed at all.
+            let effective_key = if api_key.is_empty() && provider == "openrouter" {
+                state
+                    .lock()
+                    .await
+                    .api_keys
+                    .get("openrouter")
+                    .cloned()
+                    .unwrap_or_default()
+            } else {
+                api_key.to_string()
+            };
+
+            // Require a key for providers that aren't Ollama/OpenRouter (Ollama has
+            // no key at all; OpenRouter uses OAuth and we check the stored key below).
+            let key_exempt = provider == "ollama";
+            if !key_exempt && provider != "openrouter" && effective_key.is_empty() {
                 let _ = sender
                     .send(Message::Text(
                         json!({"type": "llm_set_error", "content": format!("An API key is required for {}. Please add it in Settings.", provider)})
@@ -248,14 +169,25 @@ async fn handle_config(
                 return;
             }
 
-            // Verify the credentials/model work before storing
-            match llm::verify_llm(provider, api_key, model).await {
+            // For OpenRouter, ensure the user has completed OAuth before trying to
+            // set it as the active provider.
+            if provider == "openrouter" && effective_key.is_empty() {
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "llm_set_error", "content": "Please sign in to OpenRouter first (Settings → OpenRouter → Connect)."})
+                            .to_string(),
+                    ))
+                    .await;
+                return;
+            }
+
+            match llm::verify_llm(provider, &effective_key, model).await {
                 Ok(()) => {
                     let mut s = state.lock().await;
                     s.current_provider = provider.to_string();
                     s.current_model = model.to_string();
-                    if !api_key.is_empty() {
-                        s.api_keys.insert(provider.to_string(), api_key.to_string());
+                    if !effective_key.is_empty() {
+                        s.api_keys.insert(provider.to_string(), effective_key);
                     }
                     drop(s);
                     let _ = sender
@@ -278,6 +210,271 @@ async fn handle_config(
             }
         }
 
+        // ── OpenRouter PKCE OAuth ───────────────────────────────────────────
+        "start_openrouter_oauth" => {
+            match crate::openrouter_auth::prepare_openrouter_flow().await {
+                Ok((auth_url, verifier, state_nonce, listener)) => {
+                    println!("🌐 OpenRouter OAuth URL ready. Sending to client.");
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "openrouter_oauth_url", "content": auth_url})
+                                .to_string(),
+                        ))
+                        .await;
+
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(300),
+                        crate::openrouter_auth::await_openrouter_callback(
+                            listener,
+                            &verifier,
+                            &state_nonce,
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(Ok(api_key)) => {
+                            let api_key: String = api_key;
+                            state
+                                .lock()
+                                .await
+                                .api_keys
+                                .insert("openrouter".to_string(), api_key.clone());
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "openrouter_oauth_success", "content": api_key})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                        Ok(Err(e)) => {
+                            println!("❌ OpenRouter OAuth callback error: {}", e);
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "openrouter_oauth_error", "content": e})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                        Err(_) => {
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "openrouter_oauth_error", "content": "Sign-in timed out. Please try again."})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to prepare OpenRouter OAuth flow: {}", e);
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "openrouter_oauth_error", "content": format!("Could not start the sign-in process: {}.", e)})
+                                .to_string(),
+                        ))
+                        .await;
+                }
+            }
+        }
+
+        // ── Google OAuth via backend/ proxy ────────────────────────────────
+        "set_backend_url" => {
+            let url = data["url"].as_str().unwrap_or("").trim().to_string();
+            if !url.is_empty() {
+                println!("🌐 Backend URL set to: {}", url);
+                state.lock().await.backend_url = url;
+            }
+        }
+
+        "start_oauth" => {
+            let backend_url = state.lock().await.backend_url.clone();
+            println!("🔐 Starting Google OAuth via backend: {}", backend_url);
+
+            // Bind a loopback listener so the backend can redirect back to us.
+            let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+                Ok(l) => l,
+                Err(e) => {
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "credentials_error", "content": format!("Could not start the local auth server: {}", e)})
+                                .to_string(),
+                        ))
+                        .await;
+                    return;
+                }
+            };
+            let port = listener.local_addr().unwrap().port();
+            let redirect_uri = format!("http://localhost:{}", port);
+
+            // Ask the backend for the Google consent URL (don't follow the redirect).
+            let no_redirect_client = match reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "credentials_error", "content": format!("HTTP client error: {}", e)})
+                                .to_string(),
+                        ))
+                        .await;
+                    return;
+                }
+            };
+
+            let login_url = format!(
+                "{}/auth/google/login?redirectUri={}",
+                backend_url,
+                urlencoding::encode(&redirect_uri)
+            );
+
+            let resp = match no_redirect_client.get(&login_url).send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "credentials_error", "content": format!("Could not reach the authentication server. Is the backend running? ({})", e)})
+                                .to_string(),
+                        ))
+                        .await;
+                    return;
+                }
+            };
+
+            let oauth_url = match resp
+                .headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+            {
+                Some(u) => u,
+                None => {
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "credentials_error", "content": "The authentication server did not return an OAuth URL. Check the backend is configured correctly."})
+                                .to_string(),
+                        ))
+                        .await;
+                    return;
+                }
+            };
+
+            // Send the consent URL so Swift can open it in the browser.
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "oauth_url", "content": oauth_url}).to_string(),
+                ))
+                .await;
+
+            // Wait for Google to redirect back to our loopback listener (5 min).
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(300),
+                await_google_callback(listener),
+            )
+            .await
+            {
+                Ok(Ok(login_token)) => {
+                    // Exchange the one-time login token for a long-lived JWT.
+                    let consume_url = format!("{}/auth/google/consume", backend_url);
+                    let consume_result = no_redirect_client
+                        .post(&consume_url)
+                        .json(&serde_json::json!({"token": login_token}))
+                        .send()
+                        .await;
+
+                    match consume_result {
+                        Ok(r) if r.status().is_success() => {
+                            let body: serde_json::Value =
+                                r.json().await.unwrap_or_default();
+                            let jwt = body["token"].as_str().unwrap_or("").to_string();
+                            if jwt.is_empty() {
+                                let _ = sender
+                                    .send(Message::Text(
+                                        json!({"type": "credentials_error", "content": "The authentication server did not return a session token."})
+                                            .to_string(),
+                                    ))
+                                    .await;
+                                return;
+                            }
+                            state.lock().await.google_session_token = Some(jwt.clone());
+                            // Send the JWT to Swift so it can persist it across restarts.
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "session_token", "content": jwt}).to_string(),
+                                ))
+                                .await;
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "credentials_success", "content": "Google account connected! You now have access to Gmail and Calendar."})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                        Ok(r) => {
+                            let status = r.status().as_u16();
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "credentials_error", "content": format!("Session exchange failed (status {}). Please try signing in again.", status)})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                        Err(e) => {
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "credentials_error", "content": format!("Could not reach the authentication server to complete sign-in: {}", e)})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    println!("❌ Google OAuth callback error: {}", e);
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "credentials_error", "content": format!("Sign-in was not completed: {}", e)})
+                                .to_string(),
+                        ))
+                        .await;
+                }
+                Err(_) => {
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "credentials_error", "content": "Sign-in timed out — the browser authorization wasn't completed within 5 minutes. Please try again."})
+                                .to_string(),
+                        ))
+                        .await;
+                }
+            }
+        }
+
+        "restore_session" => {
+            let token = data["session_token"].as_str().unwrap_or("").trim().to_string();
+            if token.is_empty() {
+                state.lock().await.google_session_token = None;
+                return;
+            }
+            println!("🔄 Restoring Google session from stored JWT.");
+            state.lock().await.google_session_token = Some(token);
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "credentials_success", "content": "Google account restored."}).to_string(),
+                ))
+                .await;
+        }
+
+        "revoke_credentials" => {
+            state.lock().await.google_session_token = None;
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "credentials_revoked", "content": "Google account disconnected."}).to_string(),
+                ))
+                .await;
+        }
+
+        // ── Session / memory ────────────────────────────────────────────────
         "reset_session" => {
             chat_history.clear();
             let _ = sender
@@ -287,6 +484,48 @@ async fn handle_config(
                 .await;
         }
 
+        "get_memory" => {
+            let memory_path = crate::tools::default_memory_path();
+            let content = tokio::fs::read_to_string(&memory_path).await.unwrap_or_default();
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "memory_content", "content": content}).to_string(),
+                ))
+                .await;
+        }
+
+        "save_memory" => {
+            let content = data["content"].as_str().unwrap_or("");
+            let memory_path = crate::tools::default_memory_path();
+            let result = async {
+                if let Some(parent) = memory_path.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                tokio::fs::write(&memory_path, content).await
+            }
+            .await;
+            match result {
+                Ok(()) => {
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "memory_saved", "content": "Memory updated successfully."})
+                                .to_string(),
+                        ))
+                        .await;
+                }
+                Err(e) => {
+                    println!("❌ Failed to save memory: {}", e);
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "memory_error", "content": "Could not save memory notes. Please try again."})
+                                .to_string(),
+                        ))
+                        .await;
+                }
+            }
+        }
+
+        // ── MCP (user-managed servers) ──────────────────────────────────────
         "mcp_config" => {
             println!("🔧 MCP config received");
             let servers = data
@@ -297,19 +536,22 @@ async fn handle_config(
             let Some(servers) = servers else {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "mcp_sync_error", "content": "The MCP configuration couldn't be read. Please check your settings and try again."})
+                        json!({"type": "mcp_sync_error", "content": "The MCP configuration couldn't be read. Please check your settings."})
                             .to_string(),
                     ))
                     .await;
                 return;
             };
 
-            // Shut down existing connections
+            // Shut down all existing MCP connections before starting the new set.
             {
                 let mut s = state.lock().await;
-                for (name, conn) in s.mcp_connections.drain() {
-                    println!("🛑 Stopping MCP server: {}", name);
-                    let _ = conn._service.cancel().await;
+                let to_remove: Vec<String> = s.mcp_connections.keys().cloned().collect();
+                for name in to_remove {
+                    if let Some(conn) = s.mcp_connections.remove(&name) {
+                        println!("🛑 Stopping MCP server: {}", name);
+                        let _ = conn._service.cancel().await;
+                    }
                 }
             }
 
@@ -453,15 +695,12 @@ async fn handle_config(
                 }
             }
 
-            // Send server statuses
             let _ = sender
                 .send(Message::Text(
                     json!({"type": "mcp_server_status", "content": {"servers": statuses}})
                         .to_string(),
                 ))
                 .await;
-
-            // Send success
             let _ = sender
                 .send(Message::Text(
                     json!({"type": "mcp_sync_success", "content": "MCP servers are connected and ready!"})
@@ -491,18 +730,13 @@ async fn handle_config(
         "tools_request" => {
             let s = state.lock().await;
             let mut tools_list: Vec<serde_json::Value> = vec![
-                json!({"name": "calculator", "source": "built-in", "description": "Evaluate mathematical expressions and perform calculations"}),
+                json!({"name": "calculator", "source": "built-in", "description": "Evaluate mathematical expressions"}),
                 json!({"name": "open_application", "source": "built-in", "description": "Launch a macOS application by name"}),
-                json!({"name": "open_chrome_tab", "source": "built-in", "description": "Open a URL in Google Chrome browser"}),
+                json!({"name": "open_chrome_tab", "source": "built-in", "description": "Open a URL in Google Chrome"}),
                 json!({"name": "read_memory", "source": "built-in", "description": "Read from the agent's persistent knowledge base"}),
                 json!({"name": "save_to_memory", "source": "built-in", "description": "Save information to the agent's persistent knowledge base"}),
                 json!({"name": "append_to_memory", "source": "built-in", "description": "Append content to an existing memory entry"}),
             ];
-            if s.google_access_token.is_some() {
-                tools_list.push(
-                    json!({"name": "google_agent", "source": "google", "description": "Gmail · Calendar · Sheets sub-agent"}),
-                );
-            }
             for (server_name, conn) in &s.mcp_connections {
                 for tool in &conn.tools {
                     let safe_name = crate::mcp_proxy::sanitize_tool_name(&tool.name);
@@ -511,8 +745,8 @@ async fn handle_config(
                         .as_deref()
                         .filter(|d| !d.is_empty())
                         .unwrap_or("MCP tool");
-                    tools_list
-                        .push(json!({"name": safe_name, "source": format!("mcp:{}", server_name), "description": desc}));
+                    let source = format!("mcp:{}", server_name);
+                    tools_list.push(json!({"name": safe_name, "source": source, "description": desc}));
                 }
             }
             drop(s);
@@ -521,102 +755,6 @@ async fn handle_config(
                     json!({"type": "active_tools", "content": {"tools": tools_list}}).to_string(),
                 ))
                 .await;
-        }
-
-        "get_sheet_tabs" => {
-            let spreadsheet_id = data["spreadsheet_id"].as_str().unwrap_or("").to_string();
-            println!("📊 Get Sheet Tabs for: {}", spreadsheet_id);
-
-            if spreadsheet_id.is_empty() {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Please provide a spreadsheet ID. You can find it in the spreadsheet's URL."}})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            }
-
-            let access_token = state.lock().await.google_access_token.clone();
-            let Some(token) = access_token else {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Google account not connected. Please sign in via Settings first."}})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            };
-
-            // Fetch spreadsheet metadata from the Sheets API
-            let url = format!(
-                "https://sheets.googleapis.com/v4/spreadsheets/{}?fields=properties.title,sheets.properties.title",
-                spreadsheet_id
-            );
-
-            let client = reqwest::Client::new();
-            match client.get(&url).bearer_auth(&token).send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    let body: serde_json::Value =
-                        resp.json().await.unwrap_or_default();
-                    let title = body["properties"]["title"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_string();
-                    let tabs: Vec<String> = body["sheets"]
-                        .as_array()
-                        .unwrap_or(&vec![])
-                        .iter()
-                        .filter_map(|s| {
-                            s["properties"]["title"]
-                                .as_str()
-                                .map(|t| t.to_string())
-                        })
-                        .collect();
-                    println!(
-                        "✅ Sheet '{}' has {} tab(s): {:?}",
-                        title,
-                        tabs.len(),
-                        tabs
-                    );
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "sheet_tabs_result", "content": {
-                                "success": true,
-                                "title": title,
-                                "tabs": tabs
-                            }})
-                            .to_string(),
-                        ))
-                        .await;
-                }
-                Ok(resp) => {
-                    let status = resp.status();
-                    let body = resp.text().await.unwrap_or_default();
-                    println!("❌ Sheets API error {}: {}", status, body);
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "sheet_tabs_result", "content": {
-                                "success": false,
-                                "error": format!("Google Sheets API returned an error ({}). Please check the spreadsheet ID and your permissions.", status)
-                            }})
-                            .to_string(),
-                        ))
-                        .await;
-                }
-                Err(e) => {
-                    println!("❌ Sheets API request failed: {}", e);
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "sheet_tabs_result", "content": {
-                                "success": false,
-                                "error": "Failed to reach Google Sheets. Please check your internet connection and try again."
-                            }})
-                            .to_string(),
-                        ))
-                        .await;
-                }
-            }
         }
 
         "sync_spreadsheets" => {
@@ -649,137 +787,6 @@ async fn handle_config(
                         .to_string(),
                 ))
                 .await;
-        }
-
-        "get_memory" => {
-            let memory_path = crate::tools::default_memory_path();
-            let content = tokio::fs::read_to_string(&memory_path).await.unwrap_or_default();
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "memory_content", "content": content}).to_string(),
-                ))
-                .await;
-        }
-
-        "save_memory" => {
-            let content = data["content"].as_str().unwrap_or("");
-            let memory_path = crate::tools::default_memory_path();
-            let result = async {
-                if let Some(parent) = memory_path.parent() {
-                    tokio::fs::create_dir_all(parent).await?;
-                }
-                tokio::fs::write(&memory_path, content).await
-            }
-            .await;
-            match result {
-                Ok(()) => {
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "memory_saved", "content": "Memory updated successfully."})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-                Err(e) => {
-                    println!("❌ Failed to save memory: {}", e);
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "memory_error", "content": "Could not save your memory notes. Please try again."})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-            }
-        }
-
-        "start_oauth" => {
-            let dir_path = data["dir_path"].as_str().unwrap_or("").trim().to_string();
-            if dir_path.is_empty() {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "credentials_error", "content": "Please provide the folder path where your Google credentials.json is stored."})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            }
-
-            let credentials_path = format!("{}/credentials.json", dir_path);
-            let token_path = format!("{}/token.json", dir_path);
-
-            if !std::path::Path::new(&credentials_path).exists() {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "credentials_error", "content": format!("No credentials.json found at: {}. Please download it from Google Cloud Console and place it in that folder.", credentials_path)})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            }
-
-            // Bind listener + build consent URL
-            match crate::google_auth::prepare_oauth_flow(&credentials_path).await {
-                Ok((auth_url, listener)) => {
-                    println!("🌐 OAuth URL ready. Sending to client to open in browser.");
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "oauth_url", "content": auth_url}).to_string(),
-                        ))
-                        .await;
-
-                    // Block this handler while waiting for the browser callback (5 min timeout)
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(300),
-                        crate::google_auth::await_oauth_callback(
-                            listener,
-                            &credentials_path,
-                            &token_path,
-                        ),
-                    )
-                    .await
-                    {
-                        Ok(Ok(access_token)) => {
-                            let mut s = state.lock().await;
-                            s.credentials_file_path = Some(credentials_path);
-                            s.token_file_path = Some(token_path);
-                            s.google_access_token = Some(access_token);
-                            drop(s);
-                            let _ = sender
-                                .send(Message::Text(
-                                    json!({"type": "credentials_success", "content": "Google account connected! You now have access to Gmail, Calendar, and Sheets."})
-                                        .to_string(),
-                                ))
-                                .await;
-                        }
-                        Ok(Err(e)) => {
-                            println!("❌ OAuth callback error: {}", e);
-                            let _ = sender
-                                .send(Message::Text(
-                                    json!({"type": "credentials_error", "content": format!("Google sign-in was not completed: {}. Please try again.", e)})
-                                        .to_string(),
-                                ))
-                                .await;
-                        }
-                        Err(_) => {
-                            let _ = sender
-                                .send(Message::Text(
-                                    json!({"type": "credentials_error", "content": "Sign-in timed out — the browser authorization wasn't completed within 5 minutes. Please try again."})
-                                        .to_string(),
-                                ))
-                                .await;
-                        }
-                    }
-                }
-                Err(e) => {
-                    println!("❌ Failed to prepare OAuth flow: {}", e);
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_error", "content": "Could not start the sign-in process. Please verify your credentials.json file is valid and try again."})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-            }
         }
 
         "set_builtin_servers" => {
@@ -1018,7 +1025,7 @@ async fn handle_chat(
         return;
     }
 
-    let (api_key, model, provider, mcp_tool_sets, google_access_token, spreadsheet_configs) = {
+    let (api_key, model, provider, mcp_tool_sets) = {
         let s = state.lock().await;
         let key = s.api_keys.get(&s.current_provider).cloned();
         (
@@ -1026,15 +1033,13 @@ async fn handle_chat(
             s.current_model.clone(),
             s.current_provider.clone(),
             s.all_mcp_tools(),
-            s.google_access_token.clone(),
-            s.spreadsheet_configs.clone(),
         )
     };
 
     let user_name = data["user_name"].as_str().map(|s| s.to_string());
 
-    // Ollama doesn't need an API key; others do
     if provider != "ollama"
+        && provider != "openrouter"
         && api_key.as_ref().is_none_or(|k| k.is_empty())
     {
         let _ = sender
@@ -1045,11 +1050,9 @@ async fn handle_chat(
             .await;
         return;
     }
-    
-    // Channel for tool-call events emitted during LLM execution
+
     let (tool_tx, mut tool_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(64);
 
-    // Spawn LLM in a separate task so we can forward tool events concurrently
     let system_prompt = data["system_prompt"].as_str().map(|s| s.to_string());
     let base64_image = data["base64_image"].as_str().map(|s| s.to_string());
     let history_clone = chat_history.clone();
@@ -1063,14 +1066,10 @@ async fn handle_chat(
         mcp_tool_sets,
         system_prompt,
         base64_image,
-        google_access_token,
-        spreadsheet_configs,
         tool_tx,
         user_name,
     ));
 
-    // Forward tool_call / tool_result events while the LLM task is running.
-    // biased: drain all pending events before checking task completion.
     let llm_result = loop {
         tokio::select! {
             biased;
@@ -1078,7 +1077,6 @@ async fn handle_chat(
                 let _ = sender.send(Message::Text(event.to_string())).await;
             }
             outcome = &mut llm_task => {
-                // Drain any events that arrived just before the task finished
                 while let Ok(event) = tool_rx.try_recv() {
                     let _ = sender.send(Message::Text(event.to_string())).await;
                 }
@@ -1121,7 +1119,7 @@ async fn handle_chat(
             println!("❌ LLM error: {}", e);
             let _ = sender
                 .send(Message::Text(
-                    json!({"type": "response", "content": {"text": format!("I ran into an issue while processing your request: {}\n\nPlease try rephrasing or try again in a moment.", e), "images": [], "widgets": []}})
+                    json!({"type": "response", "content": {"text": format!("I ran into an issue: {}\n\nPlease try again.", e), "images": [], "widgets": []}})
                         .to_string(),
                 ))
                 .await;
@@ -1175,14 +1173,98 @@ async fn connect_http_mcp_server(
     Ok(conn)
 }
 
-/// Build an expanded PATH that includes common tool locations
+/// Wait for the browser to be redirected back to our loopback listener after
+/// Google OAuth.  The backend appends `?token={one_time_token}` to the URI.
+async fn await_google_callback(
+    listener: tokio::net::TcpListener,
+) -> Result<String, String> {
+    let (mut stream, peer_addr) = listener
+        .accept()
+        .await
+        .map_err(|e| format!("Did not receive a response from the browser: {}", e))?;
+
+    if !peer_addr.ip().is_loopback() {
+        return Err("Rejected non-loopback OAuth callback.".to_string());
+    }
+
+    let mut buf = vec![0u8; 8192];
+    let n = stream
+        .read(&mut buf)
+        .await
+        .map_err(|e| format!("Could not read browser response: {}", e))?;
+    let request = String::from_utf8_lossy(&buf[..n]);
+
+    let path = request
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("");
+    let query = path.split('?').nth(1).unwrap_or("");
+
+    for param in query.split('&') {
+        if let Some(err) = param.strip_prefix("error=") {
+            let decoded = urlencoding::decode(err)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|_| err.to_string());
+            let _ = stream
+                .write_all(google_error_html().as_bytes())
+                .await;
+            return Err(format!("Sign-in was cancelled or access was denied: {}", decoded));
+        }
+    }
+
+    let token = query
+        .split('&')
+        .find(|p| p.starts_with("token="))
+        .and_then(|p| p.strip_prefix("token="))
+        .map(|t| {
+            urlencoding::decode(t)
+                .map(|d| d.to_string())
+                .unwrap_or_else(|_| t.to_string())
+        })
+        .ok_or_else(|| "No login token received from the Google callback.".to_string())?;
+
+    let _ = stream.write_all(google_success_html().as_bytes()).await;
+    Ok(token)
+}
+
+fn google_success_html() -> &'static str {
+    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n\
+     <html><head><meta charset=\"utf-8\">\
+     <style>body{font-family:-apple-system,sans-serif;background:#f5f5f7;\
+     display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}\
+     .card{background:#fff;border-radius:16px;padding:48px 40px;max-width:420px;\
+     text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08);}\
+     h2{margin:0 0 12px;color:#1d1d1f;font-size:22px;font-weight:600;}\
+     p{color:#6e6e73;font-size:15px;line-height:1.5;margin:0;}\
+     </style></head><body><div class=\"card\">\
+     <h2>Connected to Google</h2>\
+     <p>You can close this tab and return to Rong-E.</p>\
+     </div></body></html>"
+}
+
+fn google_error_html() -> &'static str {
+    "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n\
+     <html><head><meta charset=\"utf-8\">\
+     <style>body{font-family:-apple-system,sans-serif;background:#f5f5f7;\
+     display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}\
+     .card{background:#fff;border-radius:16px;padding:48px 40px;max-width:420px;\
+     text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08);}\
+     h2{margin:0 0 12px;color:#1d1d1f;font-size:22px;font-weight:600;}\
+     p{color:#6e6e73;font-size:15px;line-height:1.5;margin:0;}\
+     </style></head><body><div class=\"card\">\
+     <h2>Sign-in Cancelled</h2>\
+     <p>You can close this tab and try again from the app.</p>\
+     </div></body></html>"
+}
+
 fn build_expanded_path() -> String {
     let home = dirs::home_dir().unwrap_or_default();
     let home_str = home.to_string_lossy();
-
     let mut extra_paths: Vec<String> = Vec::new();
 
-    // nvm node versions
     let nvm_dir = home.join(".nvm").join("versions").join("node");
     if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
         for entry in entries.flatten() {
@@ -1193,14 +1275,13 @@ fn build_expanded_path() -> String {
         }
     }
 
-    // Common tool directories
     let common_dirs = [
-        format!("{}/.local/bin", home_str),           // pipx, uv
-        "/opt/homebrew/bin".to_string(),               // Homebrew (Apple Silicon)
-        "/usr/local/bin".to_string(),                  // Homebrew (Intel)
-        "/opt/local/bin".to_string(),                  // MacPorts
-        format!("{}/.cargo/bin", home_str),            // Rust/cargo
-        format!("{}/go/bin", home_str),                // Go
+        format!("{}/.local/bin", home_str),
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+        "/opt/local/bin".to_string(),
+        format!("{}/.cargo/bin", home_str),
+        format!("{}/go/bin", home_str),
     ];
 
     for dir in &common_dirs {
@@ -1209,29 +1290,22 @@ fn build_expanded_path() -> String {
         }
     }
 
-    // Append the existing PATH
     let existing = std::env::var("PATH").unwrap_or_default();
     if !existing.is_empty() {
         extra_paths.push(existing);
     }
-
     extra_paths.join(":")
 }
 
-/// Resolve a command name to its full path using the expanded PATH
 fn resolve_command(command: &str, path: &str) -> String {
-    // If already an absolute path, return as-is
     if command.starts_with('/') {
         return command.to_string();
     }
-
     for dir in path.split(':') {
         let candidate = std::path::Path::new(dir).join(command);
         if candidate.is_file() {
             return candidate.to_string_lossy().to_string();
         }
     }
-
-    // Fallback to the command name itself
     command.to_string()
 }

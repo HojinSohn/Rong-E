@@ -78,19 +78,29 @@ enum LLMProvider: String, CaseIterable, Codable {
     case openai = "openai"
     case ollama = "ollama"
     case anthropic = "anthropic"
+    case openrouter = "openrouter"
 
     var displayName: String {
         switch self {
-        case .gemini: return "Google Gemini"
+        case .gemini: return "Gemini"
         case .openai: return "OpenAI"
         case .ollama: return "Ollama"
         case .anthropic: return "Anthropic"
+        case .openrouter: return "OpenRouter"
         }
     }
 
+    /// True when the provider authenticates via an OAuth flow instead of a
+    /// manually entered API key.
+    var usesOAuth: Bool {
+        self == .openrouter
+    }
+
+    /// True when a manual API key is required.  OAuth providers and local
+    /// providers (Ollama) return false.
     var requiresAPIKey: Bool {
         switch self {
-        case .ollama: return false
+        case .ollama, .openrouter: return false
         default: return true
         }
     }
@@ -101,6 +111,7 @@ enum LLMProvider: String, CaseIterable, Codable {
         case .openai: return "gpt-4o-mini"
         case .ollama: return "llama3"
         case .anthropic: return "claude-sonnet-4-20250514"
+        case .openrouter: return "openai/gpt-4o-mini"
         }
     }
 
@@ -110,6 +121,7 @@ enum LLMProvider: String, CaseIterable, Codable {
         case .openai: return "Enter OpenAI API key..."
         case .ollama: return "No API key required"
         case .anthropic: return "Enter Anthropic API key..."
+        case .openrouter: return "Connect via OAuth — no key needed"
         }
     }
 
@@ -151,6 +163,16 @@ enum LLMProvider: String, CaseIterable, Codable {
                 "claude-3-5-haiku-20241022",
                 "claude-3-opus-20240229"
             ]
+        case .openrouter:
+            return [
+                "openai/gpt-4o-mini",
+                "openai/gpt-4o",
+                "anthropic/claude-3.5-sonnet",
+                "anthropic/claude-3-haiku",
+                "google/gemini-flash-1.5",
+                "meta-llama/llama-3.1-8b-instruct:free",
+                "mistralai/mistral-7b-instruct:free"
+            ]
         }
     }
 }
@@ -162,6 +184,7 @@ class AppContext: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var shouldAnimate: Bool = false
     @Published var isGoogleConnected: Bool = false
+    @Published var isOpenRouterConnected: Bool = false
     @Published var hasRunStartupWorkflow: Bool = false
     @Published var startUpWorkFinished: Bool = false
     @Published var hasBootAnimated: Bool = false
@@ -230,6 +253,7 @@ class AppContext: ObservableObject {
     @Published var overlayHeight: CGFloat = 0
     @Published var aiApiKey: String = ""
     @Published var credentialsDirectory: URL = FileManager.default.temporaryDirectory // Placeholder
+    @Published var backendUrl: String = "https://api.rong-e.app"
 
     // --- Agent State ---
     @Published var reasoningSteps: [ReasoningStep] = [
@@ -412,6 +436,7 @@ class AppContext: ObservableObject {
         UserDefaults.standard.set(themeAccentColorName, forKey: "themeAccentColorName")
         UserDefaults.standard.set(themeChatFontColorName, forKey: "themeChatFontColorName")
         UserDefaults.standard.set(themeWindowOpacity, forKey: "themeWindowOpacity")
+        UserDefaults.standard.set(backendUrl, forKey: "backendUrl")
     }
 
     /// Save API key for a specific provider
@@ -486,6 +511,9 @@ class AppContext: ObservableObject {
         }
         if UserDefaults.standard.object(forKey: "themeWindowOpacity") != nil {
             self.themeWindowOpacity = UserDefaults.standard.double(forKey: "themeWindowOpacity")
+        }
+        if let savedBackendUrl = UserDefaults.standard.string(forKey: "backendUrl"), !savedBackendUrl.isEmpty {
+            self.backendUrl = savedBackendUrl
         }
     }
     

@@ -2670,47 +2670,45 @@ struct HeaderView: View {
             Spacer()
 
             // --- Center: Action Buttons ---
-            if !fullChatViewMode {
-                HStack(spacing: 3) {
-                    HeaderButton(
-                        icon: "icloud.fill",
-                        label: "Google",
-                        action: { windowCoordinator.openGoogleService() }
-                    )
+            HStack(spacing: 3) {
+                HeaderButton(
+                    icon: "icloud.fill",
+                    label: "Google",
+                    action: { windowCoordinator.openGoogleService() }
+                )
 
-                    HeaderButton(
-                        icon: "bolt.horizontal.fill",
-                        label: "Startup",
-                        action: { windowCoordinator.openWorkflowSettings() }
-                    )
+                HeaderButton(
+                    icon: "bolt.horizontal.fill",
+                    label: "Startup",
+                    action: { windowCoordinator.openWorkflowSettings() }
+                )
 
-                    HeaderButton(
-                        icon: "slider.horizontal.3",
-                        label: "Settings",
-                        action: { windowCoordinator.openSettings() }
-                    )
+                HeaderButton(
+                    icon: "slider.horizontal.3",
+                    label: "Settings",
+                    action: { windowCoordinator.openSettings() }
+                )
 
-                    HeaderButton(
-                        icon: "arrow.triangle.2.circlepath",
-                        label: "Reset",
-                        accentOnHover: .jarvisAmber,
-                        action: {
-                            appContext.clearSession()
-                            socketClient.sendResetSession()
-                            configManager.sendConfigToPython()
-                        }
-                    )
+                HeaderButton(
+                    icon: "arrow.triangle.2.circlepath",
+                    label: "Reset",
+                    accentOnHover: .jarvisAmber,
+                    action: {
+                        appContext.clearSession()
+                        socketClient.sendResetSession()
+                        configManager.sendConfigToPython()
+                    }
+                )
 
-                    HeaderButton(
-                        icon: "bubble.left.and.text.bubble.right",
-                        label: "Chat",
-                        action: { toggleMessageView() }
-                    )
-                }
-                .transition(.opacity)
-
-                Spacer()
+                HeaderButton(
+                    icon: "bubble.left.and.text.bubble.right",
+                    label: "Chat",
+                    action: { toggleMessageView() }
+                )
             }
+            .transition(.opacity)
+
+            Spacer()
 
             // --- Right: Window Controls ---
             HStack(spacing: 4) {

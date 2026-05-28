@@ -80,6 +80,9 @@ class ServerManager: ObservableObject {
         if env["OLLAMA_API_BASE_URL"] == nil {
             env["OLLAMA_API_BASE_URL"] = "http://localhost:11434"
         }
+        // Pass the configured backend URL so the Rust subprocess can read it
+        // at startup (shell env vars are not inherited from the user's shell)
+        env["RONG_E_BACKEND_URL"] = AppContext.shared.backendUrl
         newProcess.environment = env
 
         // 3. Pipe stdout/stderr to Xcode console; parse PORT= announcement

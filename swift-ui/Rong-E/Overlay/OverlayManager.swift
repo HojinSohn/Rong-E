@@ -184,16 +184,16 @@ class WindowCoordinator: ObservableObject {
 
     func openGoogleService() {
         let id = "google_service_window"
-        
+
         // 1. Check if already open (singleton behavior for Google Service)
         if let existing = controllers[id] {
             existing.window?.makeKeyAndOrderFront(nil)
             return
         }
-        
+
         // 2. Configure View
         let contentView = GoogleServiceView(windowID: id)
-        
+
         // 3. Configure Controller
         let controller = DynamicWindowController(
             id: id,
@@ -201,15 +201,15 @@ class WindowCoordinator: ObservableObject {
             size: CGSize(width: 500, height: 400),
             location: nil
         )
-        
+
         // 4. Store and Show
         controllers[id] = controller
         controller.showWindow(self)
-        
+
         // 5. Cleanup Hook
         NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification, 
-            object: controller.window, 
+            forName: NSWindow.willCloseNotification,
+            object: controller.window,
             queue: .main
         ) { [weak self] _ in
             self?.controllers.removeValue(forKey: id)

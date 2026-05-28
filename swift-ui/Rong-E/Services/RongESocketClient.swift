@@ -34,7 +34,8 @@ struct AgentMessage: Codable {
         case "tool_result":
             let val = try container.decode(ToolResultContent.self, forKey: .content)
             content = .toolResult(val)
-        case "credentials_success", "credentials_error", "oauth_url", "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error", "builtin_warning":
+        case "credentials_success", "credentials_error", "credentials_revoked", "oauth_url", "session_token", "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error",
+             "openrouter_oauth_url", "openrouter_oauth_success", "openrouter_oauth_error", "builtin_warning":
             // Handle simple string content for status messages
             if let stringContent = try? container.decode(String.self, forKey: .content) {
                 content = .response(ResponseContent(text: stringContent, images: []))
@@ -158,7 +159,6 @@ struct ImageData: Codable {
 
 enum CredentialDataType: String {
     case apiKey = "api_key"
-    case credentials = "credentials"
     case revoke_credentials = "revoke_credentials"
     case mcpConfig = "mcp_config"
 }
@@ -208,6 +208,11 @@ class SocketClient: ObservableObject, @unchecked Sendable {
     var onMemoryContent: ((String) -> Void)?
     var onMemorySaved: ((Bool, String) -> Void)?  // (success, message)
     var onBuiltinWarning: ((String) -> Void)?  // server name
+    var onSessionToken: ((String) -> Void)?
+
+    // OpenRouter OAuth
+    var onOpenRouterOAuthURL: ((String) -> Void)?
+    var onOpenRouterOAuthResult: ((Bool, String) -> Void)?
 
     func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
@@ -420,6 +425,14 @@ class SocketClient: ObservableObject, @unchecked Sendable {
                 if case .response(let content) = parsedMsg.content {
                     self.onCredentialsError?(content.text)
                 }
+            case "credentials_revoked":
+                if case .response(let content) = parsedMsg.content {
+                    self.onCredentialsError?(content.text)
+                }
+            case "session_token":
+                if case .response(let content) = parsedMsg.content {
+                    self.onSessionToken?(content.text)
+                }
             case "oauth_url":
                 if case .response(let content) = parsedMsg.content {
                     self.onOAuthURL?(content.text)
@@ -450,6 +463,21 @@ class SocketClient: ObservableObject, @unchecked Sendable {
                 } else {
                     self.onLLMSetResult?(false, "Unknown error")
                 }
+
+            // OpenRouter OAuth
+            case "openrouter_oauth_url":
+                if case .response(let content) = parsedMsg.content {
+                    self.onOpenRouterOAuthURL?(content.text)
+                }
+            case "openrouter_oauth_success":
+                if case .response(let content) = parsedMsg.content {
+                    self.onOpenRouterOAuthResult?(true, content.text)
+                }
+            case "openrouter_oauth_error":
+                if case .response(let content) = parsedMsg.content {
+                    self.onOpenRouterOAuthResult?(false, content.text)
+                }
+
             default:
                 print("❓ Unhandled type: \(parsedMsg.type)")
             }
@@ -566,17 +594,38 @@ class SocketClient: ObservableObject, @unchecked Sendable {
         }
     }
 
-    func sendStartOAuth(dirPath: String) {
-        let json: [String: String] = [
-            "data_type": "start_oauth",
-            "dir_path": dirPath
-        ]
+    func sendSetBackendUrl(_ url: String) {
+        let json: [String: String] = ["data_type": "set_backend_url", "url": url]
         if let jsonData = try? JSONEncoder().encode(json),
            let jsonString = String(data: jsonData, encoding: .utf8) {
-            print("📤 Starting OAuth flow for dir: \(dirPath)")
+            print("📤 Setting backend URL: \(url)")
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Set Backend URL Send Error: \(error)") }
+            }
+        }
+    }
+
+    func sendStartOAuth() {
+        let json: [String: String] = ["data_type": "start_oauth"]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Starting OAuth flow via backend")
             let message = URLSessionWebSocketTask.Message.string(jsonString)
             webSocketTask?.send(message) { error in
                 if let error = error { print("❌ Start OAuth Send Error: \(error)") }
+            }
+        }
+    }
+
+    func sendRestoreSession(token: String) {
+        let json: [String: String] = ["data_type": "restore_session", "session_token": token]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Restoring Google session")
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Restore Session Send Error: \(error)") }
             }
         }
     }
@@ -681,6 +730,21 @@ class SocketClient: ObservableObject, @unchecked Sendable {
             if let error = error { print("❌ Composio disconnect error: \(error)") }
         }
     }
+
+    // MARK: - OpenRouter OAuth
+
+    func sendStartOpenRouterOAuth() {
+        let json: [String: String] = ["data_type": "start_openrouter_oauth"]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Starting OpenRouter PKCE OAuth flow")
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Start OpenRouter OAuth Error: \(error)") }
+            }
+        }
+    }
+
 }
 
 // MARK: - Helper for decoding dynamic JSON values
