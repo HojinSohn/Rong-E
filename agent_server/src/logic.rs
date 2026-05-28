@@ -1143,12 +1143,21 @@ async fn connect_http_mcp_server(
 
     let transport = StreamableHttpClientTransport::from_config(config);
 
-    let service = ().serve(transport).await.map_err(|e| format!("{:?}", e))?;
+    let service = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        ().serve(transport),
+    )
+    .await
+    .map_err(|_| "Connection timed out after 30s".to_string())?
+    .map_err(|e| format!("MCP handshake failed: {:?}", e))?;
 
-    let tool_list = service
-        .list_tools(Default::default())
-        .await
-        .map_err(|e| format!("{:?}", e))?;
+    let tool_list = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        service.list_tools(Default::default()),
+    )
+    .await
+    .map_err(|_| "list_tools timed out after 15s".to_string())?
+    .map_err(|e| format!("list_tools failed: {:?}", e))?;
 
     let conn = McpConnection {
         tools: tool_list.tools,
