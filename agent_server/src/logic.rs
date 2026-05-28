@@ -12,6 +12,35 @@ use rmcp::transport::TokioChildProcess;
 use rmcp::ServiceExt;
 use serde_json::json;
 
+struct BuiltinServerDef {
+    name: &'static str,
+    command: &'static str,
+    args_template: &'static [&'static str],
+}
+
+const BUILTIN_SERVERS: &[BuiltinServerDef] = &[
+    BuiltinServerDef {
+        name: "filesystem",
+        command: "npx",
+        args_template: &["-y", "@modelcontextprotocol/server-filesystem"],
+    },
+    BuiltinServerDef {
+        name: "fetch",
+        command: "npx",
+        args_template: &["-y", "@modelcontextprotocol/server-fetch"],
+    },
+    BuiltinServerDef {
+        name: "shell",
+        command: "npx",
+        args_template: &["-y", "@modelcontextprotocol/server-shell"],
+    },
+    BuiltinServerDef {
+        name: "memory",
+        command: "npx",
+        args_template: &["-y", "@modelcontextprotocol/server-memory"],
+    },
+];
+
 /// Extract a human-readable message from a rig/API error string.
 /// Rig wraps API errors as e.g. "status code 404 Not Found with message: {...}".
 /// This function tries several strategies to pull out just the inner message text.
@@ -751,6 +780,156 @@ async fn handle_config(
                         .await;
                 }
             }
+        }
+
+        "set_builtin_servers" => {
+            println!("🔧 set_builtin_servers received");
+
+            // Parse enabled server names
+            let enabled: Vec<String> = data["enabled"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            // Parse filesystem paths, defaulting to $HOME
+            let filesystem_paths: Vec<String> = {
+                let from_data: Vec<String> = data["filesystem_paths"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if from_data.is_empty() {
+                    vec![std::env::var("HOME").unwrap_or_else(|_| "/".to_string())]
+                } else {
+                    from_data
+                }
+            };
+
+            // Stop any currently running built-in servers NOT in the new enabled list
+            {
+                let mut s = state.lock().await;
+                let to_stop: Vec<String> = s
+                    .builtin_servers
+                    .keys()
+                    .filter(|name| !enabled.contains(name))
+                    .cloned()
+                    .collect();
+                for name in to_stop {
+                    if let Some(conn) = s.builtin_servers.remove(&name) {
+                        println!("🛑 Stopping built-in server: {}", name);
+                        let _ = conn._service.cancel().await;
+                    }
+                }
+            }
+
+            let expanded_path = build_expanded_path();
+            let mut statuses: Vec<serde_json::Value> = Vec::new();
+
+            for name in &enabled {
+                // Skip if already running
+                if state.lock().await.builtin_servers.contains_key(name) {
+                    statuses.push(json!({"name": name, "status": "connected", "error": null}));
+                    continue;
+                }
+
+                // Look up the server definition
+                let def = match BUILTIN_SERVERS.iter().find(|d| d.name == name.as_str()) {
+                    Some(d) => d,
+                    None => {
+                        println!("❌ Unknown built-in server: {}", name);
+                        statuses.push(
+                            json!({"name": name, "status": "error", "error": format!("Unknown built-in server: {}", name)}),
+                        );
+                        continue;
+                    }
+                };
+
+                // Check that npx (Node.js) is available
+                let resolved = resolve_command(def.command, &expanded_path);
+                if resolved == def.command {
+                    println!("❌ {} not found on PATH for server '{}'", def.command, name);
+                    statuses.push(
+                        json!({"name": name, "status": "error", "error": "Node.js not installed"}),
+                    );
+                    continue;
+                }
+
+                // Build args: template args + filesystem_paths for "filesystem" server
+                let mut args: Vec<String> =
+                    def.args_template.iter().map(|s| s.to_string()).collect();
+                if name == "filesystem" {
+                    args.extend(filesystem_paths.iter().cloned());
+                }
+
+                println!("🔗 Starting built-in MCP server '{}': {} {:?}", name, resolved, args);
+
+                let mut cmd = tokio::process::Command::new(&resolved);
+                cmd.args(&args);
+                cmd.env("PATH", &expanded_path);
+
+                let transport = match TokioChildProcess::new(cmd) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        println!("❌ Failed to spawn built-in server '{}': {}", name, e);
+                        statuses.push(
+                            json!({"name": name, "status": "error", "error": e.to_string()}),
+                        );
+                        continue;
+                    }
+                };
+
+                let service = match ().serve(transport).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("❌ Failed to connect to built-in server '{}': {:?}", name, e);
+                        statuses.push(
+                            json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
+                        );
+                        continue;
+                    }
+                };
+
+                let tool_list = match service.list_tools(Default::default()).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        println!("❌ Failed to list tools from built-in server '{}': {:?}", name, e);
+                        statuses.push(
+                            json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
+                        );
+                        continue;
+                    }
+                };
+
+                println!(
+                    "✅ Built-in MCP '{}' connected with {} tools",
+                    name,
+                    tool_list.tools.len()
+                );
+
+                let conn = McpConnection {
+                    tools: tool_list.tools,
+                    peer: service.peer().clone(),
+                    _service: service,
+                };
+
+                statuses.push(json!({"name": name, "status": "connected", "error": null}));
+                state.lock().await.builtin_servers.insert(name.clone(), conn);
+            }
+
+            // Send server statuses for all requested servers
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "mcp_server_status", "content": {"servers": statuses}})
+                        .to_string(),
+                ))
+                .await;
         }
 
         "set_composio" => {
