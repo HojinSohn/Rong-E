@@ -5,6 +5,9 @@ use futures::stream::SplitSink;
 use futures::SinkExt;
 use rig::message::{AssistantContent, Message as RigMessage, UserContent};
 use rig::OneOrMany;
+use rmcp::transport::streamable_http_client::{
+    StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
+};
 use rmcp::transport::TokioChildProcess;
 use rmcp::ServiceExt;
 use serde_json::json;
@@ -284,96 +287,141 @@ async fn handle_config(
             let mut statuses: Vec<serde_json::Value> = Vec::new();
 
             for (name, server_config) in servers {
-                let command = match server_config["command"].as_str() {
-                    Some(c) => c,
-                    None => {
-                        statuses.push(
-                            json!({"name": name, "status": "error", "error": "Missing command"}),
-                        );
-                        continue;
-                    }
+                // Prefix reserved built-in server names to avoid collisions
+                let reserved = ["filesystem", "fetch", "shell", "memory"];
+                let name = if reserved.contains(&name.as_str()) {
+                    format!("custom:{}", name)
+                } else {
+                    name.clone()
                 };
 
-                let args: Vec<String> = server_config["args"]
-                    .as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                let transport_type = server_config["transport"].as_str().unwrap_or("stdio");
 
-                println!("🔗 Starting MCP server '{}': {} {:?}", name, command, args);
+                if transport_type == "http" {
+                    // --- HTTP/SSE transport path ---
+                    let url = match server_config["url"].as_str() {
+                        Some(u) => u.to_string(),
+                        None => {
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": "Missing url for HTTP transport"}),
+                            );
+                            continue;
+                        }
+                    };
+                    let api_key = server_config["api_key"].as_str().unwrap_or("");
 
-                // Build expanded PATH so we can find npx, node, python, etc.
-                let expanded_path = build_expanded_path();
+                    println!("🔗 Connecting to HTTP MCP server '{}': {}", name, url);
 
-                // Resolve command to full path
-                let resolved_command = resolve_command(command, &expanded_path);
-                println!("   Resolved command: {}", resolved_command);
-
-                // Build command
-                let mut cmd = tokio::process::Command::new(&resolved_command);
-                cmd.args(&args);
-                cmd.env("PATH", &expanded_path);
-
-                // Set env if provided
-                if let Some(env) = server_config["env"].as_object() {
-                    for (k, v) in env {
-                        if let Some(val) = v.as_str() {
-                            cmd.env(k, val);
+                    match connect_http_mcp_server(&url, api_key).await {
+                        Ok(conn) => {
+                            println!(
+                                "✅ MCP '{}' connected with {} tools",
+                                name,
+                                conn.tools.len()
+                            );
+                            statuses.push(json!({"name": name, "status": "connected", "error": null}));
+                            state.lock().await.mcp_connections.insert(name.clone(), conn);
+                        }
+                        Err(e) => {
+                            println!("❌ Failed to connect HTTP MCP '{}': {}", name, e);
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": e}),
+                            );
                         }
                     }
+                } else {
+                    // --- stdio (child process) transport path ---
+                    let command = match server_config["command"].as_str() {
+                        Some(c) => c,
+                        None => {
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": "Missing command"}),
+                            );
+                            continue;
+                        }
+                    };
+
+                    let args: Vec<String> = server_config["args"]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    println!("🔗 Starting MCP server '{}': {} {:?}", name, command, args);
+
+                    // Build expanded PATH so we can find npx, node, python, etc.
+                    let expanded_path = build_expanded_path();
+
+                    // Resolve command to full path
+                    let resolved_command = resolve_command(command, &expanded_path);
+                    println!("   Resolved command: {}", resolved_command);
+
+                    // Build command
+                    let mut cmd = tokio::process::Command::new(&resolved_command);
+                    cmd.args(&args);
+                    cmd.env("PATH", &expanded_path);
+
+                    // Set env if provided
+                    if let Some(env) = server_config["env"].as_object() {
+                        for (k, v) in env {
+                            if let Some(val) = v.as_str() {
+                                cmd.env(k, val);
+                            }
+                        }
+                    }
+
+                    // Start the MCP server via child process
+                    let transport = match TokioChildProcess::new(cmd) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            println!("❌ Failed to spawn '{}': {}", name, e);
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": e.to_string()}),
+                            );
+                            continue;
+                        }
+                    };
+
+                    let service = match ().serve(transport).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            println!("❌ Failed to connect to '{}': {:?}", name, e);
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
+                            );
+                            continue;
+                        }
+                    };
+
+                    let tool_list = match service.list_tools(Default::default()).await {
+                        Ok(t) => t,
+                        Err(e) => {
+                            println!("❌ Failed to list tools from '{}': {:?}", name, e);
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
+                            );
+                            continue;
+                        }
+                    };
+
+                    println!(
+                        "✅ MCP '{}' connected with {} tools",
+                        name,
+                        tool_list.tools.len()
+                    );
+
+                    let conn = McpConnection {
+                        tools: tool_list.tools,
+                        peer: service.peer().clone(),
+                        _service: service,
+                    };
+
+                    statuses.push(json!({"name": name, "status": "connected", "error": null}));
+                    state.lock().await.mcp_connections.insert(name.clone(), conn);
                 }
-
-                // Start the MCP server via child process
-                let transport = match TokioChildProcess::new(cmd) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        println!("❌ Failed to spawn '{}': {}", name, e);
-                        statuses.push(
-                            json!({"name": name, "status": "error", "error": e.to_string()}),
-                        );
-                        continue;
-                    }
-                };
-
-                let service = match ().serve(transport).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        println!("❌ Failed to connect to '{}': {:?}", name, e);
-                        statuses.push(
-                            json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
-                        );
-                        continue;
-                    }
-                };
-
-                let tool_list = match service.list_tools(Default::default()).await {
-                    Ok(t) => t,
-                    Err(e) => {
-                        println!("❌ Failed to list tools from '{}': {:?}", name, e);
-                        statuses.push(
-                            json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
-                        );
-                        continue;
-                    }
-                };
-
-                println!(
-                    "✅ MCP '{}' connected with {} tools",
-                    name,
-                    tool_list.tools.len()
-                );
-
-                let conn = McpConnection {
-                    tools: tool_list.tools,
-                    peer: service.peer().clone(),
-                    _service: service,
-                };
-
-                statuses.push(json!({"name": name, "status": "connected", "error": null}));
-                state.lock().await.mcp_connections.insert(name.clone(), conn);
             }
 
             // Send server statuses
@@ -838,6 +886,43 @@ async fn handle_chat(
                 .await;
         }
     }
+}
+
+/// Connect to an HTTP/SSE MCP server using the streamable-http transport.
+///
+/// The `Authorization: Bearer <api_key>` header is sent with every request when
+/// `api_key` is non-empty.  The returned `McpConnection` contains the raw tool
+/// list and a peer handle; the caller is responsible for inserting it into
+/// `state.mcp_connections`.
+async fn connect_http_mcp_server(
+    url: &str,
+    api_key: &str,
+) -> Result<McpConnection, String> {
+    let config = {
+        let base = StreamableHttpClientTransportConfig::with_uri(url);
+        if api_key.is_empty() {
+            base
+        } else {
+            base.auth_header(format!("Bearer {}", api_key))
+        }
+    };
+
+    let transport = StreamableHttpClientTransport::from_config(config);
+
+    let service = ().serve(transport).await.map_err(|e| format!("{:?}", e))?;
+
+    let tool_list = service
+        .list_tools(Default::default())
+        .await
+        .map_err(|e| format!("{:?}", e))?;
+
+    let conn = McpConnection {
+        tools: tool_list.tools,
+        peer: service.peer().clone(),
+        _service: service,
+    };
+
+    Ok(conn)
 }
 
 /// Build an expanded PATH that includes common tool locations
