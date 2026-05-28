@@ -47,6 +47,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     // Set up Google Auth first (checks for existing credentials)
                     GoogleAuthManager.shared.startupCheck()
 
+                    // Restore built-in server config
+                    let builtinManager = BuiltinServerManager.shared
+                    if !builtinManager.config.enabledServers.isEmpty {
+                        SocketClient.shared.sendBuiltinServersConfig(builtinManager.config)
+                    }
+
+                    // Restore Composio connection
+                    if let composioKey = KeychainHelper.load(forKey: "composio_api_key"), !composioKey.isEmpty {
+                        SocketClient.shared.sendComposioKey(composioKey)
+                    }
+
                     // Sync MCP config
                     AppContext.shared.addBootLog("TOOLS: LOADING MCP SERVERS...")
                     MCPConfigManager.shared.sendConfigToPython()
