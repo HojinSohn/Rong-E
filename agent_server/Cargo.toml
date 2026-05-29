@@ -14,7 +14,7 @@ tower-http = { version = "0.5", features = ["trace", "cors"] }
 rig-core = { version = "0.31.0", features = ["rmcp"] }
 futures = "0.3.32"
 base64 = "0.22"
-rmcp = { version = "0.13", features = ["client", "server", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "0.13", features = ["client", "server", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest", "reqwest"] }
 thiserror = "2"
 libc = "0.2"
 chrono = "0.4"
