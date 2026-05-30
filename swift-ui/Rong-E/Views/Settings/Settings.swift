@@ -643,96 +643,19 @@ struct LLMModelSelector: View {
 // MARK: - MCP Settings View
 struct MCPSettingsView: View {
     @ObservedObject var configManager = MCPConfigManager.shared
-    @ObservedObject var builtinManager = BuiltinServerManager.shared
     @ObservedObject private var _theme = AppContext.shared
     @State private var showFileImporter = false
     @State private var showAddServerSheet = false
     @State private var showJSONPasteSheet = false
     @State private var jsonPasteText = ""
-    @State private var showShellWarning = false
     @State private var composioKeyInput = ""
     @State private var isComposioConnecting = false
 
-    private let shellAckKey = "shell_server_warning_acknowledged"
     private let composioKeychainKey = "composio_api_key"
-
-    private let builtinServers: [(id: String, label: String)] = [
-        ("filesystem", "FILESYSTEM"), ("fetch", "WEB FETCH"),
-        ("shell", "SHELL"), ("memory", "MEMORY"),
-    ]
 
     var body: some View {
         ScrollView {
         VStack(alignment: .leading, spacing: 15) {
-
-            // ── Built-in Servers ──────────────────────────────────
-            Text("BUILT-IN SERVERS")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(.jarvisBlue.opacity(0.7))
-                .tracking(1)
-
-            VStack(spacing: 6) {
-                ForEach(builtinServers, id: \.id) { server in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Circle()
-                                .fill(builtinStatusColor(server.id))
-                                .frame(width: 6, height: 6)
-                            Text(server.label)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.jarvisTextPrimary)
-                            Spacer()
-                            Toggle("", isOn: Binding(
-                                get: { builtinManager.isEnabled(server.id) },
-                                set: { on in
-                                    if server.id == "shell" && on && !UserDefaults.standard.bool(forKey: shellAckKey) {
-                                        showShellWarning = true
-                                    } else {
-                                        builtinManager.setEnabled(server.id, on)
-                                    }
-                                }
-                            ))
-                            .labelsHidden()
-                            .controlSize(.small)
-                        }
-                        if server.id == "filesystem" && builtinManager.isEnabled("filesystem") {
-                            filesystemPathPicker
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.3))
-                    .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.2), lineWidth: 1))
-                }
-            }
-            .alert("Shell Server Warning", isPresented: $showShellWarning) {
-                Button("Enable", role: .destructive) {
-                    UserDefaults.standard.set(true, forKey: shellAckKey)
-                    builtinManager.setEnabled("shell", true)
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("The shell server lets Rong-E run terminal commands on your Mac. Only enable this if you trust your prompts.")
-            }
-
-            // Node.js missing banner
-            if hasNodeError {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.jarvisOrange)
-                    Text("Node.js required for built-in servers")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(.jarvisOrange)
-                    Spacer()
-                    Link("INSTALL →", destination: URL(string: "https://nodejs.org")!)
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(.jarvisBlue)
-                }
-                .padding(8)
-                .background(Color.jarvisOrange.opacity(0.08))
-                .overlay(Rectangle().stroke(Color.jarvisOrange.opacity(0.3), lineWidth: 1))
-            }
-
-            Divider().background(Color.jarvisBlue.opacity(0.3))
 
             // ── Composio ─────────────────────────────────────────
             HStack {
@@ -920,53 +843,6 @@ struct MCPSettingsView: View {
     }
 
     // MARK: - Helpers
-
-    private var filesystemPathPicker: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            ForEach(builtinManager.config.filesystemPaths, id: \.self) { path in
-                HStack {
-                    Text(path)
-                        .font(.system(size: 8, design: .monospaced))
-                        .foregroundColor(.jarvisTextDim)
-                        .lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    Button { builtinManager.setFilesystemPaths(builtinManager.config.filesystemPaths.filter { $0 != path }) } label: {
-                        Image(systemName: "minus.circle").foregroundColor(.jarvisOrange).font(.system(size: 10))
-                    }.buttonStyle(.plain)
-                }
-            }
-            Button {
-                let panel = NSOpenPanel()
-                panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false
-                if panel.runModal() == .OK, let url = panel.url {
-                    var paths = builtinManager.config.filesystemPaths
-                    if !paths.contains(url.path) { paths.append(url.path) }
-                    builtinManager.setFilesystemPaths(paths)
-                }
-            } label: {
-                Label("ADD PATH", systemImage: "plus.circle")
-                    .font(.system(size: 8, design: .monospaced))
-                    .foregroundColor(.jarvisBlue)
-            }.buttonStyle(.plain)
-        }
-        .padding(.leading, 14)
-    }
-
-    private var hasNodeError: Bool {
-        builtinServers.contains {
-            if case .error(let msg) = configManager.serverStatuses[$0.id] { return msg.contains("Node.js") }
-            return false
-        }
-    }
-
-    private func builtinStatusColor(_ name: String) -> Color {
-        switch configManager.serverStatuses[name] {
-        case .connected: return .jarvisGreen
-        case .error: return .jarvisOrange
-        case .connecting: return .jarvisBlue
-        default: return .jarvisTextDim.opacity(0.4)
-        }
-    }
 
     private var composioStatusDot: some View {
         Group {
