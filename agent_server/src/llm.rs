@@ -229,16 +229,28 @@ async fn chat_with_agent(
         }
     };
 
-    match agent.chat(new_message, history).await {
-        Ok(text) => Ok(text),
-        Err(e) => {
-            let err_str = e.to_string();
-            if err_str.contains("empty") {
-                println!("⚠️ LLM returned empty response after tool execution (rig-core bug)");
-                Ok("Done! I've completed everything you asked for. Let me know if there's anything else.".to_string())
-            } else {
-                Err(err_str)
-            }
+    // Clone history so we can retry if the agent returns an empty synthesis.
+    let history_retry = history.clone();
+
+    let needs_retry = |result: &Result<String, String>| -> bool {
+        match result {
+            Ok(text) => text.trim().is_empty(),
+            Err(e) => e.contains("empty"),
         }
+    };
+
+    let first = agent.chat(new_message, history).await.map_err(|e| e.to_string());
+
+    if !needs_retry(&first) {
+        return first;
     }
+
+    println!("⚠️ LLM returned empty response after tool execution — retrying for synthesis");
+    let retry_message = RigMessage::User {
+        content: OneOrMany::one(UserContent::text(
+            "You just executed one or more tools. Now write your complete response. \
+             Include the actual content you retrieved — do not say 'Done' or leave the response empty.",
+        )),
+    };
+    agent.chat(retry_message, history_retry).await.map_err(|e| e.to_string())
 }
