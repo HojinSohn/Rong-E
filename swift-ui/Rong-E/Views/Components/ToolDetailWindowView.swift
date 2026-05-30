@@ -29,21 +29,17 @@ struct ToolDetailWindowView: View {
         return dict.keys.sorted { a, b in
             if a == "base" || a == "built-in" { return true }
             if b == "base" || b == "built-in" { return false }
-            if a == "google" { return true }
-            if b == "google" { return false }
             return a < b
         }.map { (key: $0, tools: dict[$0] ?? []) }
     }
 
     private func accentColor(for source: String) -> Color {
         if source == "base" || source == "built-in" { return Color.jarvisCyan }
-        if source == "google" { return Color.jarvisGreen }
         return Color.jarvisOrange
     }
 
     private func sourceIcon(for source: String) -> String {
         if source == "base" || source == "built-in" { return "wrench.and.screwdriver.fill" }
-        if source == "google" { return "globe" }
         return "hammer.fill"
     }
 
@@ -53,7 +49,6 @@ struct ToolDetailWindowView: View {
         case "open_application": return "macwindow"
         case "open_chrome_tab": return "safari"
         case "read_memory", "save_to_memory", "append_to_memory": return "brain.head.profile"
-        case "google_agent": return "envelope"
         case "web_search": return "magnifyingglass"
         case "get_current_date_time": return "clock"
         case "list_directory": return "folder"
@@ -397,7 +392,6 @@ struct ToolDetailWindowView: View {
 
     private func toolType(for tool: ActiveToolInfo) -> String {
         if tool.source == "base" || tool.source == "built-in" { return "Built-in function" }
-        if tool.source == "google" { return "Google sub-agent" }
         if tool.source.hasPrefix("mcp:") { return "MCP server tool" }
         return "External tool"
     }

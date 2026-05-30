@@ -2,20 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// A spreadsheet the user has registered, with an alias the agent can use.
-#[derive(Clone, Debug)]
-pub struct SpreadsheetConfig {
-    pub alias: String,
-    pub sheet_id: String,
-    pub selected_tab: String,
-    pub description: String,
-}
-
-/// A live MCP server connection
+/// A live MCP server connection.
 pub struct McpConnection {
     pub tools: Vec<rmcp::model::Tool>,
     pub peer: rmcp::service::ServerSink,
-    /// Must stay alive to keep the peer valid
+    /// Must stay alive to keep the peer valid.
     pub _service: rmcp::service::RunningService<rmcp::RoleClient, ()>,
 }
 
@@ -23,11 +14,9 @@ pub struct AppState {
     pub current_model: String,
     pub current_provider: String,
     pub api_keys: HashMap<String, String>,
-    pub credentials_file_path: Option<String>,
-    pub token_file_path: Option<String>,
-    pub google_access_token: Option<String>,
     pub mcp_connections: HashMap<String, McpConnection>,
-    pub spreadsheet_configs: Vec<SpreadsheetConfig>,
+    pub builtin_servers: HashMap<String, McpConnection>,
+    pub composio_api_key: Option<String>,
 }
 
 pub type SharedState = Arc<Mutex<AppState>>;
@@ -38,18 +27,17 @@ impl AppState {
             current_model: "gemini-2.5-flash".to_string(),
             current_provider: "gemini".to_string(),
             api_keys: HashMap::new(),
-            credentials_file_path: None,
-            token_file_path: None,
-            google_access_token: None,
             mcp_connections: HashMap::new(),
-            spreadsheet_configs: Vec::new(),
+            builtin_servers: HashMap::new(),
+            composio_api_key: None,
         }
     }
 
-    /// Collect all MCP tools + peers for agent building
+    /// Collect all MCP tools + peers for agent building (user-configured + built-in)
     pub fn all_mcp_tools(&self) -> Vec<(Vec<rmcp::model::Tool>, rmcp::service::ServerSink)> {
         self.mcp_connections
             .values()
+            .chain(self.builtin_servers.values())
             .map(|c| (c.tools.clone(), c.peer.clone()))
             .collect()
     }

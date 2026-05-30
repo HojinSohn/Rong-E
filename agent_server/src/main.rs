@@ -4,10 +4,8 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 // Register modules
-mod google_agent;
-mod google_auth;
-mod google_tools;
 mod llm;
+mod openrouter_auth;
 mod logic;
 mod mcp_proxy;
 mod routes;

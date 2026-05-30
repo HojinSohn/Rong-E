@@ -1,4 +1,3 @@
-use crate::google_agent::GoogleSubAgent;
 use crate::tools::{
     AppendToMemory, Calculator, NotifyingTool, OpenApplication, OpenChromeTab,
     ReadMemory, SaveToMemory, ToolEventSender,
@@ -12,10 +11,7 @@ use rig::{
 use rig::client::CompletionClient;
 use rig::client::ProviderClient;
 
-/// Base personality / instructions for the main Rong-E agent.
-/// Embedded at compile time so the binary is self-contained.
-const SYSTEM_PROMPT_TEMPLATE: &str =
-    include_str!("../prompts/system_prompt.txt");
+const SYSTEM_PROMPT_TEMPLATE: &str = include_str!("../prompts/system_prompt.txt");
 
 #[allow(clippy::too_many_arguments)]
 pub async fn call_llm(
@@ -27,19 +23,15 @@ pub async fn call_llm(
     mcp_tool_sets: Vec<(Vec<rmcp::model::Tool>, rmcp::service::ServerSink)>,
     system_prompt: Option<String>,
     base64_image: Option<String>,
-    google_access_token: Option<String>,
-    spreadsheet_configs: Vec<crate::state::SpreadsheetConfig>,
     tool_tx: ToolEventSender,
     user_name: Option<String>,
 ) -> Result<String, String> {
     let memory_path = crate::tools::default_memory_path();
 
-    // Use the name provided by the Swift UI; fall back to the OS login name.
     let user_name = user_name
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| std::env::var("USER").unwrap_or_else(|_| "User".to_string()));
 
-    // Current date/time injected at call time so the LLM always has it.
     let now = chrono::Local::now();
     let current_datetime = now.format("%A, %B %-d, %Y %H:00").to_string();
 
@@ -47,38 +39,16 @@ pub async fn call_llm(
         .replace("{user_name}", &user_name)
         .replace("{current_datetime}", &current_datetime);
 
-    // Build the spreadsheet context block — alias + description only.
-    // The google_agent sub-agent holds the alias→ID map; this agent only needs
-    // to know which names exist so it can route requests correctly.
-    let spreadsheet_context = if spreadsheet_configs.is_empty() {
-        String::new()
-    } else {
-        let mut lines = vec![
-            "\n\n## Available Google Spreadsheets".to_string(),
-            "The user has registered the following spreadsheets by alias. When they mention one, delegate the task to google_agent using the alias name — the sub-agent will resolve it to the correct spreadsheet ID.".to_string(),
-        ];
-        for cfg in &spreadsheet_configs {
-            let desc_info = if cfg.description.is_empty() {
-                String::new()
-            } else {
-                format!(" — {}", cfg.description)
-            };
-            lines.push(format!("- **{}**{}", cfg.alias, desc_info));
-        }
-        lines.join("\n")
-    };
-
-    // Build the final preamble: base personality → spreadsheet context → optional mode prompt
     let final_prompt = if let Some(ref mode_prompt) = system_prompt {
-        format!("{}{}\n\n{}", base_prompt, spreadsheet_context, mode_prompt)
+        format!("{}\n\n{}", base_prompt, mode_prompt)
     } else {
-        format!("{}{}", base_prompt, spreadsheet_context)
+        base_prompt
     };
 
     println!("🧠 Final system prompt:\n{}", final_prompt);
 
-    // Wrap each MCP connection with an in-process notification proxy so that
-    // tool_call / tool_result events are emitted for MCP tools too.
+    // Wrap each MCP connection with a notification proxy so tool_call/tool_result
+    // events are emitted for MCP tools.
     let mut _proxy_guards: Vec<crate::mcp_proxy::McpProxyGuard> = Vec::new();
     let mut proxied_mcp_tool_sets: Vec<(Vec<rmcp::model::Tool>, rmcp::service::ServerSink)> =
         Vec::new();
@@ -94,7 +64,6 @@ pub async fn call_llm(
         }
     }
 
-    // Helper macro so we don't duplicate the builder setup across providers
     macro_rules! build_agent {
         ($builder_expr:expr) => {{
             let tx = &tool_tx;
@@ -106,18 +75,6 @@ pub async fn call_llm(
                 .tool(NotifyingTool { inner: SaveToMemory::new(memory_path.clone()), tx: tx.clone() })
                 .tool(NotifyingTool { inner: AppendToMemory::new(memory_path.clone()), tx: tx.clone() })
                 .preamble(&final_prompt);
-            if let Some(ref token) = google_access_token {
-                builder = builder.tool(NotifyingTool {
-                    inner: GoogleSubAgent::new(
-                        token.clone(),
-                        api_key.clone(),
-                        provider.clone(),
-                        model.clone(),
-                        spreadsheet_configs.clone(),
-                    ),
-                    tx: tx.clone(),
-                });
-            }
             for (tools, peer) in proxied_mcp_tool_sets {
                 builder = builder.rmcp_tools(tools, peer);
             }
@@ -148,6 +105,15 @@ pub async fn call_llm(
             let agent = build_agent!(client.agent(&model));
             chat_with_agent(&agent, &query, chat_history, base64_image.as_deref()).await
         }
+        "openrouter" => {
+            let client: openai::Client<reqwest::Client> = openai::Client::builder()
+                .api_key(api_key.clone())
+                .base_url("https://openrouter.ai/api/v1")
+                .build()
+                .map_err(|e| e.to_string())?;
+            let agent = build_agent!(client.agent(&model));
+            chat_with_agent(&agent, &query, chat_history, base64_image.as_deref()).await
+        }
         _ => Err(format!("Unsupported provider: {}", provider)),
     }
 }
@@ -175,10 +141,6 @@ pub async fn verify_llm(provider: &str, api_key: &str, model: &str) -> Result<()
             agent.chat(ping, vec![]).await.map(|_| ()).map_err(|e| e.to_string())
         }
         "ollama" => {
-            // Check if Ollama is reachable before making a real API call.
-            // The rig client has no built-in timeout, so a missing Ollama would
-            // hang forever.  A quick TCP probe on the default port lets us fail
-            // fast with an actionable message.
             let ollama_addr = std::env::var("OLLAMA_HOST")
                 .unwrap_or_else(|_| "127.0.0.1:11434".to_string());
             let reachable = tokio::time::timeout(
@@ -193,11 +155,19 @@ pub async fn verify_llm(provider: &str, api_key: &str, model: &str) -> Result<()
                     agent.chat(ping, vec![]).await.map(|_| ()).map_err(|e| e.to_string())
                 }
                 _ => Err(
-                    "Ollama doesn't appear to be running. Please install it from https://ollama.com \
-                     and start it with `ollama serve` before selecting an Ollama model."
+                    "Ollama doesn't appear to be running. Please start it with `ollama serve`."
                         .to_string(),
                 ),
             }
+        }
+        "openrouter" => {
+            let client: openai::Client<reqwest::Client> = openai::Client::builder()
+                .api_key(api_key)
+                .base_url("https://openrouter.ai/api/v1")
+                .build()
+                .map_err(|e| e.to_string())?;
+            let agent = client.agent(model).build();
+            agent.chat(ping, vec![]).await.map(|_| ()).map_err(|e| e.to_string())
         }
         _ => Err(format!("Unsupported provider: {}", provider)),
     }
@@ -237,9 +207,6 @@ async fn chat_with_agent(
         Ok(text) => Ok(text),
         Err(e) => {
             let err_str = e.to_string();
-            // rig-core bug: Gemini sometimes returns empty content after tool execution.
-            // The tools DID execute, but the LLM's follow-up response was empty.
-            // Return a graceful message instead of an error.
             if err_str.contains("empty") {
                 println!("⚠️ LLM returned empty response after tool execution (rig-core bug)");
                 Ok("Done! I've completed everything you asked for. Let me know if there's anything else.".to_string())
@@ -249,5 +216,3 @@ async fn chat_with_agent(
         }
     }
 }
-
-

@@ -34,7 +34,8 @@ struct AgentMessage: Codable {
         case "tool_result":
             let val = try container.decode(ToolResultContent.self, forKey: .content)
             content = .toolResult(val)
-        case "credentials_success", "credentials_error", "oauth_url", "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error":
+        case "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error",
+             "openrouter_oauth_url", "openrouter_oauth_success", "openrouter_oauth_error", "builtin_warning":
             // Handle simple string content for status messages
             if let stringContent = try? container.decode(String.self, forKey: .content) {
                 content = .response(ResponseContent(text: stringContent, images: []))
@@ -156,13 +157,6 @@ struct ImageData: Codable {
     let author: String?
 }
 
-enum CredentialDataType: String {
-    case apiKey = "api_key"
-    case credentials = "credentials"
-    case revoke_credentials = "revoke_credentials"
-    case mcpConfig = "mcp_config"
-}
-
 struct ChatPayload: Codable {
     let text: String
     let mode: String
@@ -196,9 +190,6 @@ class SocketClient: ObservableObject, @unchecked Sendable {
     var onReceiveImages: (([ImageData]) -> Void)?
     var onReceiveWidgets: (([ChatWidgetData]) -> Void)?
     var onDisconnect: ((String) -> Void)?
-    var onReceivedCredentialsSuccess: ((String) -> Void)?
-    var onCredentialsError: ((String) -> Void)?
-    var onOAuthURL: ((String) -> Void)?
     var onMCPSyncResult: ((Bool, String?) -> Void)?
     var onMCPServerStatus: (([MCPServerStatusInfo]) -> Void)?
     var onSessionReset: (() -> Void)?
@@ -207,6 +198,11 @@ class SocketClient: ObservableObject, @unchecked Sendable {
     var onSheetTabsResult: ((Bool, String?, [String]?) -> Void)?  // (success, title/error, tabs)
     var onMemoryContent: ((String) -> Void)?
     var onMemorySaved: ((Bool, String) -> Void)?  // (success, message)
+    var onBuiltinWarning: ((String) -> Void)?  // server name
+
+    // OpenRouter OAuth
+    var onOpenRouterOAuthURL: ((String) -> Void)?
+    var onOpenRouterOAuthResult: ((Bool, String) -> Void)?
 
     func checkAndUpdateConnection() -> Bool {
         let active = webSocketTask?.state == .running
@@ -361,6 +357,18 @@ class SocketClient: ObservableObject, @unchecked Sendable {
             return
         }
 
+        // Handle builtin_warning (content is an object with a "server" key)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let msgType = json["type"] as? String,
+           msgType == "builtin_warning",
+           let contentObj = json["content"] as? [String: Any],
+           let serverName = contentObj["server"] as? String {
+            DispatchQueue.main.async { [weak self] in
+                self?.onBuiltinWarning?(serverName)
+            }
+            return
+        }
+
         do {
             let parsedMsg = try self.decoder.decode(AgentMessage.self, from: data)
             respondToParsedMessage(parsedMsg)
@@ -399,18 +407,6 @@ class SocketClient: ObservableObject, @unchecked Sendable {
                     print("🛠 Tool Result: \(content.toolName)")
                     self.onReceiveToolOutput?(content)
                 }
-            case "credentials_success":
-                if case .response(let content) = parsedMsg.content {
-                     self.onReceivedCredentialsSuccess?(content.text)
-                }
-            case "credentials_error":
-                if case .response(let content) = parsedMsg.content {
-                    self.onCredentialsError?(content.text)
-                }
-            case "oauth_url":
-                if case .response(let content) = parsedMsg.content {
-                    self.onOAuthURL?(content.text)
-                }
             case "mcp_sync_success":
                 if case .response(let content) = parsedMsg.content {
                     self.onMCPSyncResult?(true, content.text)
@@ -437,6 +433,21 @@ class SocketClient: ObservableObject, @unchecked Sendable {
                 } else {
                     self.onLLMSetResult?(false, "Unknown error")
                 }
+
+            // OpenRouter OAuth
+            case "openrouter_oauth_url":
+                if case .response(let content) = parsedMsg.content {
+                    self.onOpenRouterOAuthURL?(content.text)
+                }
+            case "openrouter_oauth_success":
+                if case .response(let content) = parsedMsg.content {
+                    self.onOpenRouterOAuthResult?(true, content.text)
+                }
+            case "openrouter_oauth_error":
+                if case .response(let content) = parsedMsg.content {
+                    self.onOpenRouterOAuthResult?(false, content.text)
+                }
+
             default:
                 print("❓ Unhandled type: \(parsedMsg.type)")
             }
@@ -462,17 +473,6 @@ class SocketClient: ObservableObject, @unchecked Sendable {
                     print("❌ Send Error: \(error)")
                     DispatchQueue.main.async { self.isConnected = false }
                 }
-            }
-        }
-    }
-
-    func sendCredentials(_ dataType: CredentialDataType, content: String) {
-        let json: [String: String] = ["data_type": dataType.rawValue, "content": content]
-        if let jsonData = try? JSONEncoder().encode(json),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            let message = URLSessionWebSocketTask.Message.string(jsonString)
-            webSocketTask?.send(message) { error in
-                if let error = error { print("❌ Send Error: \(error)") }
             }
         }
     }
@@ -553,62 +553,6 @@ class SocketClient: ObservableObject, @unchecked Sendable {
         }
     }
 
-    func sendStartOAuth(dirPath: String) {
-        let json: [String: String] = [
-            "data_type": "start_oauth",
-            "dir_path": dirPath
-        ]
-        if let jsonData = try? JSONEncoder().encode(json),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            print("📤 Starting OAuth flow for dir: \(dirPath)")
-            let message = URLSessionWebSocketTask.Message.string(jsonString)
-            webSocketTask?.send(message) { error in
-                if let error = error { print("❌ Start OAuth Send Error: \(error)") }
-            }
-        }
-    }
-
-    func sendGetSheetTabs(spreadsheetId: String) {
-        let json: [String: String] = [
-            "data_type": "get_sheet_tabs",
-            "spreadsheet_id": spreadsheetId
-        ]
-        if let jsonData = try? JSONEncoder().encode(json),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            print("📤 Requesting sheet tabs for: \(spreadsheetId)")
-            let message = URLSessionWebSocketTask.Message.string(jsonString)
-            webSocketTask?.send(message) { error in
-                if let error = error { print("❌ Get Sheet Tabs Send Error: \(error)") }
-            }
-        }
-    }
-
-    func sendSpreadsheetConfigs(_ configs: [SpreadsheetConfig]) {
-        // Convert to JSON-serializable format
-        let configDicts: [[String: String]] = configs.map { config in
-            [
-                "alias": config.alias,
-                "url": config.url,
-                "sheetID": config.sheetID,
-                "selectedTab": config.selectedTab,
-                "description": config.description
-            ]
-        }
-
-        let json: [String: Any] = [
-            "data_type": "sync_spreadsheets",
-            "configs": configDicts
-        ]
-
-        if let jsonData = try? JSONSerialization.data(withJSONObject: json),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            print("📤 Syncing \(configs.count) spreadsheet config(s)")
-            let message = URLSessionWebSocketTask.Message.string(jsonString)
-            webSocketTask?.send(message) { error in
-                if let error = error { print("❌ Spreadsheet Sync Send Error: \(error)") }
-            }
-        }
-    }
 
     func requestMemory() {
         let json: [String: String] = ["data_type": "get_memory"]
@@ -636,6 +580,53 @@ class SocketClient: ObservableObject, @unchecked Sendable {
             }
         }
     }
+
+    func sendBuiltinServersConfig(_ config: BuiltinServerConfig) {
+        let enabledArray = Array(config.enabledServers)
+        let json: [String: Any] = [
+            "data_type": "set_builtin_servers",
+            "enabled": enabledArray,
+            "filesystem_paths": config.filesystemPaths
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: json),
+              let text = String(data: data, encoding: .utf8) else { return }
+        webSocketTask?.send(.string(text)) { error in
+            if let error = error { print("❌ Built-in servers send error: \(error)") }
+        }
+    }
+
+    func sendComposioKey(_ apiKey: String) {
+        let json: [String: Any] = ["data_type": "set_composio", "api_key": apiKey]
+        guard let data = try? JSONSerialization.data(withJSONObject: json),
+              let text = String(data: data, encoding: .utf8) else { return }
+        webSocketTask?.send(.string(text)) { error in
+            if let error = error { print("❌ Composio key send error: \(error)") }
+        }
+    }
+
+    func disconnectComposio() {
+        let json: [String: Any] = ["data_type": "set_composio", "api_key": ""]
+        guard let data = try? JSONSerialization.data(withJSONObject: json),
+              let text = String(data: data, encoding: .utf8) else { return }
+        webSocketTask?.send(.string(text)) { error in
+            if let error = error { print("❌ Composio disconnect error: \(error)") }
+        }
+    }
+
+    // MARK: - OpenRouter OAuth
+
+    func sendStartOpenRouterOAuth() {
+        let json: [String: String] = ["data_type": "start_openrouter_oauth"]
+        if let jsonData = try? JSONEncoder().encode(json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Starting OpenRouter PKCE OAuth flow")
+            let message = URLSessionWebSocketTask.Message.string(jsonString)
+            webSocketTask?.send(message) { error in
+                if let error = error { print("❌ Start OpenRouter OAuth Error: \(error)") }
+            }
+        }
+    }
+
 }
 
 // MARK: - Helper for decoding dynamic JSON values

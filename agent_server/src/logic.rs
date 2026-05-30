@@ -5,19 +5,47 @@ use futures::stream::SplitSink;
 use futures::SinkExt;
 use rig::message::{AssistantContent, Message as RigMessage, UserContent};
 use rig::OneOrMany;
+use rmcp::transport::streamable_http_client::{
+    StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
+};
 use rmcp::transport::TokioChildProcess;
 use rmcp::ServiceExt;
 use serde_json::json;
 
+struct BuiltinServerDef {
+    name: &'static str,
+    command: &'static str,
+    args_template: &'static [&'static str],
+}
+
+const BUILTIN_SERVERS: &[BuiltinServerDef] = &[
+    BuiltinServerDef {
+        name: "filesystem",
+        command: "npx",
+        args_template: &["-y", "@modelcontextprotocol/server-filesystem"],
+    },
+    BuiltinServerDef {
+        name: "fetch",
+        command: "npx",
+        args_template: &["-y", "@modelcontextprotocol/server-fetch"],
+    },
+    BuiltinServerDef {
+        name: "shell",
+        command: "npx",
+        args_template: &["-y", "@modelcontextprotocol/server-shell"],
+    },
+    BuiltinServerDef {
+        name: "memory",
+        command: "npx",
+        args_template: &["-y", "@modelcontextprotocol/server-memory"],
+    },
+];
+
 /// Extract a human-readable message from a rig/API error string.
-/// Rig wraps API errors as e.g. "status code 404 Not Found with message: {...}".
-/// This function tries several strategies to pull out just the inner message text.
 fn clean_llm_error(raw: &str) -> String {
-    // Try every `{` position so trailing non-JSON text doesn't block parsing.
     let mut search_start = 0;
     while let Some(offset) = raw[search_start..].find('{') {
         let start = search_start + offset;
-        // Find the matching closing brace by tracking depth.
         let mut depth = 0usize;
         let mut end = None;
         for (i, ch) in raw[start..].char_indices() {
@@ -36,19 +64,15 @@ fn clean_llm_error(raw: &str) -> String {
         if let Some(end) = end
             && let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw[start..end])
         {
-            // OpenAI / Anthropic / Gemini style: {"error": {"message": "..."}}
             if let Some(msg) = v.pointer("/error/message").and_then(|m| m.as_str()) {
                 return msg.to_string();
             }
-            // Simple: {"message": "..."}
             if let Some(msg) = v.get("message").and_then(|m| m.as_str()) {
                 return msg.to_string();
             }
         }
         search_start = start + 1;
     }
-    // No JSON found — return the raw error but trim boilerplate prefix if present.
-    // e.g. "status code 404 Not Found with message: some text"
     if let Some(after) = raw.find("with message:") {
         let msg = raw[after + "with message:".len()..].trim();
         if !msg.is_empty() {
@@ -87,6 +111,7 @@ async fn handle_config(
     state: &SharedState,
 ) {
     match data_type {
+        // ── API key (manual entry) ──────────────────────────────────────────
         "api_key" => {
             let key = data["content"].as_str().unwrap_or("");
             println!("🔑 Received API Key");
@@ -99,97 +124,7 @@ async fn handle_config(
                 .await;
         }
 
-        "credentials" => {
-            let dir_path = data["content"].as_str().unwrap_or("").trim().to_string();
-            println!("🔑 Received credentials, dir: {}", dir_path);
-
-            if dir_path.is_empty() {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "credentials_error", "content": "Please provide the path to your Google credentials folder."})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            }
-
-            let credentials_path = format!("{}/credentials.json", dir_path);
-            let token_path = format!("{}/token.json", dir_path);
-
-            // Validate that credentials.json exists
-            if !std::path::Path::new(&credentials_path).exists() {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "credentials_error", "content": format!("No credentials.json found at: {}. Please download it from Google Cloud Console and place it in that folder.", credentials_path)})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            }
-
-            // Attempt authentication: validates token.json, refreshes if expired
-            match crate::google_auth::authenticate(&credentials_path, &token_path).await {
-                Ok(access_token) => {
-                    let mut s = state.lock().await;
-                    s.credentials_file_path = Some(credentials_path.clone());
-                    s.token_file_path = Some(token_path.clone());
-                    s.google_access_token = Some(access_token);
-                    drop(s);
-                    println!("✅ Google credentials authenticated.");
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_success", "content": "Google account connected! You now have access to Gmail, Calendar, and Sheets."})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-                Err(e) => {
-                    println!("❌ Authentication error: {}", e);
-                    // Delete invalid token file (mirrors Python behaviour)
-                    if std::path::Path::new(&token_path).exists() {
-                        if let Err(re) = std::fs::remove_file(&token_path) {
-                            println!("⚠️ Failed to delete invalid token file: {}", re);
-                        } else {
-                            println!("🗑️ Deleted invalid token file.");
-                        }
-                    }
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_error", "content": "Could not authenticate with Google. Please double-check your credentials file and try again."})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-            }
-        }
-
-        "revoke_credentials" => {
-            println!("🔓 Received Revoke Credentials");
-            {
-                let mut s = state.lock().await;
-                // Delete token file if present, then clear stored paths
-                if let Some(ref token_path) = s.token_file_path {
-                    let token_path = token_path.clone();
-                    if std::path::Path::new(&token_path).exists() {
-                        if let Err(e) = std::fs::remove_file(&token_path) {
-                            println!("⚠️ Failed to delete token file: {}", e);
-                        } else {
-                            println!("🗑️ Deleted token file: {}", token_path);
-                        }
-                    }
-                }
-                s.credentials_file_path = None;
-                s.token_file_path = None;
-                s.google_access_token = None;
-            }
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "credentials_revoked", "content": "Google account disconnected. Your stored session has been removed."})
-                        .to_string(),
-                ))
-                .await;
-        }
-
+        // ── Set LLM provider / model ────────────────────────────────────────
         "set_llm" => {
             let provider = data["provider"].as_str().unwrap_or("gemini");
             let model = data["model"].as_str().unwrap_or("");
@@ -199,14 +134,31 @@ async fn handle_config(
             if model.is_empty() {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "llm_set_error", "content": "Please specify which model you'd like to use (e.g. gemini-2.5-flash, gpt-4o, claude-sonnet-4-20250514)."})
+                        json!({"type": "llm_set_error", "content": "Please specify which model you'd like to use."})
                             .to_string(),
                     ))
                     .await;
                 return;
             }
 
-            if provider != "ollama" && api_key.is_empty() {
+            // For OpenRouter, use the OAuth-stored key when none is provided.
+            // For Ollama, no key is needed at all.
+            let effective_key = if api_key.is_empty() && provider == "openrouter" {
+                state
+                    .lock()
+                    .await
+                    .api_keys
+                    .get("openrouter")
+                    .cloned()
+                    .unwrap_or_default()
+            } else {
+                api_key.to_string()
+            };
+
+            // Require a key for providers that aren't Ollama/OpenRouter (Ollama has
+            // no key at all; OpenRouter uses OAuth and we check the stored key below).
+            let key_exempt = provider == "ollama";
+            if !key_exempt && provider != "openrouter" && effective_key.is_empty() {
                 let _ = sender
                     .send(Message::Text(
                         json!({"type": "llm_set_error", "content": format!("An API key is required for {}. Please add it in Settings.", provider)})
@@ -216,14 +168,25 @@ async fn handle_config(
                 return;
             }
 
-            // Verify the credentials/model work before storing
-            match llm::verify_llm(provider, api_key, model).await {
+            // For OpenRouter, ensure the user has completed OAuth before trying to
+            // set it as the active provider.
+            if provider == "openrouter" && effective_key.is_empty() {
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "llm_set_error", "content": "Please sign in to OpenRouter first (Settings → OpenRouter → Connect)."})
+                            .to_string(),
+                    ))
+                    .await;
+                return;
+            }
+
+            match llm::verify_llm(provider, &effective_key, model).await {
                 Ok(()) => {
                     let mut s = state.lock().await;
                     s.current_provider = provider.to_string();
                     s.current_model = model.to_string();
-                    if !api_key.is_empty() {
-                        s.api_keys.insert(provider.to_string(), api_key.to_string());
+                    if !effective_key.is_empty() {
+                        s.api_keys.insert(provider.to_string(), effective_key);
                     }
                     drop(s);
                     let _ = sender
@@ -246,330 +209,79 @@ async fn handle_config(
             }
         }
 
+        // ── OpenRouter PKCE OAuth ───────────────────────────────────────────
+        "start_openrouter_oauth" => {
+            match crate::openrouter_auth::prepare_openrouter_flow().await {
+                Ok((auth_url, verifier, state_nonce, listener)) => {
+                    println!("🌐 OpenRouter OAuth URL ready. Sending to client.");
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "openrouter_oauth_url", "content": auth_url})
+                                .to_string(),
+                        ))
+                        .await;
+
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(300),
+                        crate::openrouter_auth::await_openrouter_callback(
+                            listener,
+                            &verifier,
+                            &state_nonce,
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(Ok(api_key)) => {
+                            let api_key: String = api_key;
+                            state
+                                .lock()
+                                .await
+                                .api_keys
+                                .insert("openrouter".to_string(), api_key.clone());
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "openrouter_oauth_success", "content": api_key})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                        Ok(Err(e)) => {
+                            println!("❌ OpenRouter OAuth callback error: {}", e);
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "openrouter_oauth_error", "content": e})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                        Err(_) => {
+                            let _ = sender
+                                .send(Message::Text(
+                                    json!({"type": "openrouter_oauth_error", "content": "Sign-in timed out. Please try again."})
+                                        .to_string(),
+                                ))
+                                .await;
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to prepare OpenRouter OAuth flow: {}", e);
+                    let _ = sender
+                        .send(Message::Text(
+                            json!({"type": "openrouter_oauth_error", "content": format!("Could not start the sign-in process: {}.", e)})
+                                .to_string(),
+                        ))
+                        .await;
+                }
+            }
+        }
+
+        // ── Session / memory ────────────────────────────────────────────────
         "reset_session" => {
             chat_history.clear();
             let _ = sender
                 .send(Message::Text(
                     json!({"type": "session_reset", "content": "Conversation cleared — starting fresh!"}).to_string(),
-                ))
-                .await;
-        }
-
-        "mcp_config" => {
-            println!("🔧 MCP config received");
-            let servers = data
-                .get("config")
-                .and_then(|c| c.get("mcpServers"))
-                .and_then(|s| s.as_object());
-
-            let Some(servers) = servers else {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "mcp_sync_error", "content": "The MCP configuration couldn't be read. Please check your settings and try again."})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            };
-
-            // Shut down existing connections
-            {
-                let mut s = state.lock().await;
-                for (name, conn) in s.mcp_connections.drain() {
-                    println!("🛑 Stopping MCP server: {}", name);
-                    let _ = conn._service.cancel().await;
-                }
-            }
-
-            let mut statuses: Vec<serde_json::Value> = Vec::new();
-
-            for (name, server_config) in servers {
-                let command = match server_config["command"].as_str() {
-                    Some(c) => c,
-                    None => {
-                        statuses.push(
-                            json!({"name": name, "status": "error", "error": "Missing command"}),
-                        );
-                        continue;
-                    }
-                };
-
-                let args: Vec<String> = server_config["args"]
-                    .as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                println!("🔗 Starting MCP server '{}': {} {:?}", name, command, args);
-
-                // Build expanded PATH so we can find npx, node, python, etc.
-                let expanded_path = build_expanded_path();
-
-                // Resolve command to full path
-                let resolved_command = resolve_command(command, &expanded_path);
-                println!("   Resolved command: {}", resolved_command);
-
-                // Build command
-                let mut cmd = tokio::process::Command::new(&resolved_command);
-                cmd.args(&args);
-                cmd.env("PATH", &expanded_path);
-
-                // Set env if provided
-                if let Some(env) = server_config["env"].as_object() {
-                    for (k, v) in env {
-                        if let Some(val) = v.as_str() {
-                            cmd.env(k, val);
-                        }
-                    }
-                }
-
-                // Start the MCP server via child process
-                let transport = match TokioChildProcess::new(cmd) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        println!("❌ Failed to spawn '{}': {}", name, e);
-                        statuses.push(
-                            json!({"name": name, "status": "error", "error": e.to_string()}),
-                        );
-                        continue;
-                    }
-                };
-
-                let service = match ().serve(transport).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        println!("❌ Failed to connect to '{}': {:?}", name, e);
-                        statuses.push(
-                            json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
-                        );
-                        continue;
-                    }
-                };
-
-                let tool_list = match service.list_tools(Default::default()).await {
-                    Ok(t) => t,
-                    Err(e) => {
-                        println!("❌ Failed to list tools from '{}': {:?}", name, e);
-                        statuses.push(
-                            json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
-                        );
-                        continue;
-                    }
-                };
-
-                println!(
-                    "✅ MCP '{}' connected with {} tools",
-                    name,
-                    tool_list.tools.len()
-                );
-
-                let conn = McpConnection {
-                    tools: tool_list.tools,
-                    peer: service.peer().clone(),
-                    _service: service,
-                };
-
-                statuses.push(json!({"name": name, "status": "connected", "error": null}));
-                state.lock().await.mcp_connections.insert(name.clone(), conn);
-            }
-
-            // Send server statuses
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "mcp_server_status", "content": {"servers": statuses}})
-                        .to_string(),
-                ))
-                .await;
-
-            // Send success
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "mcp_sync_success", "content": "MCP servers are connected and ready!"})
-                        .to_string(),
-                ))
-                .await;
-        }
-
-        "mcp_status_request" => {
-            let s = state.lock().await;
-            let servers: Vec<serde_json::Value> = s
-                .mcp_connections
-                .iter()
-                .map(|(name, conn)| {
-                    json!({"name": name, "status": "connected", "tools_count": conn.tools.len()})
-                })
-                .collect();
-            drop(s);
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "mcp_server_status", "content": {"servers": servers}})
-                        .to_string(),
-                ))
-                .await;
-        }
-
-        "tools_request" => {
-            let s = state.lock().await;
-            let mut tools_list: Vec<serde_json::Value> = vec![
-                json!({"name": "calculator", "source": "built-in", "description": "Evaluate mathematical expressions and perform calculations"}),
-                json!({"name": "open_application", "source": "built-in", "description": "Launch a macOS application by name"}),
-                json!({"name": "open_chrome_tab", "source": "built-in", "description": "Open a URL in Google Chrome browser"}),
-                json!({"name": "read_memory", "source": "built-in", "description": "Read from the agent's persistent knowledge base"}),
-                json!({"name": "save_to_memory", "source": "built-in", "description": "Save information to the agent's persistent knowledge base"}),
-                json!({"name": "append_to_memory", "source": "built-in", "description": "Append content to an existing memory entry"}),
-            ];
-            if s.google_access_token.is_some() {
-                tools_list.push(
-                    json!({"name": "google_agent", "source": "google", "description": "Gmail · Calendar · Sheets sub-agent"}),
-                );
-            }
-            for (server_name, conn) in &s.mcp_connections {
-                for tool in &conn.tools {
-                    let safe_name = crate::mcp_proxy::sanitize_tool_name(&tool.name);
-                    let desc = tool
-                        .description
-                        .as_deref()
-                        .filter(|d| !d.is_empty())
-                        .unwrap_or("MCP tool");
-                    tools_list
-                        .push(json!({"name": safe_name, "source": format!("mcp:{}", server_name), "description": desc}));
-                }
-            }
-            drop(s);
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "active_tools", "content": {"tools": tools_list}}).to_string(),
-                ))
-                .await;
-        }
-
-        "get_sheet_tabs" => {
-            let spreadsheet_id = data["spreadsheet_id"].as_str().unwrap_or("").to_string();
-            println!("📊 Get Sheet Tabs for: {}", spreadsheet_id);
-
-            if spreadsheet_id.is_empty() {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Please provide a spreadsheet ID. You can find it in the spreadsheet's URL."}})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            }
-
-            let access_token = state.lock().await.google_access_token.clone();
-            let Some(token) = access_token else {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "sheet_tabs_result", "content": {"success": false, "error": "Google account not connected. Please sign in via Settings first."}})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            };
-
-            // Fetch spreadsheet metadata from the Sheets API
-            let url = format!(
-                "https://sheets.googleapis.com/v4/spreadsheets/{}?fields=properties.title,sheets.properties.title",
-                spreadsheet_id
-            );
-
-            let client = reqwest::Client::new();
-            match client.get(&url).bearer_auth(&token).send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    let body: serde_json::Value =
-                        resp.json().await.unwrap_or_default();
-                    let title = body["properties"]["title"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_string();
-                    let tabs: Vec<String> = body["sheets"]
-                        .as_array()
-                        .unwrap_or(&vec![])
-                        .iter()
-                        .filter_map(|s| {
-                            s["properties"]["title"]
-                                .as_str()
-                                .map(|t| t.to_string())
-                        })
-                        .collect();
-                    println!(
-                        "✅ Sheet '{}' has {} tab(s): {:?}",
-                        title,
-                        tabs.len(),
-                        tabs
-                    );
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "sheet_tabs_result", "content": {
-                                "success": true,
-                                "title": title,
-                                "tabs": tabs
-                            }})
-                            .to_string(),
-                        ))
-                        .await;
-                }
-                Ok(resp) => {
-                    let status = resp.status();
-                    let body = resp.text().await.unwrap_or_default();
-                    println!("❌ Sheets API error {}: {}", status, body);
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "sheet_tabs_result", "content": {
-                                "success": false,
-                                "error": format!("Google Sheets API returned an error ({}). Please check the spreadsheet ID and your permissions.", status)
-                            }})
-                            .to_string(),
-                        ))
-                        .await;
-                }
-                Err(e) => {
-                    println!("❌ Sheets API request failed: {}", e);
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "sheet_tabs_result", "content": {
-                                "success": false,
-                                "error": "Failed to reach Google Sheets. Please check your internet connection and try again."
-                            }})
-                            .to_string(),
-                        ))
-                        .await;
-                }
-            }
-        }
-
-        "sync_spreadsheets" => {
-            let raw_configs = data["configs"].as_array().cloned().unwrap_or_default();
-            let mut configs: Vec<crate::state::SpreadsheetConfig> = Vec::new();
-            for c in &raw_configs {
-                let alias = c["alias"].as_str().unwrap_or("").to_string();
-                let sheet_id = c["sheetID"].as_str().unwrap_or("").to_string();
-                let selected_tab = c["selectedTab"].as_str().unwrap_or("").to_string();
-                let description = c["description"].as_str().unwrap_or("").to_string();
-                if !alias.is_empty() && !sheet_id.is_empty() {
-                    configs.push(crate::state::SpreadsheetConfig {
-                        alias,
-                        sheet_id,
-                        selected_tab,
-                        description,
-                    });
-                }
-            }
-            let count = configs.len();
-            println!(
-                "📊 Synced {} spreadsheet config(s): {:?}",
-                count,
-                configs.iter().map(|c| &c.alias).collect::<Vec<_>>()
-            );
-            state.lock().await.spreadsheet_configs = configs;
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "spreadsheets_synced", "content": format!("{} spreadsheet{} synced and ready to use.", count, if count == 1 { "" } else { "s" })})
-                        .to_string(),
                 ))
                 .await;
         }
@@ -607,7 +319,7 @@ async fn handle_config(
                     println!("❌ Failed to save memory: {}", e);
                     let _ = sender
                         .send(Message::Text(
-                            json!({"type": "memory_error", "content": "Could not save your memory notes. Please try again."})
+                            json!({"type": "memory_error", "content": "Could not save memory notes. Please try again."})
                                 .to_string(),
                         ))
                         .await;
@@ -615,93 +327,515 @@ async fn handle_config(
             }
         }
 
-        "start_oauth" => {
-            let dir_path = data["dir_path"].as_str().unwrap_or("").trim().to_string();
-            if dir_path.is_empty() {
+        // ── MCP (user-managed servers) ──────────────────────────────────────
+        "mcp_config" => {
+            println!("🔧 MCP config received");
+            let servers = data
+                .get("config")
+                .and_then(|c| c.get("mcpServers"))
+                .and_then(|s| s.as_object());
+
+            let Some(servers) = servers else {
                 let _ = sender
                     .send(Message::Text(
-                        json!({"type": "credentials_error", "content": "Please provide the folder path where your Google credentials.json is stored."})
+                        json!({"type": "mcp_sync_error", "content": "The MCP configuration couldn't be read. Please check your settings."})
                             .to_string(),
                     ))
                     .await;
                 return;
-            }
+            };
 
-            let credentials_path = format!("{}/credentials.json", dir_path);
-            let token_path = format!("{}/token.json", dir_path);
-
-            if !std::path::Path::new(&credentials_path).exists() {
-                let _ = sender
-                    .send(Message::Text(
-                        json!({"type": "credentials_error", "content": format!("No credentials.json found at: {}. Please download it from Google Cloud Console and place it in that folder.", credentials_path)})
-                            .to_string(),
-                    ))
-                    .await;
-                return;
-            }
-
-            // Bind listener + build consent URL
-            match crate::google_auth::prepare_oauth_flow(&credentials_path).await {
-                Ok((auth_url, listener)) => {
-                    println!("🌐 OAuth URL ready. Sending to client to open in browser.");
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "oauth_url", "content": auth_url}).to_string(),
-                        ))
-                        .await;
-
-                    // Block this handler while waiting for the browser callback (5 min timeout)
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(300),
-                        crate::google_auth::await_oauth_callback(
-                            listener,
-                            &credentials_path,
-                            &token_path,
-                        ),
-                    )
-                    .await
-                    {
-                        Ok(Ok(access_token)) => {
-                            let mut s = state.lock().await;
-                            s.credentials_file_path = Some(credentials_path);
-                            s.token_file_path = Some(token_path);
-                            s.google_access_token = Some(access_token);
-                            drop(s);
-                            let _ = sender
-                                .send(Message::Text(
-                                    json!({"type": "credentials_success", "content": "Google account connected! You now have access to Gmail, Calendar, and Sheets."})
-                                        .to_string(),
-                                ))
-                                .await;
-                        }
-                        Ok(Err(e)) => {
-                            println!("❌ OAuth callback error: {}", e);
-                            let _ = sender
-                                .send(Message::Text(
-                                    json!({"type": "credentials_error", "content": format!("Google sign-in was not completed: {}. Please try again.", e)})
-                                        .to_string(),
-                                ))
-                                .await;
-                        }
-                        Err(_) => {
-                            let _ = sender
-                                .send(Message::Text(
-                                    json!({"type": "credentials_error", "content": "Sign-in timed out — the browser authorization wasn't completed within 5 minutes. Please try again."})
-                                        .to_string(),
-                                ))
-                                .await;
-                        }
+            // Shut down all existing MCP connections before starting the new set.
+            // Composio is managed independently via set_composio — preserve it.
+            {
+                let mut s = state.lock().await;
+                let to_remove: Vec<String> = s
+                    .mcp_connections
+                    .keys()
+                    .filter(|name| name.as_str() != "composio")
+                    .cloned()
+                    .collect();
+                for name in to_remove {
+                    if let Some(conn) = s.mcp_connections.remove(&name) {
+                        println!("🛑 Stopping MCP server: {}", name);
+                        let _ = conn._service.cancel().await;
                     }
                 }
-                Err(e) => {
-                    println!("❌ Failed to prepare OAuth flow: {}", e);
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_error", "content": "Could not start the sign-in process. Please verify your credentials.json file is valid and try again."})
-                                .to_string(),
-                        ))
-                        .await;
+            }
+
+            let mut statuses: Vec<serde_json::Value> = Vec::new();
+
+            for (name, server_config) in servers {
+                // Prefix reserved built-in server names to avoid collisions
+                let reserved = ["filesystem", "fetch", "shell", "memory"];
+                let name = if reserved.contains(&name.as_str()) {
+                    format!("custom:{}", name)
+                } else {
+                    name.clone()
+                };
+
+                let transport_type = server_config["transport"].as_str().unwrap_or("stdio");
+
+                if transport_type == "http" {
+                    // --- HTTP/SSE transport path ---
+                    let url = match server_config["url"].as_str() {
+                        Some(u) => u.to_string(),
+                        None => {
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": "Missing url for HTTP transport"}),
+                            );
+                            continue;
+                        }
+                    };
+                    let api_key = server_config["api_key"].as_str().unwrap_or("");
+
+                    println!("🔗 Connecting to HTTP MCP server '{}': {}", name, url);
+
+                    match connect_http_mcp_server(&url, api_key).await {
+                        Ok(conn) => {
+                            println!(
+                                "✅ MCP '{}' connected with {} tools",
+                                name,
+                                conn.tools.len()
+                            );
+                            statuses.push(json!({"name": name, "status": "connected", "error": null}));
+                            state.lock().await.mcp_connections.insert(name.clone(), conn);
+                        }
+                        Err(e) => {
+                            println!("❌ Failed to connect HTTP MCP '{}': {}", name, e);
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": e}),
+                            );
+                        }
+                    }
+                } else {
+                    // --- stdio (child process) transport path ---
+                    let command = match server_config["command"].as_str() {
+                        Some(c) => c,
+                        None => {
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": "Missing command"}),
+                            );
+                            continue;
+                        }
+                    };
+
+                    let args: Vec<String> = server_config["args"]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    println!("🔗 Starting MCP server '{}': {} {:?}", name, command, args);
+
+                    // Build expanded PATH so we can find npx, node, python, etc.
+                    let expanded_path = build_expanded_path();
+
+                    // Resolve command to full path
+                    let resolved_command = resolve_command(command, &expanded_path);
+                    println!("   Resolved command: {}", resolved_command);
+
+                    // Build command
+                    let mut cmd = tokio::process::Command::new(&resolved_command);
+                    cmd.args(&args);
+                    cmd.env("PATH", &expanded_path);
+
+                    // Set env if provided
+                    if let Some(env) = server_config["env"].as_object() {
+                        for (k, v) in env {
+                            if let Some(val) = v.as_str() {
+                                cmd.env(k, val);
+                            }
+                        }
+                    }
+
+                    // Start the MCP server via child process
+                    let transport = match TokioChildProcess::new(cmd) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            println!("❌ Failed to spawn '{}': {}", name, e);
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": e.to_string()}),
+                            );
+                            continue;
+                        }
+                    };
+
+                    let service = match ().serve(transport).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            println!("❌ Failed to connect to '{}': {:?}", name, e);
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
+                            );
+                            continue;
+                        }
+                    };
+
+                    let tool_list = match service.list_tools(Default::default()).await {
+                        Ok(t) => t,
+                        Err(e) => {
+                            println!("❌ Failed to list tools from '{}': {:?}", name, e);
+                            statuses.push(
+                                json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
+                            );
+                            continue;
+                        }
+                    };
+
+                    println!(
+                        "✅ MCP '{}' connected with {} tools",
+                        name,
+                        tool_list.tools.len()
+                    );
+
+                    let conn = McpConnection {
+                        tools: tool_list.tools,
+                        peer: service.peer().clone(),
+                        _service: service,
+                    };
+
+                    statuses.push(json!({"name": name, "status": "connected", "error": null}));
+                    state.lock().await.mcp_connections.insert(name.clone(), conn);
                 }
+            }
+
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "mcp_server_status", "content": {"servers": statuses}})
+                        .to_string(),
+                ))
+                .await;
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "mcp_sync_success", "content": "MCP servers are connected and ready!"})
+                        .to_string(),
+                ))
+                .await;
+        }
+
+        "mcp_status_request" => {
+            let s = state.lock().await;
+            let servers: Vec<serde_json::Value> = s
+                .mcp_connections
+                .iter()
+                .map(|(name, conn)| {
+                    json!({"name": name, "status": "connected", "tools_count": conn.tools.len()})
+                })
+                .collect();
+            drop(s);
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "mcp_server_status", "content": {"servers": servers}})
+                        .to_string(),
+                ))
+                .await;
+        }
+
+        "tools_request" => {
+            let s = state.lock().await;
+            let mut tools_list: Vec<serde_json::Value> = vec![
+                json!({"name": "calculator", "source": "built-in", "description": "Evaluate mathematical expressions"}),
+                json!({"name": "open_application", "source": "built-in", "description": "Launch a macOS application by name"}),
+                json!({"name": "open_chrome_tab", "source": "built-in", "description": "Open a URL in Google Chrome"}),
+                json!({"name": "read_memory", "source": "built-in", "description": "Read from the agent's persistent knowledge base"}),
+                json!({"name": "save_to_memory", "source": "built-in", "description": "Save information to the agent's persistent knowledge base"}),
+                json!({"name": "append_to_memory", "source": "built-in", "description": "Append content to an existing memory entry"}),
+            ];
+            for (server_name, conn) in &s.mcp_connections {
+                for tool in &conn.tools {
+                    let safe_name = crate::mcp_proxy::sanitize_tool_name(&tool.name);
+                    let desc = tool
+                        .description
+                        .as_deref()
+                        .filter(|d| !d.is_empty())
+                        .unwrap_or("MCP tool");
+                    let source = format!("mcp:{}", server_name);
+                    tools_list.push(json!({"name": safe_name, "source": source, "description": desc}));
+                }
+            }
+            drop(s);
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "active_tools", "content": {"tools": tools_list}}).to_string(),
+                ))
+                .await;
+        }
+
+        "set_builtin_servers" => {
+            println!("🔧 set_builtin_servers received");
+
+            // Parse enabled server names
+            let enabled: Vec<String> = data["enabled"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            // Parse filesystem paths, defaulting to $HOME
+            let filesystem_paths: Vec<String> = {
+                let from_data: Vec<String> = data["filesystem_paths"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if from_data.is_empty() {
+                    vec![std::env::var("HOME").unwrap_or_else(|_| "/".to_string())]
+                } else {
+                    from_data
+                }
+            };
+
+            // Stop any currently running built-in servers NOT in the new enabled list
+            {
+                let mut s = state.lock().await;
+                let to_stop: Vec<String> = s
+                    .builtin_servers
+                    .keys()
+                    .filter(|name| !enabled.contains(name))
+                    .cloned()
+                    .collect();
+                for name in to_stop {
+                    if let Some(conn) = s.builtin_servers.remove(&name) {
+                        println!("🛑 Stopping built-in server: {}", name);
+                        let _ = conn._service.cancel().await;
+                    }
+                }
+            }
+
+            let expanded_path = build_expanded_path();
+            let mut statuses: Vec<serde_json::Value> = Vec::new();
+
+            for name in &enabled {
+                // For filesystem: always restart so path changes take effect.
+                // For other built-ins: skip if already running.
+                if state.lock().await.builtin_servers.contains_key(name.as_str()) {
+                    if name != "filesystem" {
+                        statuses.push(json!({"name": name, "status": "connected", "error": null}));
+                        continue;
+                    }
+                    // Stop the existing filesystem server so it can be restarted with updated paths.
+                    if let Some(conn) = state.lock().await.builtin_servers.remove(name.as_str()) {
+                        let _ = conn._service.cancel().await;
+                    }
+                }
+
+                // Look up the server definition
+                let def = match BUILTIN_SERVERS.iter().find(|d| d.name == name.as_str()) {
+                    Some(d) => d,
+                    None => {
+                        println!("❌ Unknown built-in server: {}", name);
+                        statuses.push(
+                            json!({"name": name, "status": "error", "error": format!("Unknown built-in server: {}", name)}),
+                        );
+                        continue;
+                    }
+                };
+
+                // Check that npx (Node.js) is available
+                let resolved = resolve_command(def.command, &expanded_path);
+                if resolved == def.command {
+                    println!("❌ {} not found on PATH for server '{}'", def.command, name);
+                    statuses.push(
+                        json!({"name": name, "status": "error", "error": "Node.js not installed"}),
+                    );
+                    continue;
+                }
+
+                // Build args: template args + filesystem_paths for "filesystem" server
+                let mut args: Vec<String> =
+                    def.args_template.iter().map(|s| s.to_string()).collect();
+                if name == "filesystem" {
+                    args.extend(filesystem_paths.iter().cloned());
+                }
+
+                println!("🔗 Starting built-in MCP server '{}': {} {:?}", name, resolved, args);
+
+                let mut cmd = tokio::process::Command::new(&resolved);
+                cmd.args(&args);
+                cmd.env("PATH", &expanded_path);
+
+                let transport = match TokioChildProcess::new(cmd) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        println!("❌ Failed to spawn built-in server '{}': {}", name, e);
+                        statuses.push(
+                            json!({"name": name, "status": "error", "error": e.to_string()}),
+                        );
+                        continue;
+                    }
+                };
+
+                let service = match ().serve(transport).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("❌ Failed to connect to built-in server '{}': {:?}", name, e);
+                        statuses.push(
+                            json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
+                        );
+                        continue;
+                    }
+                };
+
+                let tool_list = match service.list_tools(Default::default()).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        println!("❌ Failed to list tools from built-in server '{}': {:?}", name, e);
+                        statuses.push(
+                            json!({"name": name, "status": "error", "error": format!("{:?}", e)}),
+                        );
+                        continue;
+                    }
+                };
+
+                println!(
+                    "✅ Built-in MCP '{}' connected with {} tools",
+                    name,
+                    tool_list.tools.len()
+                );
+
+                let conn = McpConnection {
+                    tools: tool_list.tools,
+                    peer: service.peer().clone(),
+                    _service: service,
+                };
+
+                statuses.push(json!({"name": name, "status": "connected", "error": null}));
+                state.lock().await.builtin_servers.insert(name.clone(), conn);
+            }
+
+            // Send server statuses for all requested servers
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "mcp_server_status", "content": {"servers": statuses}})
+                        .to_string(),
+                ))
+                .await;
+        }
+
+        "set_composio" => {
+            let api_key = data["api_key"].as_str().unwrap_or("").trim().to_string();
+
+            if api_key.is_empty() {
+                // Disconnect: clear stored key and drop connection
+                let mut s = state.lock().await;
+                s.composio_api_key = None;
+                if let Some(conn) = s.mcp_connections.remove("composio") {
+                    let _ = conn._service.cancel().await;
+                    println!("🛑 Composio MCP server disconnected");
+                }
+                drop(s);
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "disconnected", "error": null}]}})
+                            .to_string(),
+                    ))
+                    .await;
+            } else {
+                // Connect via @composio/mcp stdio bridge.
+                // Composio's hosted MCP endpoint (connect.composio.dev/mcp) requires
+                // OAuth JWT, not a plain API key.  The @composio/mcp npm package handles
+                // the OAuth flow automatically (opens browser on first use, caches tokens).
+                println!("🔗 Starting Composio MCP via @composio/mcp (may open browser for OAuth)");
+                state.lock().await.composio_api_key = Some(api_key.clone());
+
+                let expanded_path = build_expanded_path();
+                let npx = resolve_command("npx", &expanded_path);
+
+                // mcp-remote is the OAuth-aware stdio proxy that @composio/mcp setup
+                // writes into Claude Desktop's config.  It handles the full OAuth
+                // browser flow automatically and caches tokens between sessions.
+                let mut cmd = tokio::process::Command::new(&npx);
+                cmd.args(["-y", "mcp-remote", "https://connect.composio.dev/mcp"]);
+                cmd.env("PATH", &expanded_path);
+                if !api_key.is_empty() {
+                    cmd.env("COMPOSIO_API_KEY", &api_key);
+                }
+
+                let transport = match TokioChildProcess::new(cmd) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        println!("❌ Failed to spawn @composio/mcp: {}", e);
+                        state.lock().await.composio_api_key = None;
+                        let _ = sender
+                            .send(Message::Text(
+                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "error", "error": e.to_string()}]}})
+                                    .to_string(),
+                            ))
+                            .await;
+                        return;
+                    }
+                };
+
+                // Give the OAuth flow time to complete (user may need to authenticate in browser).
+                let service = match tokio::time::timeout(
+                    std::time::Duration::from_secs(120),
+                    ().serve(transport),
+                )
+                .await
+                {
+                    Ok(Ok(s)) => s,
+                    Ok(Err(e)) => {
+                        println!("❌ Composio MCP handshake failed: {:?}", e);
+                        state.lock().await.composio_api_key = None;
+                        let _ = sender
+                            .send(Message::Text(
+                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "error", "error": format!("{:?}", e)}]}})
+                                    .to_string(),
+                            ))
+                            .await;
+                        return;
+                    }
+                    Err(_) => {
+                        println!("❌ Composio MCP timed out (120s) — OAuth may not have completed");
+                        state.lock().await.composio_api_key = None;
+                        let _ = sender
+                            .send(Message::Text(
+                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "error", "error": "Timed out waiting for Composio OAuth (120s). Complete browser authentication and try again."}]}})
+                                    .to_string(),
+                            ))
+                            .await;
+                        return;
+                    }
+                };
+
+                let tool_list = match service.list_tools(Default::default()).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        println!("❌ Composio list_tools failed: {:?}", e);
+                        state.lock().await.composio_api_key = None;
+                        let _ = sender
+                            .send(Message::Text(
+                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "error", "error": format!("{:?}", e)}]}})
+                                    .to_string(),
+                            ))
+                            .await;
+                        return;
+                    }
+                };
+
+                println!("✅ Composio MCP connected with {} tools", tool_list.tools.len());
+                let conn = McpConnection {
+                    tools: tool_list.tools,
+                    peer: service.peer().clone(),
+                    _service: service,
+                };
+                state.lock().await.mcp_connections.insert("composio".to_string(), conn);
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "connected", "error": null}]}})
+                            .to_string(),
+                    ))
+                    .await;
             }
         }
 
@@ -729,7 +863,7 @@ async fn handle_chat(
         return;
     }
 
-    let (api_key, model, provider, mcp_tool_sets, google_access_token, spreadsheet_configs) = {
+    let (api_key, model, provider, mcp_tool_sets) = {
         let s = state.lock().await;
         let key = s.api_keys.get(&s.current_provider).cloned();
         (
@@ -737,15 +871,13 @@ async fn handle_chat(
             s.current_model.clone(),
             s.current_provider.clone(),
             s.all_mcp_tools(),
-            s.google_access_token.clone(),
-            s.spreadsheet_configs.clone(),
         )
     };
 
     let user_name = data["user_name"].as_str().map(|s| s.to_string());
 
-    // Ollama doesn't need an API key; others do
     if provider != "ollama"
+        && provider != "openrouter"
         && api_key.as_ref().is_none_or(|k| k.is_empty())
     {
         let _ = sender
@@ -756,11 +888,9 @@ async fn handle_chat(
             .await;
         return;
     }
-    
-    // Channel for tool-call events emitted during LLM execution
+
     let (tool_tx, mut tool_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(64);
 
-    // Spawn LLM in a separate task so we can forward tool events concurrently
     let system_prompt = data["system_prompt"].as_str().map(|s| s.to_string());
     let base64_image = data["base64_image"].as_str().map(|s| s.to_string());
     let history_clone = chat_history.clone();
@@ -774,14 +904,10 @@ async fn handle_chat(
         mcp_tool_sets,
         system_prompt,
         base64_image,
-        google_access_token,
-        spreadsheet_configs,
         tool_tx,
         user_name,
     ));
 
-    // Forward tool_call / tool_result events while the LLM task is running.
-    // biased: drain all pending events before checking task completion.
     let llm_result = loop {
         tokio::select! {
             biased;
@@ -789,7 +915,6 @@ async fn handle_chat(
                 let _ = sender.send(Message::Text(event.to_string())).await;
             }
             outcome = &mut llm_task => {
-                // Drain any events that arrived just before the task finished
                 while let Ok(event) = tool_rx.try_recv() {
                     let _ = sender.send(Message::Text(event.to_string())).await;
                 }
@@ -832,7 +957,7 @@ async fn handle_chat(
             println!("❌ LLM error: {}", e);
             let _ = sender
                 .send(Message::Text(
-                    json!({"type": "response", "content": {"text": format!("I ran into an issue while processing your request: {}\n\nPlease try rephrasing or try again in a moment.", e), "images": [], "widgets": []}})
+                    json!({"type": "response", "content": {"text": format!("I ran into an issue: {}\n\nPlease try again.", e), "images": [], "widgets": []}})
                         .to_string(),
                 ))
                 .await;
@@ -840,14 +965,57 @@ async fn handle_chat(
     }
 }
 
-/// Build an expanded PATH that includes common tool locations
+/// Connect to an HTTP/SSE MCP server using the streamable-http transport.
+///
+/// The `Authorization: Bearer <api_key>` header is sent with every request when
+/// `api_key` is non-empty.  The returned `McpConnection` contains the raw tool
+/// list and a peer handle; the caller is responsible for inserting it into
+/// `state.mcp_connections`.
+async fn connect_http_mcp_server(
+    url: &str,
+    api_key: &str,
+) -> Result<McpConnection, String> {
+    let config = {
+        let base = StreamableHttpClientTransportConfig::with_uri(url);
+        if api_key.is_empty() {
+            base
+        } else {
+            base.auth_header(api_key)
+        }
+    };
+
+    let transport = StreamableHttpClientTransport::from_config(config);
+
+    let service = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        ().serve(transport),
+    )
+    .await
+    .map_err(|_| "Connection timed out after 30s".to_string())?
+    .map_err(|e| format!("MCP handshake failed: {:?}", e))?;
+
+    let tool_list = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        service.list_tools(Default::default()),
+    )
+    .await
+    .map_err(|_| "list_tools timed out after 15s".to_string())?
+    .map_err(|e| format!("list_tools failed: {:?}", e))?;
+
+    let conn = McpConnection {
+        tools: tool_list.tools,
+        peer: service.peer().clone(),
+        _service: service,
+    };
+
+    Ok(conn)
+}
+
 fn build_expanded_path() -> String {
     let home = dirs::home_dir().unwrap_or_default();
     let home_str = home.to_string_lossy();
-
     let mut extra_paths: Vec<String> = Vec::new();
 
-    // nvm node versions
     let nvm_dir = home.join(".nvm").join("versions").join("node");
     if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
         for entry in entries.flatten() {
@@ -858,14 +1026,13 @@ fn build_expanded_path() -> String {
         }
     }
 
-    // Common tool directories
     let common_dirs = [
-        format!("{}/.local/bin", home_str),           // pipx, uv
-        "/opt/homebrew/bin".to_string(),               // Homebrew (Apple Silicon)
-        "/usr/local/bin".to_string(),                  // Homebrew (Intel)
-        "/opt/local/bin".to_string(),                  // MacPorts
-        format!("{}/.cargo/bin", home_str),            // Rust/cargo
-        format!("{}/go/bin", home_str),                // Go
+        format!("{}/.local/bin", home_str),
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+        "/opt/local/bin".to_string(),
+        format!("{}/.cargo/bin", home_str),
+        format!("{}/go/bin", home_str),
     ];
 
     for dir in &common_dirs {
@@ -874,29 +1041,22 @@ fn build_expanded_path() -> String {
         }
     }
 
-    // Append the existing PATH
     let existing = std::env::var("PATH").unwrap_or_default();
     if !existing.is_empty() {
         extra_paths.push(existing);
     }
-
     extra_paths.join(":")
 }
 
-/// Resolve a command name to its full path using the expanded PATH
 fn resolve_command(command: &str, path: &str) -> String {
-    // If already an absolute path, return as-is
     if command.starts_with('/') {
         return command.to_string();
     }
-
     for dir in path.split(':') {
         let candidate = std::path::Path::new(dir).join(command);
         if candidate.is_file() {
             return candidate.to_string_lossy().to_string();
         }
     }
-
-    // Fallback to the command name itself
     command.to_string()
 }

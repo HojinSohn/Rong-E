@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -107,6 +108,7 @@ struct GeneralSettingsView: View {
     @State private var llmStatusMessage: String?
     @State private var llmStatusIsError: Bool = false
     @State private var isVerifying: Bool = false
+    @State private var isConnectingOpenRouter: Bool = false
     // Snapshot of the last successfully verified LLM config — used to revert on failure.
     @State private var lastAppliedProvider: LLMProvider = .gemini
     @State private var lastAppliedModel: String = ""
@@ -268,8 +270,12 @@ struct GeneralSettingsView: View {
                         }
                     )
 
-                    // API Key
-                    if context.llmProvider.requiresAPIKey {
+                    // API Key / OAuth
+                    if context.llmProvider.usesOAuth {
+                        OpenRouterOAuthRow(isConnecting: $isConnectingOpenRouter) {
+                            startOpenRouterOAuth()
+                        }
+                    } else if context.llmProvider.requiresAPIKey {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("API KEY")
                                 .font(.system(size: 9, design: .monospaced))
@@ -342,14 +348,11 @@ struct GeneralSettingsView: View {
             lastAppliedProvider = context.llmProvider
             lastAppliedModel = context.llmModel
             lastAppliedApiKey = context.aiApiKey
-            
-            // Check screen capture permission status
-            context.recheckScreenCapturePermission()
         }
     }
 
     private func applyLLMConfig() {
-        // Validate
+        // Validate — OAuth and Ollama providers skip key check
         if context.llmProvider.requiresAPIKey && context.aiApiKey.trimmingCharacters(in: .whitespaces).isEmpty {
             llmStatusMessage = "API key is required for \(context.llmProvider.displayName)"
             llmStatusIsError = true
@@ -361,11 +364,14 @@ struct GeneralSettingsView: View {
         llmStatusMessage = "Verifying \(context.llmProvider.displayName) / \(context.llmModel)..."
         llmStatusIsError = false
 
-        // Send to backend (backend will validate and respond)
+        // For OAuth providers, the key is stored server-side (not in aiApiKey),
+        // so we send nil.  The backend looks it up from its own api_keys map.
+        let keyToSend = context.llmProvider.requiresAPIKey ? context.aiApiKey : nil
+
         SocketClient.shared.sendLLMConfig(
             provider: context.llmProvider.rawValue,
             model: context.llmModel,
-            apiKey: context.llmProvider.requiresAPIKey ? context.aiApiKey : nil
+            apiKey: keyToSend
         )
 
         // Register a one-time result handler.  Settings are only persisted on
@@ -384,6 +390,113 @@ struct GeneralSettingsView: View {
                 context.llmProvider = lastAppliedProvider
                 context.llmModel = lastAppliedModel
                 context.aiApiKey = lastAppliedApiKey
+            }
+        }
+    }
+
+    private func startOpenRouterOAuth() {
+        isConnectingOpenRouter = true
+        llmStatusMessage = "Opening OpenRouter sign-in…"
+        llmStatusIsError = false
+
+        // Open the browser when the URL arrives.
+        SocketClient.shared.onOpenRouterOAuthURL = { urlString in
+            if let url = URL(string: urlString) {
+                NSWorkspace.shared.open(url)
+            }
+        }
+
+        // Handle the final result (success = API key returned by server).
+        SocketClient.shared.onOpenRouterOAuthResult = { success, payload in
+            isConnectingOpenRouter = false
+            if success {
+                // `payload` is the API key — store it locally so SET LLM
+                // can display the connected state, but the backend already
+                // has it stored server-side from the OAuth exchange.
+                context.isOpenRouterConnected = true
+                context.saveApiKeyForProvider(.openrouter, apiKey: payload)
+                llmStatusMessage = "OpenRouter connected ✓"
+                llmStatusIsError = false
+            } else {
+                context.isOpenRouterConnected = false
+                llmStatusMessage = payload
+                llmStatusIsError = true
+            }
+        }
+
+        SocketClient.shared.sendStartOpenRouterOAuth()
+    }
+}
+
+// MARK: - OpenRouter OAuth Row
+
+struct OpenRouterOAuthRow: View {
+    @EnvironmentObject var context: AppContext
+    @Binding var isConnecting: Bool
+    let onConnect: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("OPENROUTER AUTH")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.jarvisTextDim)
+
+            if context.isOpenRouterConnected {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(Color.jarvisGreen)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: .jarvisGreen, radius: 3)
+                    Text("CONNECTED TO OPENROUTER")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(.jarvisGreen)
+                    Spacer()
+                    Button(action: {
+                        context.isOpenRouterConnected = false
+                        context.saveApiKeyForProvider(.openrouter, apiKey: "")
+                    }) {
+                        Text("DISCONNECT")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.jarvisRed)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .overlay(Rectangle().stroke(Color.jarvisRed.opacity(0.5), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(8)
+                .background(Color.jarvisGreen.opacity(0.05))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.jarvisGreen.opacity(0.3), lineWidth: 0.5))
+            } else {
+                Button(action: onConnect) {
+                    HStack(spacing: 6) {
+                        if isConnecting {
+                            ProgressView().controlSize(.mini)
+                            Text("WAITING FOR BROWSER…")
+                        } else {
+                            Image(systemName: "link.badge.plus")
+                            Text("CONNECT VIA OPENROUTER")
+                        }
+                        Spacer()
+                        if !isConnecting {
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 8))
+                        }
+                    }
+                    .font(.system(size: 10, design: .monospaced))
+                    .fontWeight(.bold)
+                    .foregroundColor(.jarvisBlue)
+                    .padding(8)
+                    .background(Color.jarvisBlue.opacity(0.1))
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.jarvisBlue.opacity(0.4), lineWidth: 0.5))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isConnecting)
+
+                Text("OPENS BROWSER · NO API KEY REQUIRED · PKCE OAUTH 2.0")
+                    .font(.system(size: 8, design: .monospaced))
+                    .foregroundColor(.jarvisTextDim)
             }
         }
     }
@@ -530,17 +643,150 @@ struct LLMModelSelector: View {
 // MARK: - MCP Settings View
 struct MCPSettingsView: View {
     @ObservedObject var configManager = MCPConfigManager.shared
+    @ObservedObject var builtinManager = BuiltinServerManager.shared
     @ObservedObject private var _theme = AppContext.shared
     @State private var showFileImporter = false
     @State private var showAddServerSheet = false
     @State private var showJSONPasteSheet = false
     @State private var jsonPasteText = ""
+    @State private var showShellWarning = false
+    @State private var composioKeyInput = ""
+    @State private var isComposioConnecting = false
+
+    private let shellAckKey = "shell_server_warning_acknowledged"
+    private let composioKeychainKey = "composio_api_key"
+
+    private let builtinServers: [(id: String, label: String)] = [
+        ("filesystem", "FILESYSTEM"), ("fetch", "WEB FETCH"),
+        ("shell", "SHELL"), ("memory", "MEMORY"),
+    ]
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 15) {
+
+            // ── Built-in Servers ──────────────────────────────────
+            Text("BUILT-IN SERVERS")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.jarvisBlue.opacity(0.7))
+                .tracking(1)
+
+            VStack(spacing: 6) {
+                ForEach(builtinServers, id: \.id) { server in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Circle()
+                                .fill(builtinStatusColor(server.id))
+                                .frame(width: 6, height: 6)
+                            Text(server.label)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.jarvisTextPrimary)
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { builtinManager.isEnabled(server.id) },
+                                set: { on in
+                                    if server.id == "shell" && on && !UserDefaults.standard.bool(forKey: shellAckKey) {
+                                        showShellWarning = true
+                                    } else {
+                                        builtinManager.setEnabled(server.id, on)
+                                    }
+                                }
+                            ))
+                            .labelsHidden()
+                            .controlSize(.small)
+                        }
+                        if server.id == "filesystem" && builtinManager.isEnabled("filesystem") {
+                            filesystemPathPicker
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.3))
+                    .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.2), lineWidth: 1))
+                }
+            }
+            .alert("Shell Server Warning", isPresented: $showShellWarning) {
+                Button("Enable", role: .destructive) {
+                    UserDefaults.standard.set(true, forKey: shellAckKey)
+                    builtinManager.setEnabled("shell", true)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The shell server lets Rong-E run terminal commands on your Mac. Only enable this if you trust your prompts.")
+            }
+
+            // Node.js missing banner
+            if hasNodeError {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.jarvisOrange)
+                    Text("Node.js required for built-in servers")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.jarvisOrange)
+                    Spacer()
+                    Link("INSTALL →", destination: URL(string: "https://nodejs.org")!)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.jarvisBlue)
+                }
+                .padding(8)
+                .background(Color.jarvisOrange.opacity(0.08))
+                .overlay(Rectangle().stroke(Color.jarvisOrange.opacity(0.3), lineWidth: 1))
+            }
+
+            Divider().background(Color.jarvisBlue.opacity(0.3))
+
+            // ── Composio ─────────────────────────────────────────
+            HStack {
+                Text("COMPOSIO")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.jarvisBlue.opacity(0.7))
+                    .tracking(1)
+                Spacer()
+                composioStatusDot
+            }
+
+            VStack(spacing: 6) {
+                SecureField("API KEY", text: $composioKeyInput)
+                    .font(.system(size: 10, design: .monospaced))
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(Color.black.opacity(0.3))
+                    .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
+
+                HStack(spacing: 8) {
+                    let isConnected = configManager.serverStatuses["composio"] == .connected
+                    Button(isConnected ? "DISCONNECT" : "CONNECT") {
+                        if isConnected {
+                            KeychainHelper.delete(forKey: composioKeychainKey)
+                            configManager.composioApiKey = ""
+                            composioKeyInput = ""
+                            SocketClient.shared.disconnectComposio()
+                        } else {
+                            let key = composioKeyInput.trimmingCharacters(in: .whitespaces)
+                            guard !key.isEmpty else { return }
+                            KeychainHelper.save(key, forKey: composioKeychainKey)
+                            configManager.composioApiKey = key
+                            SocketClient.shared.sendComposioKey(key)
+                        }
+                    }
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(isConnected ? .jarvisOrange : .jarvisBlue)
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background((isConnected ? Color.jarvisOrange : Color.jarvisBlue).opacity(0.15))
+                    .overlay(Rectangle().stroke(isConnected ? Color.jarvisOrange : Color.jarvisBlue, lineWidth: 1))
+                    .buttonStyle(.plain)
+
+                    Link("GET KEY →", destination: URL(string: "https://app.composio.dev/settings")!)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.jarvisBlue.opacity(0.6))
+                }
+            }
+
+            Divider().background(Color.jarvisBlue.opacity(0.3))
+
+            // ── Custom Servers ────────────────────────────────────
             // Header with sync status
             HStack {
-                Text("MCP SERVER ARRAY")
+                Text("CUSTOM SERVERS")
                     .font(.caption)
                     .foregroundColor(.jarvisBlue.opacity(0.7))
                     .tracking(1)
@@ -643,6 +889,11 @@ struct MCPSettingsView: View {
                 }
             }
         }
+        .padding(.bottom, 8)
+        } // ScrollView
+        .onAppear {
+            composioKeyInput = configManager.composioApiKey
+        }
         .modifier(JarvisPanel())
         .fileImporter(
             isPresented: $showFileImporter,
@@ -664,6 +915,78 @@ struct MCPSettingsView: View {
             MCPJSONPasteSheet(jsonText: $jsonPasteText) {
                 configManager.loadConfig(from: jsonPasteText)
                 jsonPasteText = ""
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var filesystemPathPicker: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(builtinManager.config.filesystemPaths, id: \.self) { path in
+                HStack {
+                    Text(path)
+                        .font(.system(size: 8, design: .monospaced))
+                        .foregroundColor(.jarvisTextDim)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Button { builtinManager.setFilesystemPaths(builtinManager.config.filesystemPaths.filter { $0 != path }) } label: {
+                        Image(systemName: "minus.circle").foregroundColor(.jarvisOrange).font(.system(size: 10))
+                    }.buttonStyle(.plain)
+                }
+            }
+            Button {
+                let panel = NSOpenPanel()
+                panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false
+                if panel.runModal() == .OK, let url = panel.url {
+                    var paths = builtinManager.config.filesystemPaths
+                    if !paths.contains(url.path) { paths.append(url.path) }
+                    builtinManager.setFilesystemPaths(paths)
+                }
+            } label: {
+                Label("ADD PATH", systemImage: "plus.circle")
+                    .font(.system(size: 8, design: .monospaced))
+                    .foregroundColor(.jarvisBlue)
+            }.buttonStyle(.plain)
+        }
+        .padding(.leading, 14)
+    }
+
+    private var hasNodeError: Bool {
+        builtinServers.contains {
+            if case .error(let msg) = configManager.serverStatuses[$0.id] { return msg.contains("Node.js") }
+            return false
+        }
+    }
+
+    private func builtinStatusColor(_ name: String) -> Color {
+        switch configManager.serverStatuses[name] {
+        case .connected: return .jarvisGreen
+        case .error: return .jarvisOrange
+        case .connecting: return .jarvisBlue
+        default: return .jarvisTextDim.opacity(0.4)
+        }
+    }
+
+    private var composioStatusDot: some View {
+        Group {
+            switch configManager.serverStatuses["composio"] {
+            case .connected:
+                HStack(spacing: 4) {
+                    Circle().fill(Color.jarvisGreen).frame(width: 6, height: 6)
+                    Text("CONNECTED").font(.system(size: 8, design: .monospaced)).foregroundColor(.jarvisGreen)
+                }
+            case .error(let msg):
+                HStack(spacing: 4) {
+                    Circle().fill(Color.jarvisOrange).frame(width: 6, height: 6)
+                    Text(msg.prefix(30)).font(.system(size: 8, design: .monospaced)).foregroundColor(.jarvisOrange)
+                }
+            case .connecting:
+                HStack(spacing: 4) {
+                    Circle().fill(Color.jarvisBlue).frame(width: 6, height: 6)
+                    Text("CONNECTING…").font(.system(size: 8, design: .monospaced)).foregroundColor(.jarvisBlue)
+                }
+            default: EmptyView()
             }
         }
     }

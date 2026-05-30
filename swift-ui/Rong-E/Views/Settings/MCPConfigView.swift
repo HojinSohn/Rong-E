@@ -18,101 +18,116 @@ struct MCPConfigView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JarvisSpacing.lg) {
-            // Header
-            HStack {
-                Text("MCP Servers")
-                    .font(JarvisFont.title)
-                    .foregroundStyle(Color.jarvisTextPrimary)
-                Spacer()
-                syncStatusIndicator
-            }
-
-            // Error display
-            if let error = configManager.lastError {
+        ScrollView {
+            VStack(alignment: .leading, spacing: JarvisSpacing.lg) {
+                // Header
                 HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Color.jarvisOrange)
-                    Text(error)
-                        .font(JarvisFont.caption)
-                        .foregroundStyle(Color.jarvisTextSecondary)
+                    Text("MCP Servers")
+                        .font(JarvisFont.title)
+                        .foregroundStyle(Color.jarvisTextPrimary)
                     Spacer()
-                    Button("Dismiss") {
-                        configManager.lastError = nil
+                    syncStatusIndicator
+                }
+
+                BuiltinServersSection()
+
+                Divider()
+
+                ComposioSection()
+
+                Divider()
+
+                // Custom Servers section header
+                Text("Custom Servers")
+                    .font(JarvisFont.subtitle)
+                    .foregroundStyle(Color.jarvisTextPrimary)
+
+                // Error display
+                if let error = configManager.lastError {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Color.jarvisOrange)
+                        Text(error)
+                            .font(JarvisFont.caption)
+                            .foregroundStyle(Color.jarvisTextSecondary)
+                        Spacer()
+                        Button("Dismiss") {
+                            configManager.lastError = nil
+                        }
+                        .buttonStyle(.plain)
+                        .font(JarvisFont.caption)
+                        .foregroundStyle(Color.jarvisCyan)
                     }
-                    .buttonStyle(.plain)
-                    .font(JarvisFont.caption)
-                    .foregroundStyle(Color.jarvisCyan)
+                    .padding(JarvisSpacing.sm)
+                    .background(Color.jarvisOrange.opacity(0.1))
+                    .cornerRadius(JarvisRadius.small)
                 }
-                .padding(JarvisSpacing.sm)
-                .background(Color.jarvisOrange.opacity(0.1))
-                .cornerRadius(JarvisRadius.small)
-            }
 
-            // Server list
-            if configManager.servers.isEmpty {
-                emptyStateView
-            } else {
-                serverListView
-            }
-
-            Divider()
-
-            // Action buttons
-            HStack(spacing: JarvisSpacing.md) {
-                Button(action: { showFileImporter = true }) {
-                    Label("Import File", systemImage: "doc.badge.plus")
-                        .font(JarvisFont.label)
+                // Server list
+                if configManager.servers.isEmpty {
+                    emptyStateView
+                } else {
+                    serverListView
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.jarvisCyan)
-                .padding(.horizontal, JarvisSpacing.md)
-                .padding(.vertical, JarvisSpacing.sm)
-                .background(Color.jarvisCyan.opacity(0.15))
-                .cornerRadius(JarvisRadius.medium)
-                .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisCyan.opacity(0.3), lineWidth: 1))
 
-                Button(action: { showJSONPasteSheet = true }) {
-                    Label("Paste JSON", systemImage: "doc.on.clipboard")
-                        .font(JarvisFont.label)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.jarvisCyan)
-                .padding(.horizontal, JarvisSpacing.md)
-                .padding(.vertical, JarvisSpacing.sm)
-                .background(Color.jarvisCyan.opacity(0.15))
-                .cornerRadius(JarvisRadius.medium)
-                .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisCyan.opacity(0.3), lineWidth: 1))
+                Divider()
 
-                Button(action: { showAddServerSheet = true }) {
-                    Label("Add Server", systemImage: "plus.circle")
-                        .font(JarvisFont.label)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.jarvisGreen)
-                .padding(.horizontal, JarvisSpacing.md)
-                .padding(.vertical, JarvisSpacing.sm)
-                .background(Color.jarvisGreen.opacity(0.15))
-                .cornerRadius(JarvisRadius.medium)
-                .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisGreen.opacity(0.3), lineWidth: 1))
-
-                Spacer()
-
-                if !configManager.servers.isEmpty {
-                    Button(action: { configManager.sendConfigToPython() }) {
-                        Label("Sync", systemImage: "arrow.triangle.2.circlepath")
+                // Action buttons
+                HStack(spacing: JarvisSpacing.md) {
+                    Button(action: { showFileImporter = true }) {
+                        Label("Import File", systemImage: "doc.badge.plus")
                             .font(JarvisFont.label)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Color.jarvisTextPrimary)
-                    .padding(.horizontal, JarvisSpacing.lg)
+                    .foregroundStyle(Color.jarvisCyan)
+                    .padding(.horizontal, JarvisSpacing.md)
                     .padding(.vertical, JarvisSpacing.sm)
-                    .background(Color.jarvisBlue)
+                    .background(Color.jarvisCyan.opacity(0.15))
                     .cornerRadius(JarvisRadius.medium)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisCyan.opacity(0.3), lineWidth: 1))
+
+                    Button(action: { showJSONPasteSheet = true }) {
+                        Label("Paste JSON", systemImage: "doc.on.clipboard")
+                            .font(JarvisFont.label)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.jarvisCyan)
+                    .padding(.horizontal, JarvisSpacing.md)
+                    .padding(.vertical, JarvisSpacing.sm)
+                    .background(Color.jarvisCyan.opacity(0.15))
+                    .cornerRadius(JarvisRadius.medium)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisCyan.opacity(0.3), lineWidth: 1))
+
+                    Button(action: { showAddServerSheet = true }) {
+                        Label("Add Server", systemImage: "plus.circle")
+                            .font(JarvisFont.label)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.jarvisGreen)
+                    .padding(.horizontal, JarvisSpacing.md)
+                    .padding(.vertical, JarvisSpacing.sm)
+                    .background(Color.jarvisGreen.opacity(0.15))
+                    .cornerRadius(JarvisRadius.medium)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisGreen.opacity(0.3), lineWidth: 1))
+
+                    Spacer()
+
+                    if !configManager.servers.isEmpty {
+                        Button(action: { configManager.sendConfigToPython() }) {
+                            Label("Sync", systemImage: "arrow.triangle.2.circlepath")
+                                .font(JarvisFont.label)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.jarvisTextPrimary)
+                        .padding(.horizontal, JarvisSpacing.lg)
+                        .padding(.vertical, JarvisSpacing.sm)
+                        .background(Color.jarvisBlue)
+                        .cornerRadius(JarvisRadius.medium)
+                    }
                 }
             }
+            .padding()
         }
-        .padding()
         .frame(minWidth: 400, minHeight: 300)
         .background(Color.jarvisSurfaceDark)
         .fileImporter(
@@ -240,6 +255,296 @@ struct MCPConfigView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Built-in Servers Section
+
+struct BuiltinServersSection: View {
+    @ObservedObject private var builtinManager = BuiltinServerManager.shared
+    @ObservedObject private var configManager = MCPConfigManager.shared
+    @State private var showShellWarning = false
+    @State private var showFilesystemPaths = false
+
+    private let servers: [(name: String, displayName: String, icon: String)] = [
+        ("filesystem", "Filesystem", "folder"),
+        ("fetch",      "Fetch",      "arrow.down.circle"),
+        ("shell",      "Shell",      "terminal"),
+        ("memory",     "Memory",     "brain"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JarvisSpacing.sm) {
+            Text("Built-in Servers")
+                .font(JarvisFont.subtitle)
+                .foregroundStyle(Color.jarvisTextPrimary)
+
+            ForEach(servers, id: \.name) { entry in
+                serverRow(name: entry.name, displayName: entry.displayName, icon: entry.icon)
+            }
+        }
+        .alert("Enable Shell Server?", isPresented: $showShellWarning) {
+            Button("Cancel", role: .cancel) { }
+            Button("Enable", role: .none) {
+                UserDefaults.standard.set(true, forKey: "shell_server_warning_acknowledged")
+                BuiltinServerManager.shared.setEnabled("shell", true)
+            }
+        } message: {
+            Text("The Shell server can run arbitrary commands on your Mac. Only enable it if you trust the AI agent with shell access.")
+        }
+    }
+
+    @ViewBuilder
+    private func serverRow(name: String, displayName: String, icon: String) -> some View {
+        let isEnabled = builtinManager.isEnabled(name)
+        let status = configManager.serverStatuses[name]
+        let hasNodeError: Bool = {
+            if case .error(let msg) = status { return msg.contains("Node.js not installed") }
+            return false
+        }()
+
+        VStack(alignment: .leading, spacing: JarvisSpacing.xs) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundStyle(isEnabled ? Color.jarvisGreen : Color.jarvisTextDim)
+                    .frame(width: 20)
+
+                Text(displayName)
+                    .font(JarvisFont.label)
+                    .foregroundStyle(Color.jarvisTextPrimary)
+
+                Spacer()
+
+                if name == "filesystem" && isEnabled {
+                    Button(action: { showFilesystemPaths.toggle() }) {
+                        Image(systemName: showFilesystemPaths ? "chevron.up" : "folder.badge.gear")
+                            .foregroundStyle(Color.jarvisCyan)
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Toggle("", isOn: Binding(
+                    get: { builtinManager.isEnabled(name) },
+                    set: { newValue in
+                        if name == "shell" && newValue &&
+                           !UserDefaults.standard.bool(forKey: "shell_server_warning_acknowledged") {
+                            showShellWarning = true
+                        } else {
+                            BuiltinServerManager.shared.setEnabled(name, newValue)
+                        }
+                    }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, JarvisSpacing.md)
+            .padding(.vertical, JarvisSpacing.sm)
+            .background(Color.jarvisSurfaceLight)
+            .cornerRadius(JarvisRadius.medium)
+
+            if hasNodeError {
+                HStack(spacing: JarvisSpacing.xs) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color.jarvisOrange)
+                        .font(.system(size: 12))
+                    Text("Node.js is not installed. ")
+                        .font(JarvisFont.caption)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                    Link("Install from nodejs.org →", destination: URL(string: "https://nodejs.org")!)
+                        .font(JarvisFont.caption)
+                        .foregroundStyle(Color.jarvisCyan)
+                }
+                .padding(.horizontal, JarvisSpacing.md)
+                .padding(.vertical, JarvisSpacing.xs)
+                .background(Color.jarvisOrange.opacity(0.1))
+                .cornerRadius(JarvisRadius.small)
+            }
+
+            if name == "filesystem" && isEnabled && showFilesystemPaths {
+                FilesystemPathsView()
+                    .padding(.top, JarvisSpacing.xs)
+            }
+        }
+    }
+}
+
+// MARK: - Filesystem Paths View
+
+struct FilesystemPathsView: View {
+    @ObservedObject private var builtinManager = BuiltinServerManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JarvisSpacing.xs) {
+            ForEach(builtinManager.config.filesystemPaths, id: \.self) { path in
+                HStack {
+                    Image(systemName: "folder")
+                        .foregroundStyle(Color.jarvisTextDim)
+                        .font(.system(size: 12))
+                    Text(path)
+                        .font(JarvisFont.captionMono)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button(action: {
+                        var paths = builtinManager.config.filesystemPaths
+                        paths.removeAll { $0 == path }
+                        builtinManager.setFilesystemPaths(paths)
+                    }) {
+                        Image(systemName: "minus.circle")
+                            .foregroundStyle(Color.jarvisRed)
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, JarvisSpacing.md)
+                .padding(.vertical, JarvisSpacing.xs)
+                .background(Color.jarvisSurfaceDeep)
+                .cornerRadius(JarvisRadius.small)
+            }
+
+            Button(action: { openFolderPicker() }) {
+                Label("Add Path", systemImage: "folder.badge.plus")
+                    .font(JarvisFont.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.jarvisCyan)
+            .padding(.horizontal, JarvisSpacing.md)
+            .padding(.vertical, JarvisSpacing.xs)
+            .background(Color.jarvisCyan.opacity(0.1))
+            .cornerRadius(JarvisRadius.small)
+            .overlay(RoundedRectangle(cornerRadius: JarvisRadius.small).stroke(Color.jarvisCyan.opacity(0.3), lineWidth: 1))
+        }
+        .padding(JarvisSpacing.sm)
+        .background(Color.jarvisSurfaceDark)
+        .cornerRadius(JarvisRadius.medium)
+    }
+
+    private func openFolderPicker() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Add Path"
+        if panel.runModal() == .OK, let url = panel.url {
+            var paths = builtinManager.config.filesystemPaths
+            let newPath = url.path
+            if !paths.contains(newPath) {
+                paths.append(newPath)
+                builtinManager.setFilesystemPaths(paths)
+            }
+        }
+    }
+}
+
+// MARK: - Composio Section
+
+struct ComposioSection: View {
+    @ObservedObject private var configManager = MCPConfigManager.shared
+    @State private var apiKey: String = ""
+    @State private var isConnected: Bool = false
+
+    private var composioStatus: MCPServerConnectionStatus? {
+        configManager.serverStatuses["composio"]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JarvisSpacing.sm) {
+            HStack {
+                Text("Composio")
+                    .font(JarvisFont.subtitle)
+                    .foregroundStyle(Color.jarvisTextPrimary)
+
+                statusDot
+
+                Spacer()
+
+                Link("Get your API key →", destination: URL(string: "https://app.composio.dev/settings")!)
+                    .font(JarvisFont.caption)
+                    .foregroundStyle(Color.jarvisCyan)
+            }
+
+            HStack(spacing: JarvisSpacing.sm) {
+                SecureField("Composio API Key", text: $apiKey)
+                    .textFieldStyle(.plain)
+                    .font(JarvisFont.mono)
+                    .padding(JarvisSpacing.sm)
+                    .background(Color.jarvisSurfaceDeep)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.small).stroke(Color.jarvisBorder, lineWidth: 1))
+                    .cornerRadius(JarvisRadius.small)
+
+                if isConnected {
+                    Button(action: disconnectComposio) {
+                        Text("Disconnect")
+                            .font(JarvisFont.label)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.jarvisRed)
+                    .padding(.horizontal, JarvisSpacing.md)
+                    .padding(.vertical, JarvisSpacing.sm)
+                    .background(Color.jarvisRed.opacity(0.15))
+                    .cornerRadius(JarvisRadius.medium)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisRed.opacity(0.3), lineWidth: 1))
+                } else {
+                    Button(action: connectComposio) {
+                        Text("Connect")
+                            .font(JarvisFont.label)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.jarvisGreen)
+                    .padding(.horizontal, JarvisSpacing.md)
+                    .padding(.vertical, JarvisSpacing.sm)
+                    .background(Color.jarvisGreen.opacity(0.15))
+                    .cornerRadius(JarvisRadius.medium)
+                    .overlay(RoundedRectangle(cornerRadius: JarvisRadius.medium).stroke(Color.jarvisGreen.opacity(0.3), lineWidth: 1))
+                    .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .onAppear {
+            if let saved = KeychainHelper.load(forKey: "composio_api_key"), !saved.isEmpty {
+                apiKey = saved
+                isConnected = true
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var statusDot: some View {
+        switch composioStatus {
+        case .connected:
+            Circle()
+                .fill(Color.jarvisGreen)
+                .frame(width: 8, height: 8)
+        case .error:
+            Circle()
+                .fill(Color.jarvisRed)
+                .frame(width: 8, height: 8)
+        case .connecting:
+            Circle()
+                .fill(Color.jarvisOrange)
+                .frame(width: 8, height: 8)
+        default:
+            Circle()
+                .fill(Color.jarvisTextDim)
+                .frame(width: 8, height: 8)
+        }
+    }
+
+    private func connectComposio() {
+        let trimmed = apiKey.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        KeychainHelper.save(trimmed, forKey: "composio_api_key")
+        SocketClient.shared.sendComposioKey(trimmed)
+        isConnected = true
+    }
+
+    private func disconnectComposio() {
+        KeychainHelper.delete(forKey: "composio_api_key")
+        SocketClient.shared.disconnectComposio()
+        apiKey = ""
+        isConnected = false
     }
 }
 
