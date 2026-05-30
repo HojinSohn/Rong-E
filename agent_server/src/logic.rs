@@ -25,16 +25,6 @@ const BUILTIN_SERVERS: &[BuiltinServerDef] = &[
         args_template: &["-y", "@modelcontextprotocol/server-filesystem"],
     },
     BuiltinServerDef {
-        name: "fetch",
-        command: "npx",
-        args_template: &["-y", "@modelcontextprotocol/server-fetch"],
-    },
-    BuiltinServerDef {
-        name: "shell",
-        command: "npx",
-        args_template: &["-y", "@modelcontextprotocol/server-shell"],
-    },
-    BuiltinServerDef {
         name: "memory",
         command: "npx",
         args_template: &["-y", "@modelcontextprotocol/server-memory"],
@@ -367,7 +357,7 @@ async fn handle_config(
 
             for (name, server_config) in servers {
                 // Prefix reserved built-in server names to avoid collisions
-                let reserved = ["filesystem", "fetch", "shell", "memory"];
+                let reserved = ["filesystem", "memory"];
                 let name = if reserved.contains(&name.as_str()) {
                     format!("custom:{}", name)
                 } else {

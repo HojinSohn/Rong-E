@@ -171,7 +171,13 @@ struct MainView: View {
         }
         .sheet(isPresented: Binding(get: { composioAuthURL != nil }, set: { if !$0 { composioAuthURL = nil } })) {
             if let url = composioAuthURL {
-                ComposioAuthSheet(url: url) { composioAuthURL = nil }
+                ComposioAuthSheet(url: url) {
+                    composioAuthURL = nil
+                    withAnimation {
+                        isProcessing = false
+                        activeTool = nil
+                    }
+                }
             }
         }
         .onAppear {
@@ -384,6 +390,8 @@ struct MainView: View {
         }
 
         socketClient.onReceiveToolCall = { toolCallContent in
+            // If composio auth sheet is open, auth completed — close it
+            DispatchQueue.main.async { self.composioAuthURL = nil }
             // Format tool arguments as details string
             let argsDetails = toolCallContent.toolArgs.map { "\($0.key): \($0.value.description)" }.joined(separator: "\n")
             appContext.reasoningSteps.append(
@@ -571,6 +579,7 @@ struct MainView: View {
     }
 
     private func finishProcessing(response: String) {
+        composioAuthURL = nil
         withAnimation {
             isProcessing = false
             activeTool = nil
