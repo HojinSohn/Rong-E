@@ -1,7 +1,6 @@
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use thiserror::Error;
 use tokio::sync::mpsc;
 
@@ -88,6 +87,8 @@ pub enum ToolError {
     Io(#[from] std::io::Error),
     #[error("Command failed: {0}")]
     CommandFailed(String),
+    #[error("{0}")]
+    Other(String),
 }
 
 // ── Calculator ──
@@ -251,165 +252,336 @@ end tell"#,
     }
 }
 
-// ── Memory Tools ──
+use std::sync::Arc;
+use crate::graph_memory::GraphMemory;
 
-pub fn default_memory_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".ronge")
-        .join("memory")
-        .join("memory.md")
+// ── Graph Memory Tools ──
+
+// AddMemoryNode
+
+#[derive(Clone)]
+pub struct AddMemoryNode {
+    pub graph: Arc<GraphMemory>,
 }
 
-// ReadMemory
-
-#[derive(Deserialize, Serialize, Clone)]
-pub struct ReadMemory {
-    #[serde(skip)]
-    pub path: PathBuf,
-}
-
-impl ReadMemory {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
-    }
-}
-
-impl Tool for ReadMemory {
-    const NAME: &'static str = "read_memory";
-    type Args = EmptyArgs;
-    type Output = String;
-    type Error = ToolError;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "read_memory".to_string(),
-            description: "Read the persistent memory file. Use to recall stored information about the user.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        }
-    }
-
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        match tokio::fs::read_to_string(&self.path).await {
-            Ok(content) if content.trim().is_empty() => Ok("No memories saved yet.".to_string()),
-            Ok(content) => Ok(content),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Ok("No memories saved yet.".to_string())
-            }
-            Err(e) => Err(ToolError::Io(e)),
-        }
-    }
-}
-
-// SaveToMemory
-
-#[derive(Deserialize, Serialize, Clone)]
-pub struct SaveToMemory {
-    #[serde(skip)]
-    pub path: PathBuf,
-}
-
-impl SaveToMemory {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
+impl AddMemoryNode {
+    pub fn new(graph: Arc<GraphMemory>) -> Self {
+        Self { graph }
     }
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct SaveToMemoryArgs {
-    content: String,
+pub struct AddMemoryNodeArgs {
+    pub node_type: String,
+    pub content: String,
+    pub tags: Vec<String>,
+    pub related_to: Option<Vec<String>>,
 }
 
-impl Tool for SaveToMemory {
-    const NAME: &'static str = "save_to_memory";
-    type Args = SaveToMemoryArgs;
+impl Tool for AddMemoryNode {
+    const NAME: &'static str = "add_memory_node";
+    type Args = AddMemoryNodeArgs;
     type Output = String;
     type Error = ToolError;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
-            name: "save_to_memory".to_string(),
-            description: "Replace the entire memory file with new content. Use to reorganize or rewrite memory.".to_string(),
+            name: "add_memory_node".to_string(),
+            description: "Store a new piece of information as a typed, tagged graph node. Returns the node ID.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "content": { "type": "string", "description": "Full markdown content to save (replaces existing)" }
+                    "node_type": {
+                        "type": "string",
+                        "enum": ["preference", "person", "project", "event", "fact", "context"],
+                        "description": "Category of this memory"
+                    },
+                    "content": { "type": "string", "description": "The memory text to store" },
+                    "tags": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Keywords for retrieval, e.g. [\"rust\", \"deadline\", \"work\"]"
+                    },
+                    "related_to": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional IDs of existing nodes to link with related_to edges"
+                    }
                 },
-                "required": ["content"]
+                "required": ["node_type", "content", "tags"]
             }),
         }
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        if let Some(parent) = self.path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+        let graph = Arc::clone(&self.graph);
+        let node_type = args.node_type.clone();
+        let content = args.content.clone();
+        let tags = args.tags.clone();
+        let related_to = args.related_to.clone();
+        let id = tokio::task::spawn_blocking(move || {
+            graph.add_node(&node_type, &content, &tags)
+        })
+        .await
+        .map_err(|e| ToolError::Other(e.to_string()))?
+        .map_err(|e| ToolError::Other(e.to_string()))?;
+
+        if let Some(related_ids) = related_to {
+            let graph2 = Arc::clone(&self.graph);
+            let id2 = id.clone();
+            tokio::task::spawn_blocking(move || {
+                for rel_id in &related_ids {
+                    let _ = graph2.link_nodes(&id2, rel_id, "related_to");
+                }
+            })
+            .await
+            .ok();
         }
-        tokio::fs::write(&self.path, &args.content).await?;
-        Ok(format!("Saved to memory ({} characters).", args.content.len()))
+        Ok(format!("Saved. Node ID: {}", id))
     }
 }
 
-// AppendToMemory
+// QueryMemories
 
-#[derive(Deserialize, Serialize, Clone)]
-pub struct AppendToMemory {
-    #[serde(skip)]
-    pub path: PathBuf,
+#[derive(Clone)]
+pub struct QueryMemories {
+    pub graph: Arc<GraphMemory>,
 }
 
-impl AppendToMemory {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
+impl QueryMemories {
+    pub fn new(graph: Arc<GraphMemory>) -> Self {
+        Self { graph }
     }
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct AppendToMemoryArgs {
-    content: String,
+pub struct QueryMemoriesArgs {
+    pub keywords: Vec<String>,
+    pub node_type: Option<String>,
+    pub limit: Option<usize>,
 }
 
-impl Tool for AppendToMemory {
-    const NAME: &'static str = "append_to_memory";
-    type Args = AppendToMemoryArgs;
+impl Tool for QueryMemories {
+    const NAME: &'static str = "query_memories";
+    type Args = QueryMemoriesArgs;
     type Output = String;
     type Error = ToolError;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
-            name: "append_to_memory".to_string(),
-            description: "Append new content to the memory file without overwriting existing content.".to_string(),
+            name: "query_memories".to_string(),
+            description: "Search memory nodes by keyword tags. Returns matching nodes with their IDs.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "content": { "type": "string", "description": "Content to append to memory" }
+                    "keywords": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Tags to search for"
+                    },
+                    "node_type": {
+                        "type": "string",
+                        "description": "Optional filter by type"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results (default 10)"
+                    }
                 },
-                "required": ["content"]
+                "required": ["keywords"]
             }),
         }
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        if let Some(parent) = self.path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+        let graph = Arc::clone(&self.graph);
+        let keywords = args.keywords;
+        let node_type = args.node_type.clone();
+        let limit = args.limit.unwrap_or(10);
+        let nodes = tokio::task::spawn_blocking(move || {
+            graph.query_by_keywords(&keywords, node_type.as_deref(), limit)
+        })
+        .await
+        .map_err(|e| ToolError::Other(e.to_string()))?
+        .map_err(|e| ToolError::Other(e.to_string()))?;
+
+        if nodes.is_empty() {
+            return Ok("No matching memories found.".to_string());
         }
+        Ok(crate::graph_memory::format_for_prompt(&nodes))
+    }
+}
 
-        let existing = match tokio::fs::read_to_string(&self.path).await {
-            Ok(c) => c,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(e) => return Err(ToolError::Io(e)),
-        };
+// UpdateMemoryNode
 
-        let new_content = if existing.is_empty() {
-            args.content.clone()
-        } else {
-            format!("{}\n\n{}", existing, args.content)
-        };
+#[derive(Clone)]
+pub struct UpdateMemoryNode {
+    pub graph: Arc<GraphMemory>,
+}
 
-        tokio::fs::write(&self.path, &new_content).await?;
-        Ok(format!("Added to memory ({} characters appended).", args.content.len()))
+impl UpdateMemoryNode {
+    pub fn new(graph: Arc<GraphMemory>) -> Self {
+        Self { graph }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct UpdateMemoryNodeArgs {
+    pub id: String,
+    pub content: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub node_type: Option<String>,
+}
+
+impl Tool for UpdateMemoryNode {
+    const NAME: &'static str = "update_memory_node";
+    type Args = UpdateMemoryNodeArgs;
+    type Output = String;
+    type Error = ToolError;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "update_memory_node".to_string(),
+            description: "Patch an existing memory node by ID. Use instead of creating duplicates.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Node ID to update" },
+                    "content": { "type": "string" },
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "node_type": { "type": "string" }
+                },
+                "required": ["id"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let graph = Arc::clone(&self.graph);
+        let id = args.id.clone();
+        let content = args.content.clone();
+        let tags = args.tags.clone();
+        let node_type = args.node_type.clone();
+        tokio::task::spawn_blocking(move || {
+            graph.update_node(
+                &id,
+                content.as_deref(),
+                tags.as_deref(),
+                node_type.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| ToolError::Other(e.to_string()))?
+        .map_err(|e| ToolError::Other(e.to_string()))?;
+        Ok("Memory node updated.".to_string())
+    }
+}
+
+// LinkMemories
+
+#[derive(Clone)]
+pub struct LinkMemories {
+    pub graph: Arc<GraphMemory>,
+}
+
+impl LinkMemories {
+    pub fn new(graph: Arc<GraphMemory>) -> Self {
+        Self { graph }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct LinkMemoriesArgs {
+    pub from_id: String,
+    pub to_id: String,
+    pub relationship: String,
+}
+
+impl Tool for LinkMemories {
+    const NAME: &'static str = "link_memories";
+    type Args = LinkMemoriesArgs;
+    type Output = String;
+    type Error = ToolError;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "link_memories".to_string(),
+            description: "Create a directed relationship edge between two memory nodes.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "from_id": { "type": "string" },
+                    "to_id": { "type": "string" },
+                    "relationship": {
+                        "type": "string",
+                        "description": "e.g. related_to, part_of, depends_on, contradicts"
+                    }
+                },
+                "required": ["from_id", "to_id", "relationship"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let graph = Arc::clone(&self.graph);
+        let from_id = args.from_id.clone();
+        let to_id = args.to_id.clone();
+        let relationship = args.relationship.clone();
+        tokio::task::spawn_blocking(move || {
+            graph.link_nodes(&from_id, &to_id, &relationship)
+        })
+        .await
+        .map_err(|e| ToolError::Other(e.to_string()))?
+        .map_err(|e| ToolError::Other(e.to_string()))?;
+        Ok(format!("Linked {} → {} as {}.", args.from_id, args.to_id, args.relationship))
+    }
+}
+
+// DeleteMemoryNode
+
+#[derive(Clone)]
+pub struct DeleteMemoryNode {
+    pub graph: Arc<GraphMemory>,
+}
+
+impl DeleteMemoryNode {
+    pub fn new(graph: Arc<GraphMemory>) -> Self {
+        Self { graph }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct DeleteMemoryNodeArgs {
+    pub id: String,
+}
+
+impl Tool for DeleteMemoryNode {
+    const NAME: &'static str = "delete_memory_node";
+    type Args = DeleteMemoryNodeArgs;
+    type Output = String;
+    type Error = ToolError;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "delete_memory_node".to_string(),
+            description: "Remove a memory node and all its edges.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Node ID to delete" }
+                },
+                "required": ["id"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let graph = Arc::clone(&self.graph);
+        let id = args.id.clone();
+        tokio::task::spawn_blocking(move || graph.delete_node(&id))
+            .await
+            .map_err(|e| ToolError::Other(e.to_string()))?
+            .map_err(|e| ToolError::Other(e.to_string()))?;
+        Ok("Memory node deleted.".to_string())
     }
 }
