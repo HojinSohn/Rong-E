@@ -11,6 +11,7 @@ mod mcp_proxy;
 mod routes;
 mod state;
 mod tools;
+mod graph_memory;
 
 use state::AppState;
 

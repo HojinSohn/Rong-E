@@ -22,4 +22,6 @@ dirs = "6"
 reqwest = { version = "0.13", features = ["json", "form", "default-tls"] }
 urlencoding = "2"
 rand = "0.8"
+rusqlite = { version = "0.31", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
