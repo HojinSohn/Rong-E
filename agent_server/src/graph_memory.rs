@@ -32,6 +32,61 @@ pub struct GraphMemory {
     conn: Arc<Mutex<Connection>>,
 }
 
+const STOP_WORDS: &[&str] = &[
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "can", "to", "of", "in", "on", "at", "by",
+    "for", "with", "about", "and", "but", "or", "not", "no", "i", "me",
+    "my", "we", "our", "you", "your", "he", "she", "it", "its", "they",
+    "what", "which", "who", "how", "when", "where", "why", "this", "that",
+    "there", "here", "just", "also", "so", "if", "as", "up", "out",
+];
+
+pub fn extract_keywords(text: &str) -> Vec<String> {
+    use std::collections::HashSet;
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() > 2 && !STOP_WORDS.contains(w))
+        .map(|w| w.to_string())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+pub fn format_for_prompt(nodes: &[MemoryNode]) -> String {
+    if nodes.is_empty() {
+        return String::new();
+    }
+    nodes
+        .iter()
+        .map(|n| {
+            format!(
+                "[{}] {} — Tags: {} — ID: {}",
+                n.node_type,
+                n.content,
+                n.tags.join(", "),
+                n.id
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn retrieve_relevant_memories(query: &str, graph: &GraphMemory) -> String {
+    let keywords = extract_keywords(query);
+    if keywords.is_empty() {
+        return String::new();
+    }
+    match graph.query_by_keywords(&keywords, None, 15) {
+        Ok(nodes) if nodes.is_empty() => String::new(),
+        Ok(nodes) => format!("### Relevant Memories\n\n{}", format_for_prompt(&nodes)),
+        Err(e) => {
+            eprintln!("⚠️ Memory retrieval error: {}", e);
+            String::new()
+        }
+    }
+}
+
 impl GraphMemory {
     pub fn open(path: PathBuf) -> rusqlite::Result<Self> {
         if let Some(parent) = path.parent() {
@@ -229,6 +284,67 @@ impl GraphMemory {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(nodes)
     }
+
+    pub fn query_by_keywords(
+        &self,
+        keywords: &[String],
+        node_type_filter: Option<&str>,
+        limit: usize,
+    ) -> rusqlite::Result<Vec<MemoryNode>> {
+        if keywords.is_empty() {
+            return Ok(vec![]);
+        }
+        let conn = self.conn();
+        let placeholders: Vec<String> = keywords.iter().map(|_| "?".to_string()).collect();
+        let in_clause = placeholders.join(",");
+        let type_filter_clause = if node_type_filter.is_some() {
+            "AND n.node_type = ?"
+        } else {
+            ""
+        };
+        let sql = format!(
+            "SELECT n.id, n.node_type, n.content, n.tags, n.created_at, n.updated_at,
+                    COUNT(*) as cnt
+             FROM nodes n
+             JOIN node_tags nt ON nt.node_id = n.id
+             WHERE nt.tag IN ({}) {}
+             GROUP BY n.id
+             ORDER BY cnt DESC
+             LIMIT ?",
+            in_clause, type_filter_clause
+        );
+        let keywords_owned: Vec<String> = keywords.to_vec();
+        let limit_val = limit as i64;
+        let mut stmt = conn.prepare(&sql)?;
+        let nodes = stmt
+            .query_map(
+                rusqlite::params_from_iter(
+                    keywords_owned
+                        .iter()
+                        .map(|k| k as &dyn rusqlite::ToSql)
+                        .chain(
+                            node_type_filter
+                                .iter()
+                                .map(|nt| nt as &dyn rusqlite::ToSql),
+                        )
+                        .chain(std::iter::once(&limit_val as &dyn rusqlite::ToSql)),
+                ),
+                |row| {
+                    let tags_json: String = row.get(3)?;
+                    let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+                    Ok(MemoryNode {
+                        id: row.get(0)?,
+                        node_type: row.get(1)?,
+                        content: row.get(2)?,
+                        tags,
+                        created_at: row.get(4)?,
+                        updated_at: row.get(5)?,
+                    })
+                },
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(nodes)
+    }
 }
 
 #[cfg(test)]
@@ -315,5 +431,46 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM edges WHERE from_id = ?1 AND to_id = ?2", params![a, b], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_query_by_keywords_finds_matching_node() {
+        let g = temp_graph();
+        g.add_node("project", "Working on Rong-E in Rust", &["rust".to_string(), "project".to_string()]).unwrap();
+        g.add_node("preference", "Likes dark mode", &["ui".to_string()]).unwrap();
+        let results = g.query_by_keywords(&["rust".to_string()], None, 10).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].node_type, "project");
+    }
+
+    #[test]
+    fn test_query_ranks_by_match_count() {
+        let g = temp_graph();
+        g.add_node("fact", "Node with one tag", &["rust".to_string()]).unwrap();
+        g.add_node("fact", "Node with two tags", &["rust".to_string(), "project".to_string()]).unwrap();
+        let results = g.query_by_keywords(
+            &["rust".to_string(), "project".to_string()], None, 10
+        ).unwrap();
+        assert_eq!(results[0].content, "Node with two tags");
+    }
+
+    #[test]
+    fn test_extract_keywords_drops_stop_words() {
+        let kw = extract_keywords("what is the best way to build this");
+        assert!(!kw.contains(&"the".to_string()));
+        assert!(!kw.contains(&"is".to_string()));
+        assert!(kw.contains(&"best".to_string()) || kw.contains(&"build".to_string()));
+    }
+
+    #[test]
+    fn test_format_for_prompt_empty_returns_empty() {
+        assert_eq!(format_for_prompt(&[]), String::new());
+    }
+
+    #[test]
+    fn test_retrieve_returns_empty_on_no_match() {
+        let g = temp_graph();
+        let result = retrieve_relevant_memories("hello world", &g);
+        assert_eq!(result, String::new());
     }
 }
