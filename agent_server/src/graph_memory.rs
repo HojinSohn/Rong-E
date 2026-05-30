@@ -123,6 +123,90 @@ impl GraphMemory {
         }
     }
 
+    pub fn add_node(
+        &self,
+        node_type: &str,
+        content: &str,
+        tags: &[String],
+    ) -> rusqlite::Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().timestamp();
+        let tags_json = serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string());
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO nodes (id, node_type, content, tags, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, node_type, content, tags_json, now, now],
+        )?;
+        for tag in tags {
+            conn.execute(
+                "INSERT INTO node_tags (node_id, tag) VALUES (?1, ?2)",
+                params![id, tag.to_lowercase()],
+            )?;
+        }
+        Ok(id)
+    }
+
+    pub fn update_node(
+        &self,
+        id: &str,
+        content: Option<&str>,
+        tags: Option<&[String]>,
+        node_type: Option<&str>,
+    ) -> rusqlite::Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        let conn = self.conn();
+        if let Some(c) = content {
+            conn.execute(
+                "UPDATE nodes SET content = ?1, updated_at = ?2 WHERE id = ?3",
+                params![c, now, id],
+            )?;
+        }
+        if let Some(nt) = node_type {
+            conn.execute(
+                "UPDATE nodes SET node_type = ?1, updated_at = ?2 WHERE id = ?3",
+                params![nt, now, id],
+            )?;
+        }
+        if let Some(t) = tags {
+            let tags_json = serde_json::to_string(t).unwrap_or_else(|_| "[]".to_string());
+            conn.execute(
+                "UPDATE nodes SET tags = ?1, updated_at = ?2 WHERE id = ?3",
+                params![tags_json, now, id],
+            )?;
+            conn.execute("DELETE FROM node_tags WHERE node_id = ?1", params![id])?;
+            for tag in t {
+                conn.execute(
+                    "INSERT INTO node_tags (node_id, tag) VALUES (?1, ?2)",
+                    params![id, tag.to_lowercase()],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn delete_node(&self, id: &str) -> rusqlite::Result<()> {
+        let conn = self.conn();
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
+        conn.execute("DELETE FROM nodes WHERE id = ?1", params![id])?;
+        conn.execute("DELETE FROM node_tags WHERE node_id = ?1", params![id])?;
+        conn.execute("DELETE FROM edges WHERE from_id = ?1 OR to_id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn link_nodes(
+        &self,
+        from_id: &str,
+        to_id: &str,
+        relationship: &str,
+    ) -> rusqlite::Result<()> {
+        self.conn().execute(
+            "INSERT OR IGNORE INTO edges (from_id, to_id, relationship) VALUES (?1, ?2, ?3)",
+            params![from_id, to_id, relationship],
+        )?;
+        Ok(())
+    }
+
     pub fn all_nodes(&self) -> rusqlite::Result<Vec<MemoryNode>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
@@ -185,5 +269,51 @@ mod tests {
         let nodes = g.all_nodes().unwrap();
         assert_eq!(nodes.len(), 2);
         assert!(nodes.iter().all(|n| n.tags.contains(&"legacy".to_string())));
+    }
+
+    #[test]
+    fn test_add_node_returns_id() {
+        let g = temp_graph();
+        let id = g.add_node("preference", "Likes dark mode", &["ui".to_string()]).unwrap();
+        assert!(!id.is_empty());
+        let nodes = g.all_nodes().unwrap();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].content, "Likes dark mode");
+        assert_eq!(nodes[0].tags, vec!["ui"]);
+    }
+
+    #[test]
+    fn test_update_node_content() {
+        let g = temp_graph();
+        let id = g.add_node("fact", "Old content", &["tag1".to_string()]).unwrap();
+        g.update_node(&id, Some("New content"), None, None).unwrap();
+        let nodes = g.all_nodes().unwrap();
+        assert_eq!(nodes[0].content, "New content");
+    }
+
+    #[test]
+    fn test_delete_node_removes_tags() {
+        let g = temp_graph();
+        let id = g.add_node("fact", "Will be deleted", &["tmp".to_string()]).unwrap();
+        g.delete_node(&id).unwrap();
+        assert!(g.all_nodes().unwrap().is_empty());
+        let conn = g.conn.lock().unwrap();
+        let tag_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM node_tags WHERE node_id = ?1", params![id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(tag_count, 0);
+    }
+
+    #[test]
+    fn test_link_nodes_creates_edge() {
+        let g = temp_graph();
+        let a = g.add_node("project", "Rong-E", &["rust".to_string()]).unwrap();
+        let b = g.add_node("event", "Deadline 2026-06-01", &["deadline".to_string()]).unwrap();
+        g.link_nodes(&a, &b, "depends_on").unwrap();
+        let conn = g.conn.lock().unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM edges WHERE from_id = ?1 AND to_id = ?2", params![a, b], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
     }
 }
