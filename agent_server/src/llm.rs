@@ -1,6 +1,6 @@
 use crate::tools::{
-    AppendToMemory, Calculator, NotifyingTool, OpenApplication, OpenChromeTab,
-    ReadMemory, SaveToMemory, ToolEventSender,
+    AddMemoryNode, Calculator, DeleteMemoryNode, LinkMemories, NotifyingTool,
+    OpenApplication, OpenChromeTab, QueryMemories, ToolEventSender, UpdateMemoryNode,
 };
 use rig::{
     completion::Chat,
@@ -10,6 +10,13 @@ use rig::{
 };
 use rig::client::CompletionClient;
 use rig::client::ProviderClient;
+
+const MEMORY_CHECK_IN: &str = "\
+### Memory Check-In (required)
+After responding, review this conversation turn. If the user shared anything worth \
+remembering (preferences, facts, project context, people, dates, decisions), call \
+add_memory_node immediately. If an existing memory is now outdated, call \
+update_memory_node. If nothing new was shared, do nothing.";
 
 const SYSTEM_PROMPT_TEMPLATE: &str = include_str!("../prompts/system_prompt.txt");
 
@@ -25,8 +32,8 @@ pub async fn call_llm(
     base64_image: Option<String>,
     tool_tx: ToolEventSender,
     user_name: Option<String>,
+    graph_memory: std::sync::Arc<crate::graph_memory::GraphMemory>,
 ) -> Result<String, String> {
-    let memory_path = crate::tools::default_memory_path();
 
     let user_name = user_name
         .filter(|n| !n.is_empty())
@@ -43,6 +50,23 @@ pub async fn call_llm(
         format!("{}\n\n{}", base_prompt, mode_prompt)
     } else {
         base_prompt
+    };
+
+    let memory_context = {
+        let g = std::sync::Arc::clone(&graph_memory);
+        let q = query.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::graph_memory::retrieve_relevant_memories(&q, &g)
+        })
+        .await
+        .unwrap_or_default()
+    };
+
+    // Shadow final_prompt to append memory context and mandatory check-in instruction
+    let final_prompt = if memory_context.is_empty() {
+        format!("{}\n\n{}", final_prompt, MEMORY_CHECK_IN)
+    } else {
+        format!("{}\n\n{}\n\n{}", final_prompt, memory_context, MEMORY_CHECK_IN)
     };
 
     println!("🧠 Final system prompt:\n{}", final_prompt);
@@ -71,9 +95,11 @@ pub async fn call_llm(
                 .tool(NotifyingTool { inner: Calculator, tx: tx.clone() })
                 .tool(NotifyingTool { inner: OpenApplication, tx: tx.clone() })
                 .tool(NotifyingTool { inner: OpenChromeTab, tx: tx.clone() })
-                .tool(NotifyingTool { inner: ReadMemory::new(memory_path.clone()), tx: tx.clone() })
-                .tool(NotifyingTool { inner: SaveToMemory::new(memory_path.clone()), tx: tx.clone() })
-                .tool(NotifyingTool { inner: AppendToMemory::new(memory_path.clone()), tx: tx.clone() })
+                .tool(NotifyingTool { inner: AddMemoryNode::new(std::sync::Arc::clone(&graph_memory)), tx: tx.clone() })
+                .tool(NotifyingTool { inner: QueryMemories::new(std::sync::Arc::clone(&graph_memory)), tx: tx.clone() })
+                .tool(NotifyingTool { inner: UpdateMemoryNode::new(std::sync::Arc::clone(&graph_memory)), tx: tx.clone() })
+                .tool(NotifyingTool { inner: LinkMemories::new(std::sync::Arc::clone(&graph_memory)), tx: tx.clone() })
+                .tool(NotifyingTool { inner: DeleteMemoryNode::new(std::sync::Arc::clone(&graph_memory)), tx: tx.clone() })
                 .preamble(&final_prompt);
             for (tools, peer) in proxied_mcp_tool_sets {
                 builder = builder.rmcp_tools(tools, peer);
