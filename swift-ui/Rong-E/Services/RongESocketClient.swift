@@ -34,7 +34,7 @@ struct AgentMessage: Codable {
         case "tool_result":
             let val = try container.decode(ToolResultContent.self, forKey: .content)
             content = .toolResult(val)
-        case "credentials_success", "credentials_error", "credentials_revoked", "oauth_url", "session_token", "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error",
+        case "error", "mcp_sync_success", "mcp_sync_error", "session_reset", "llm_set_success", "llm_set_error",
              "openrouter_oauth_url", "openrouter_oauth_success", "openrouter_oauth_error", "builtin_warning":
             // Handle simple string content for status messages
             if let stringContent = try? container.decode(String.self, forKey: .content) {
@@ -157,12 +157,6 @@ struct ImageData: Codable {
     let author: String?
 }
 
-enum CredentialDataType: String {
-    case apiKey = "api_key"
-    case revoke_credentials = "revoke_credentials"
-    case mcpConfig = "mcp_config"
-}
-
 struct ChatPayload: Codable {
     let text: String
     let mode: String
@@ -196,9 +190,6 @@ class SocketClient: ObservableObject, @unchecked Sendable {
     var onReceiveImages: (([ImageData]) -> Void)?
     var onReceiveWidgets: (([ChatWidgetData]) -> Void)?
     var onDisconnect: ((String) -> Void)?
-    var onReceivedCredentialsSuccess: ((String) -> Void)?
-    var onCredentialsError: ((String) -> Void)?
-    var onOAuthURL: ((String) -> Void)?
     var onMCPSyncResult: ((Bool, String?) -> Void)?
     var onMCPServerStatus: (([MCPServerStatusInfo]) -> Void)?
     var onSessionReset: (() -> Void)?
@@ -208,7 +199,6 @@ class SocketClient: ObservableObject, @unchecked Sendable {
     var onMemoryContent: ((String) -> Void)?
     var onMemorySaved: ((Bool, String) -> Void)?  // (success, message)
     var onBuiltinWarning: ((String) -> Void)?  // server name
-    var onSessionToken: ((String) -> Void)?
 
     // OpenRouter OAuth
     var onOpenRouterOAuthURL: ((String) -> Void)?
@@ -417,26 +407,6 @@ class SocketClient: ObservableObject, @unchecked Sendable {
                     print("🛠 Tool Result: \(content.toolName)")
                     self.onReceiveToolOutput?(content)
                 }
-            case "credentials_success":
-                if case .response(let content) = parsedMsg.content {
-                     self.onReceivedCredentialsSuccess?(content.text)
-                }
-            case "credentials_error":
-                if case .response(let content) = parsedMsg.content {
-                    self.onCredentialsError?(content.text)
-                }
-            case "credentials_revoked":
-                if case .response(let content) = parsedMsg.content {
-                    self.onCredentialsError?(content.text)
-                }
-            case "session_token":
-                if case .response(let content) = parsedMsg.content {
-                    self.onSessionToken?(content.text)
-                }
-            case "oauth_url":
-                if case .response(let content) = parsedMsg.content {
-                    self.onOAuthURL?(content.text)
-                }
             case "mcp_sync_success":
                 if case .response(let content) = parsedMsg.content {
                     self.onMCPSyncResult?(true, content.text)
@@ -503,17 +473,6 @@ class SocketClient: ObservableObject, @unchecked Sendable {
                     print("❌ Send Error: \(error)")
                     DispatchQueue.main.async { self.isConnected = false }
                 }
-            }
-        }
-    }
-
-    func sendCredentials(_ dataType: CredentialDataType, content: String) {
-        let json: [String: String] = ["data_type": dataType.rawValue, "content": content]
-        if let jsonData = try? JSONEncoder().encode(json),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            let message = URLSessionWebSocketTask.Message.string(jsonString)
-            webSocketTask?.send(message) { error in
-                if let error = error { print("❌ Send Error: \(error)") }
             }
         }
     }
@@ -594,83 +553,6 @@ class SocketClient: ObservableObject, @unchecked Sendable {
         }
     }
 
-    func sendSetBackendUrl(_ url: String) {
-        let json: [String: String] = ["data_type": "set_backend_url", "url": url]
-        if let jsonData = try? JSONEncoder().encode(json),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            print("📤 Setting backend URL: \(url)")
-            let message = URLSessionWebSocketTask.Message.string(jsonString)
-            webSocketTask?.send(message) { error in
-                if let error = error { print("❌ Set Backend URL Send Error: \(error)") }
-            }
-        }
-    }
-
-    func sendStartOAuth() {
-        let json: [String: String] = ["data_type": "start_oauth"]
-        if let jsonData = try? JSONEncoder().encode(json),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            print("📤 Starting OAuth flow via backend")
-            let message = URLSessionWebSocketTask.Message.string(jsonString)
-            webSocketTask?.send(message) { error in
-                if let error = error { print("❌ Start OAuth Send Error: \(error)") }
-            }
-        }
-    }
-
-    func sendRestoreSession(token: String) {
-        let json: [String: String] = ["data_type": "restore_session", "session_token": token]
-        if let jsonData = try? JSONEncoder().encode(json),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            print("📤 Restoring Google session")
-            let message = URLSessionWebSocketTask.Message.string(jsonString)
-            webSocketTask?.send(message) { error in
-                if let error = error { print("❌ Restore Session Send Error: \(error)") }
-            }
-        }
-    }
-
-    func sendGetSheetTabs(spreadsheetId: String) {
-        let json: [String: String] = [
-            "data_type": "get_sheet_tabs",
-            "spreadsheet_id": spreadsheetId
-        ]
-        if let jsonData = try? JSONEncoder().encode(json),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            print("📤 Requesting sheet tabs for: \(spreadsheetId)")
-            let message = URLSessionWebSocketTask.Message.string(jsonString)
-            webSocketTask?.send(message) { error in
-                if let error = error { print("❌ Get Sheet Tabs Send Error: \(error)") }
-            }
-        }
-    }
-
-    func sendSpreadsheetConfigs(_ configs: [SpreadsheetConfig]) {
-        // Convert to JSON-serializable format
-        let configDicts: [[String: String]] = configs.map { config in
-            [
-                "alias": config.alias,
-                "url": config.url,
-                "sheetID": config.sheetID,
-                "selectedTab": config.selectedTab,
-                "description": config.description
-            ]
-        }
-
-        let json: [String: Any] = [
-            "data_type": "sync_spreadsheets",
-            "configs": configDicts
-        ]
-
-        if let jsonData = try? JSONSerialization.data(withJSONObject: json),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            print("📤 Syncing \(configs.count) spreadsheet config(s)")
-            let message = URLSessionWebSocketTask.Message.string(jsonString)
-            webSocketTask?.send(message) { error in
-                if let error = error { print("❌ Spreadsheet Sync Send Error: \(error)") }
-            }
-        }
-    }
 
     func requestMemory() {
         let json: [String: String] = ["data_type": "get_memory"]

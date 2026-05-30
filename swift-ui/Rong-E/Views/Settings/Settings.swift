@@ -348,9 +348,6 @@ struct GeneralSettingsView: View {
             lastAppliedProvider = context.llmProvider
             lastAppliedModel = context.llmModel
             lastAppliedApiKey = context.aiApiKey
-            
-            // Check screen capture permission status
-            context.recheckScreenCapturePermission()
         }
     }
 
@@ -754,21 +751,20 @@ struct MCPSettingsView: View {
                     .padding(8)
                     .background(Color.black.opacity(0.3))
                     .overlay(Rectangle().stroke(Color.jarvisBlue.opacity(0.3), lineWidth: 1))
-                    .onAppear {
-                        composioKeyInput = KeychainHelper.load(forKey: composioKeychainKey) ?? ""
-                    }
 
                 HStack(spacing: 8) {
                     let isConnected = configManager.serverStatuses["composio"] == .connected
                     Button(isConnected ? "DISCONNECT" : "CONNECT") {
                         if isConnected {
                             KeychainHelper.delete(forKey: composioKeychainKey)
+                            configManager.composioApiKey = ""
                             composioKeyInput = ""
                             SocketClient.shared.disconnectComposio()
                         } else {
                             let key = composioKeyInput.trimmingCharacters(in: .whitespaces)
                             guard !key.isEmpty else { return }
                             KeychainHelper.save(key, forKey: composioKeychainKey)
+                            configManager.composioApiKey = key
                             SocketClient.shared.sendComposioKey(key)
                         }
                     }
@@ -895,6 +891,9 @@ struct MCPSettingsView: View {
         }
         .padding(.bottom, 8)
         } // ScrollView
+        .onAppear {
+            composioKeyInput = configManager.composioApiKey
+        }
         .modifier(JarvisPanel())
         .fileImporter(
             isPresented: $showFileImporter,

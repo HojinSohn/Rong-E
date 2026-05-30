@@ -44,8 +44,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     AppContext.shared.addBootLog("AGENT SERVER: STARTING UP")
 
                     AppContext.shared.addBootLog("NETWORK: WEBSOCKET CONNECTED")
-                    // Set up Google Auth first (checks for existing credentials)
-                    GoogleAuthManager.shared.startupCheck()
 
                     // Restore built-in server config
                     let builtinManager = BuiltinServerManager.shared
@@ -67,8 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     AppContext.shared.addBootLog("ENGINE: SYNCING CONFIGURATION...")
                     self?.sendSavedLLMConfig()
 
-                    // Sync saved spreadsheet configs
-                    SpreadsheetConfigManager.shared.syncToPython()
+
                 }
             }
             .store(in: &cancellables)

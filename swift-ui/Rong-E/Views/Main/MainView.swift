@@ -32,11 +32,12 @@ struct MainView: View {
     @State private var expandedStepIds: Set<UUID> = []
     @State private var pendingWidgets: [ChatWidgetData] = []
 
+    // 6b. Composio OAuth link popup
+    @State private var composioAuthURL: URL? = nil
+
     // 6. Environment Objects
     @EnvironmentObject var appContext: AppContext
     @EnvironmentObject var windowCoordinator: WindowCoordinator
-    @EnvironmentObject var workflowManager: WorkflowManager
-    @EnvironmentObject var googleAuthManager: GoogleAuthManager
     @EnvironmentObject var socketClient: SocketClient
 
     // Computed property to check if server is ready (process running AND WebSocket connected)
@@ -166,6 +167,11 @@ struct MainView: View {
                         NSApplication.shared.terminate(nil)
                     }
                 )
+            }
+        }
+        .sheet(isPresented: Binding(get: { composioAuthURL != nil }, set: { if !$0 { composioAuthURL = nil } })) {
+            if let url = composioAuthURL {
+                ComposioAuthSheet(url: url) { composioAuthURL = nil }
             }
         }
         .onAppear {
@@ -363,7 +369,6 @@ struct MainView: View {
 
     private func setUpConnection() {
         setupSocketListeners()
-        setUpAuthManager()
     }
 
     private func setupSocketListeners() {
@@ -391,12 +396,25 @@ struct MainView: View {
             if let lastIndex = appContext.reasoningSteps.lastIndex(where: { $0.status == .active }) {
                 appContext.reasoningSteps[lastIndex].status = .completed
                 appContext.reasoningSteps[lastIndex].completedAt = Date()
-                // Append result to existing details or set as new details
-                let resultPreview = String(toolResultContent.result.prefix(500))
+                let resultPreview = String(toolResultContent.result.prefix(2000))
                 if let existingDetails = appContext.reasoningSteps[lastIndex].details {
                     appContext.reasoningSteps[lastIndex].details = existingDetails + "\n\n--- Result ---\n" + resultPreview
                 } else {
                     appContext.reasoningSteps[lastIndex].details = resultPreview
+                }
+            }
+            // Surface any Composio redirect/auth links as an in-app popup
+            let result = toolResultContent.result
+            if let linkRange = result.range(of: "https://connect.composio.dev/link/") {
+                let tail = result[linkRange.lowerBound...]
+                let urlStr: String
+                if let endIdx = tail.firstIndex(where: { $0 == "\"" || $0 == "\\" || $0 == " " }) {
+                    urlStr = String(tail[..<endIdx])
+                } else {
+                    urlStr = String(tail)
+                }
+                if let url = URL(string: urlStr) {
+                    DispatchQueue.main.async { composioAuthURL = url }
                 }
             }
         }
@@ -442,10 +460,6 @@ struct MainView: View {
             }
             print("⚠️ Socket disconnected: \(errorText)")
         }
-    }
-
-    private func setUpAuthManager() {
-        googleAuthManager.startupCheck()
     }
 
     private func onBeforeCaptureScreenshot() {
@@ -1218,7 +1232,7 @@ struct EnvironmentDashboard: View {
         case .starting: return "Starting"
         case .stopped: return "Offline"
         case .stopping: return "Stopping"
-        case .error(let msg): return "Error"
+        case .error: return "Error"
         }
     }
 
@@ -1372,14 +1386,6 @@ struct EnvironmentDashboard: View {
 
                         // Session Messages
                         EnvRow(icon: "text.bubble", iconColor: Color.jarvisGreen, label: "Messages", value: "\(appContext.currentSessionChatMessages.count)")
-
-                        // Google Auth
-                        EnvRow(
-                            icon: appContext.isGoogleConnected ? "checkmark.shield.fill" : "xmark.shield",
-                            iconColor: appContext.isGoogleConnected ? Color.jarvisGreen : Color.jarvisTextDim,
-                            label: "Google",
-                            value: appContext.isGoogleConnected ? "Connected" : "Not connected"
-                        )
 
                         // Active Tools Count
                         EnvRow(icon: "wrench.and.screwdriver", iconColor: Color.jarvisOrange, label: "Tools", value: "\(appContext.activeTools.count) loaded")
@@ -2634,8 +2640,6 @@ struct RongEBackground: View {
 struct HeaderView: View {
     @EnvironmentObject var appContext: AppContext
     @EnvironmentObject var windowCoordinator: WindowCoordinator
-    @EnvironmentObject var workflowManager: WorkflowManager
-    @EnvironmentObject var googleAuthManager: GoogleAuthManager
     @EnvironmentObject var socketClient: SocketClient
 
     @ObservedObject var configManager = MCPConfigManager.shared
@@ -2671,12 +2675,6 @@ struct HeaderView: View {
 
             // --- Center: Action Buttons ---
             HStack(spacing: 3) {
-                HeaderButton(
-                    icon: "icloud.fill",
-                    label: "Google",
-                    action: { windowCoordinator.openGoogleService() }
-                )
-
                 HeaderButton(
                     icon: "bolt.horizontal.fill",
                     label: "Startup",
@@ -3410,5 +3408,61 @@ struct ModernLoadingDots: View {
                 isAnimating = true
             }
         }
+    }
+}
+// MARK: - Composio OAuth popup
+
+struct ComposioAuthSheet: View {
+    let url: URL
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("COMPOSIO AUTH REQUIRED")
+                .font(.system(size: 11, design: .monospaced))
+                .tracking(2)
+                .foregroundStyle(Color.jarvisTextSecondary)
+
+            Rectangle()
+                .fill(Color.jarvisBlue.opacity(0.4))
+                .frame(height: 1)
+
+            Text("A service needs your authorization.\nClick the button below to authenticate in your browser.")
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundStyle(Color.jarvisTextPrimary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(4)
+
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "link.circle.fill")
+                    Text("Open Auth Link")
+                }
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+                .background(Color.jarvisBlue)
+                .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+
+            Text(url.absoluteString)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(Color.jarvisTextTertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 360)
+
+            Button("Dismiss") { onDismiss() }
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .buttonStyle(.plain)
+        }
+        .padding(32)
+        .background(Color.black.opacity(0.95))
+        .frame(minWidth: 420)
     }
 }

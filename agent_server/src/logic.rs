@@ -11,7 +11,6 @@ use rmcp::transport::streamable_http_client::{
 use rmcp::transport::TokioChildProcess;
 use rmcp::ServiceExt;
 use serde_json::json;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 struct BuiltinServerDef {
     name: &'static str,
@@ -277,203 +276,6 @@ async fn handle_config(
             }
         }
 
-        // ── Google OAuth via backend/ proxy ────────────────────────────────
-        "set_backend_url" => {
-            let url = data["url"].as_str().unwrap_or("").trim().to_string();
-            if !url.is_empty() {
-                println!("🌐 Backend URL set to: {}", url);
-                state.lock().await.backend_url = url;
-            }
-        }
-
-        "start_oauth" => {
-            let backend_url = state.lock().await.backend_url.clone();
-            println!("🔐 Starting Google OAuth via backend: {}", backend_url);
-
-            // Bind a loopback listener so the backend can redirect back to us.
-            let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
-                Ok(l) => l,
-                Err(e) => {
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_error", "content": format!("Could not start the local auth server: {}", e)})
-                                .to_string(),
-                        ))
-                        .await;
-                    return;
-                }
-            };
-            let port = listener.local_addr().unwrap().port();
-            let redirect_uri = format!("http://localhost:{}", port);
-
-            // Ask the backend for the Google consent URL (don't follow the redirect).
-            let no_redirect_client = match reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-            {
-                Ok(c) => c,
-                Err(e) => {
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_error", "content": format!("HTTP client error: {}", e)})
-                                .to_string(),
-                        ))
-                        .await;
-                    return;
-                }
-            };
-
-            let login_url = format!(
-                "{}/auth/google/login?redirectUri={}",
-                backend_url,
-                urlencoding::encode(&redirect_uri)
-            );
-
-            let resp = match no_redirect_client.get(&login_url).send().await {
-                Ok(r) => r,
-                Err(e) => {
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_error", "content": format!("Could not reach the authentication server. Is the backend running? ({})", e)})
-                                .to_string(),
-                        ))
-                        .await;
-                    return;
-                }
-            };
-
-            let oauth_url = match resp
-                .headers()
-                .get("location")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string())
-            {
-                Some(u) => u,
-                None => {
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_error", "content": "The authentication server did not return an OAuth URL. Check the backend is configured correctly."})
-                                .to_string(),
-                        ))
-                        .await;
-                    return;
-                }
-            };
-
-            // Send the consent URL so Swift can open it in the browser.
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "oauth_url", "content": oauth_url}).to_string(),
-                ))
-                .await;
-
-            // Wait for Google to redirect back to our loopback listener (5 min).
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(300),
-                await_google_callback(listener),
-            )
-            .await
-            {
-                Ok(Ok(login_token)) => {
-                    // Exchange the one-time login token for a long-lived JWT.
-                    let consume_url = format!("{}/auth/google/consume", backend_url);
-                    let consume_result = no_redirect_client
-                        .post(&consume_url)
-                        .json(&serde_json::json!({"token": login_token}))
-                        .send()
-                        .await;
-
-                    match consume_result {
-                        Ok(r) if r.status().is_success() => {
-                            let body: serde_json::Value =
-                                r.json().await.unwrap_or_default();
-                            let jwt = body["token"].as_str().unwrap_or("").to_string();
-                            if jwt.is_empty() {
-                                let _ = sender
-                                    .send(Message::Text(
-                                        json!({"type": "credentials_error", "content": "The authentication server did not return a session token."})
-                                            .to_string(),
-                                    ))
-                                    .await;
-                                return;
-                            }
-                            state.lock().await.google_session_token = Some(jwt.clone());
-                            // Send the JWT to Swift so it can persist it across restarts.
-                            let _ = sender
-                                .send(Message::Text(
-                                    json!({"type": "session_token", "content": jwt}).to_string(),
-                                ))
-                                .await;
-                            let _ = sender
-                                .send(Message::Text(
-                                    json!({"type": "credentials_success", "content": "Google account connected! You now have access to Gmail and Calendar."})
-                                        .to_string(),
-                                ))
-                                .await;
-                        }
-                        Ok(r) => {
-                            let status = r.status().as_u16();
-                            let _ = sender
-                                .send(Message::Text(
-                                    json!({"type": "credentials_error", "content": format!("Session exchange failed (status {}). Please try signing in again.", status)})
-                                        .to_string(),
-                                ))
-                                .await;
-                        }
-                        Err(e) => {
-                            let _ = sender
-                                .send(Message::Text(
-                                    json!({"type": "credentials_error", "content": format!("Could not reach the authentication server to complete sign-in: {}", e)})
-                                        .to_string(),
-                                ))
-                                .await;
-                        }
-                    }
-                }
-                Ok(Err(e)) => {
-                    println!("❌ Google OAuth callback error: {}", e);
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_error", "content": format!("Sign-in was not completed: {}", e)})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-                Err(_) => {
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "credentials_error", "content": "Sign-in timed out — the browser authorization wasn't completed within 5 minutes. Please try again."})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-            }
-        }
-
-        "restore_session" => {
-            let token = data["session_token"].as_str().unwrap_or("").trim().to_string();
-            if token.is_empty() {
-                state.lock().await.google_session_token = None;
-                return;
-            }
-            println!("🔄 Restoring Google session from stored JWT.");
-            state.lock().await.google_session_token = Some(token);
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "credentials_success", "content": "Google account restored."}).to_string(),
-                ))
-                .await;
-        }
-
-        "revoke_credentials" => {
-            state.lock().await.google_session_token = None;
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "credentials_revoked", "content": "Google account disconnected."}).to_string(),
-                ))
-                .await;
-        }
-
         // ── Session / memory ────────────────────────────────────────────────
         "reset_session" => {
             chat_history.clear();
@@ -544,9 +346,15 @@ async fn handle_config(
             };
 
             // Shut down all existing MCP connections before starting the new set.
+            // Composio is managed independently via set_composio — preserve it.
             {
                 let mut s = state.lock().await;
-                let to_remove: Vec<String> = s.mcp_connections.keys().cloned().collect();
+                let to_remove: Vec<String> = s
+                    .mcp_connections
+                    .keys()
+                    .filter(|name| name.as_str() != "composio")
+                    .cloned()
+                    .collect();
                 for name in to_remove {
                     if let Some(conn) = s.mcp_connections.remove(&name) {
                         println!("🛑 Stopping MCP server: {}", name);
@@ -757,38 +565,6 @@ async fn handle_config(
                 .await;
         }
 
-        "sync_spreadsheets" => {
-            let raw_configs = data["configs"].as_array().cloned().unwrap_or_default();
-            let mut configs: Vec<crate::state::SpreadsheetConfig> = Vec::new();
-            for c in &raw_configs {
-                let alias = c["alias"].as_str().unwrap_or("").to_string();
-                let sheet_id = c["sheetID"].as_str().unwrap_or("").to_string();
-                let selected_tab = c["selectedTab"].as_str().unwrap_or("").to_string();
-                let description = c["description"].as_str().unwrap_or("").to_string();
-                if !alias.is_empty() && !sheet_id.is_empty() {
-                    configs.push(crate::state::SpreadsheetConfig {
-                        alias,
-                        sheet_id,
-                        selected_tab,
-                        description,
-                    });
-                }
-            }
-            let count = configs.len();
-            println!(
-                "📊 Synced {} spreadsheet config(s): {:?}",
-                count,
-                configs.iter().map(|c| &c.alias).collect::<Vec<_>>()
-            );
-            state.lock().await.spreadsheet_configs = configs;
-            let _ = sender
-                .send(Message::Text(
-                    json!({"type": "spreadsheets_synced", "content": format!("{} spreadsheet{} synced and ready to use.", count, if count == 1 { "" } else { "s" })})
-                        .to_string(),
-                ))
-                .await;
-        }
-
         "set_builtin_servers" => {
             println!("🔧 set_builtin_servers received");
 
@@ -965,39 +741,101 @@ async fn handle_config(
                     ))
                     .await;
             } else {
-                // Connect: store key and establish HTTP/SSE connection
-                println!("🔗 Connecting to Composio MCP server");
+                // Connect via @composio/mcp stdio bridge.
+                // Composio's hosted MCP endpoint (connect.composio.dev/mcp) requires
+                // OAuth JWT, not a plain API key.  The @composio/mcp npm package handles
+                // the OAuth flow automatically (opens browser on first use, caches tokens).
+                println!("🔗 Starting Composio MCP via @composio/mcp (may open browser for OAuth)");
                 state.lock().await.composio_api_key = Some(api_key.clone());
 
-                match connect_http_mcp_server("https://mcp.composio.dev", &api_key).await {
-                    Ok(conn) => {
-                        println!(
-                            "✅ Composio MCP connected with {} tools",
-                            conn.tools.len()
-                        );
-                        state
-                            .lock()
-                            .await
-                            .mcp_connections
-                            .insert("composio".to_string(), conn);
-                        let _ = sender
-                            .send(Message::Text(
-                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "connected", "error": null}]}})
-                                    .to_string(),
-                            ))
-                            .await;
-                    }
+                let expanded_path = build_expanded_path();
+                let npx = resolve_command("npx", &expanded_path);
+
+                // mcp-remote is the OAuth-aware stdio proxy that @composio/mcp setup
+                // writes into Claude Desktop's config.  It handles the full OAuth
+                // browser flow automatically and caches tokens between sessions.
+                let mut cmd = tokio::process::Command::new(&npx);
+                cmd.args(["-y", "mcp-remote", "https://connect.composio.dev/mcp"]);
+                cmd.env("PATH", &expanded_path);
+                if !api_key.is_empty() {
+                    cmd.env("COMPOSIO_API_KEY", &api_key);
+                }
+
+                let transport = match TokioChildProcess::new(cmd) {
+                    Ok(t) => t,
                     Err(e) => {
-                        println!("❌ Failed to connect to Composio MCP: {}", e);
+                        println!("❌ Failed to spawn @composio/mcp: {}", e);
                         state.lock().await.composio_api_key = None;
                         let _ = sender
                             .send(Message::Text(
-                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "error", "error": e}]}})
+                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "error", "error": e.to_string()}]}})
                                     .to_string(),
                             ))
                             .await;
+                        return;
                     }
-                }
+                };
+
+                // Give the OAuth flow time to complete (user may need to authenticate in browser).
+                let service = match tokio::time::timeout(
+                    std::time::Duration::from_secs(120),
+                    ().serve(transport),
+                )
+                .await
+                {
+                    Ok(Ok(s)) => s,
+                    Ok(Err(e)) => {
+                        println!("❌ Composio MCP handshake failed: {:?}", e);
+                        state.lock().await.composio_api_key = None;
+                        let _ = sender
+                            .send(Message::Text(
+                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "error", "error": format!("{:?}", e)}]}})
+                                    .to_string(),
+                            ))
+                            .await;
+                        return;
+                    }
+                    Err(_) => {
+                        println!("❌ Composio MCP timed out (120s) — OAuth may not have completed");
+                        state.lock().await.composio_api_key = None;
+                        let _ = sender
+                            .send(Message::Text(
+                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "error", "error": "Timed out waiting for Composio OAuth (120s). Complete browser authentication and try again."}]}})
+                                    .to_string(),
+                            ))
+                            .await;
+                        return;
+                    }
+                };
+
+                let tool_list = match service.list_tools(Default::default()).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        println!("❌ Composio list_tools failed: {:?}", e);
+                        state.lock().await.composio_api_key = None;
+                        let _ = sender
+                            .send(Message::Text(
+                                json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "error", "error": format!("{:?}", e)}]}})
+                                    .to_string(),
+                            ))
+                            .await;
+                        return;
+                    }
+                };
+
+                println!("✅ Composio MCP connected with {} tools", tool_list.tools.len());
+                let conn = McpConnection {
+                    tools: tool_list.tools,
+                    peer: service.peer().clone(),
+                    _service: service,
+                };
+                state.lock().await.mcp_connections.insert("composio".to_string(), conn);
+                let _ = sender
+                    .send(Message::Text(
+                        json!({"type": "mcp_server_status", "content": {"servers": [{"name": "composio", "status": "connected", "error": null}]}})
+                            .to_string(),
+                    ))
+                    .await;
             }
         }
 
@@ -1142,7 +980,7 @@ async fn connect_http_mcp_server(
         if api_key.is_empty() {
             base
         } else {
-            base.auth_header(format!("Bearer {}", api_key))
+            base.auth_header(api_key)
         }
     };
 
@@ -1171,93 +1009,6 @@ async fn connect_http_mcp_server(
     };
 
     Ok(conn)
-}
-
-/// Wait for the browser to be redirected back to our loopback listener after
-/// Google OAuth.  The backend appends `?token={one_time_token}` to the URI.
-async fn await_google_callback(
-    listener: tokio::net::TcpListener,
-) -> Result<String, String> {
-    let (mut stream, peer_addr) = listener
-        .accept()
-        .await
-        .map_err(|e| format!("Did not receive a response from the browser: {}", e))?;
-
-    if !peer_addr.ip().is_loopback() {
-        return Err("Rejected non-loopback OAuth callback.".to_string());
-    }
-
-    let mut buf = vec![0u8; 8192];
-    let n = stream
-        .read(&mut buf)
-        .await
-        .map_err(|e| format!("Could not read browser response: {}", e))?;
-    let request = String::from_utf8_lossy(&buf[..n]);
-
-    let path = request
-        .lines()
-        .next()
-        .unwrap_or("")
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("");
-    let query = path.split('?').nth(1).unwrap_or("");
-
-    for param in query.split('&') {
-        if let Some(err) = param.strip_prefix("error=") {
-            let decoded = urlencoding::decode(err)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|_| err.to_string());
-            let _ = stream
-                .write_all(google_error_html().as_bytes())
-                .await;
-            return Err(format!("Sign-in was cancelled or access was denied: {}", decoded));
-        }
-    }
-
-    let token = query
-        .split('&')
-        .find(|p| p.starts_with("token="))
-        .and_then(|p| p.strip_prefix("token="))
-        .map(|t| {
-            urlencoding::decode(t)
-                .map(|d| d.to_string())
-                .unwrap_or_else(|_| t.to_string())
-        })
-        .ok_or_else(|| "No login token received from the Google callback.".to_string())?;
-
-    let _ = stream.write_all(google_success_html().as_bytes()).await;
-    Ok(token)
-}
-
-fn google_success_html() -> &'static str {
-    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n\
-     <html><head><meta charset=\"utf-8\">\
-     <style>body{font-family:-apple-system,sans-serif;background:#f5f5f7;\
-     display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}\
-     .card{background:#fff;border-radius:16px;padding:48px 40px;max-width:420px;\
-     text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08);}\
-     h2{margin:0 0 12px;color:#1d1d1f;font-size:22px;font-weight:600;}\
-     p{color:#6e6e73;font-size:15px;line-height:1.5;margin:0;}\
-     </style></head><body><div class=\"card\">\
-     <h2>Connected to Google</h2>\
-     <p>You can close this tab and return to Rong-E.</p>\
-     </div></body></html>"
-}
-
-fn google_error_html() -> &'static str {
-    "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n\
-     <html><head><meta charset=\"utf-8\">\
-     <style>body{font-family:-apple-system,sans-serif;background:#f5f5f7;\
-     display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}\
-     .card{background:#fff;border-radius:16px;padding:48px 40px;max-width:420px;\
-     text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08);}\
-     h2{margin:0 0 12px;color:#1d1d1f;font-size:22px;font-weight:600;}\
-     p{color:#6e6e73;font-size:15px;line-height:1.5;margin:0;}\
-     </style></head><body><div class=\"card\">\
-     <h2>Sign-in Cancelled</h2>\
-     <p>You can close this tab and try again from the app.</p>\
-     </div></body></html>"
 }
 
 fn build_expanded_path() -> String {

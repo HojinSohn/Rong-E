@@ -183,7 +183,6 @@ class AppContext: ObservableObject {
     @Published var response: String = ""
     @Published var isLoading: Bool = false
     @Published var shouldAnimate: Bool = false
-    @Published var isGoogleConnected: Bool = false
     @Published var isOpenRouterConnected: Bool = false
     @Published var hasRunStartupWorkflow: Bool = false
     @Published var startUpWorkFinished: Bool = false
@@ -252,9 +251,6 @@ class AppContext: ObservableObject {
     @Published var overlayWidth: CGFloat = 0
     @Published var overlayHeight: CGFloat = 0
     @Published var aiApiKey: String = ""
-    @Published var credentialsDirectory: URL = FileManager.default.temporaryDirectory // Placeholder
-    @Published var backendUrl: String = "https://api.rong-e.app"
-
     // --- Agent State ---
     @Published var reasoningSteps: [ReasoningStep] = [
         ReasoningStep(description: "Starting up", status: .active)
@@ -326,12 +322,11 @@ class AppContext: ObservableObject {
         self.overlayHeight = 160 // Replace with Constants.UI.overlayWindow.compactHeight
         self.aiApiKey = "YOUR_API_KEY" // Replace with Constants.apiKey
         
-        if let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-             self.credentialsDirectory = supportDir
-        }
-        
         loadSettings()
         setupAppTerminationObserver()
+        Task { @MainActor in
+            self.screenCapturePermissionGranted = await ScreenshotManager.checkPermission()
+        }
     }
     
 
@@ -436,7 +431,6 @@ class AppContext: ObservableObject {
         UserDefaults.standard.set(themeAccentColorName, forKey: "themeAccentColorName")
         UserDefaults.standard.set(themeChatFontColorName, forKey: "themeChatFontColorName")
         UserDefaults.standard.set(themeWindowOpacity, forKey: "themeWindowOpacity")
-        UserDefaults.standard.set(backendUrl, forKey: "backendUrl")
     }
 
     /// Save API key for a specific provider
@@ -511,9 +505,6 @@ class AppContext: ObservableObject {
         }
         if UserDefaults.standard.object(forKey: "themeWindowOpacity") != nil {
             self.themeWindowOpacity = UserDefaults.standard.double(forKey: "themeWindowOpacity")
-        }
-        if let savedBackendUrl = UserDefaults.standard.string(forKey: "backendUrl"), !savedBackendUrl.isEmpty {
-            self.backendUrl = savedBackendUrl
         }
     }
     

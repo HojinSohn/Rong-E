@@ -270,7 +270,6 @@ struct ActiveToolInfo: Codable, Identifiable {
         "read_memory": "Read from the agent's persistent knowledge base",
         "save_to_memory": "Save information to the agent's persistent knowledge base",
         "append_to_memory": "Append content to an existing memory entry",
-        "google_agent": "Gmail · Calendar · Sheets sub-agent for Google Workspace",
         "web_search": "Search the web and return results",
         "get_current_date_time": "Get the current date and time",
         "list_directory": "List contents of a directory on the local filesystem",
@@ -326,9 +325,12 @@ class MCPConfigManager: ObservableObject {
     }
 
     private let configKey = "mcp_config"
+    /// Composio API key cached at startup — avoids repeated keychain prompts on tab switches.
+    var composioApiKey: String = ""
 
     private init() {
         loadFromDefaults()
+        composioApiKey = KeychainHelper.load(forKey: "composio_api_key") ?? ""
     }
 
     /// Load config from a file URL
