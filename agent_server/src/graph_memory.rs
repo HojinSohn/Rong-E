@@ -74,17 +74,31 @@ pub fn format_for_prompt(nodes: &[MemoryNode]) -> String {
 
 pub fn retrieve_relevant_memories(query: &str, graph: &GraphMemory) -> String {
     let keywords = extract_keywords(query);
-    if keywords.is_empty() {
+
+    // Try keyword match first; fall back to most-recent nodes so generic
+    // queries like "what should I do today" still surface memory.
+    let nodes = if !keywords.is_empty() {
+        graph.query_by_keywords(&keywords, None, 15).unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    let nodes = if nodes.is_empty() {
+        match graph.all_nodes_limited(20) {
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("⚠️ Memory retrieval error: {}", e);
+                return String::new();
+            }
+        }
+    } else {
+        nodes
+    };
+
+    if nodes.is_empty() {
         return String::new();
     }
-    match graph.query_by_keywords(&keywords, None, 15) {
-        Ok(nodes) if nodes.is_empty() => String::new(),
-        Ok(nodes) => format!("### Relevant Memories\n\n{}", format_for_prompt(&nodes)),
-        Err(e) => {
-            eprintln!("⚠️ Memory retrieval error: {}", e);
-            String::new()
-        }
-    }
+    format!("### Relevant Memories\n\n{}", format_for_prompt(&nodes))
 }
 
 impl GraphMemory {
@@ -270,6 +284,30 @@ impl GraphMemory {
         )?;
         let nodes = stmt
             .query_map([], |row| {
+                let tags_json: String = row.get(3)?;
+                let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+                Ok(MemoryNode {
+                    id: row.get(0)?,
+                    node_type: row.get(1)?,
+                    content: row.get(2)?,
+                    tags,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(nodes)
+    }
+
+    pub fn all_nodes_limited(&self, limit: usize) -> rusqlite::Result<Vec<MemoryNode>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, node_type, content, tags, created_at, updated_at
+             FROM nodes ORDER BY updated_at DESC LIMIT ?1",
+        )?;
+        let limit_val = limit as i64;
+        let nodes = stmt
+            .query_map([limit_val], |row| {
                 let tags_json: String = row.get(3)?;
                 let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
                 Ok(MemoryNode {
