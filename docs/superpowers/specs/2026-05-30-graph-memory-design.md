@@ -56,7 +56,7 @@ Inserts a new node. If `related_to` is provided, creates `related_to` edges from
 
 ### `query_memories`
 **Args:** `keywords: string[]`, `node_type?: string`, `limit?: number` (default 10)  
-Queries `node_tags` for nodes whose tags intersect with `keywords`. Returns up to `limit` nodes ranked by tag-match count, formatted as a compact list. Used both by the automated pre-turn retrieval and by the LLM on demand.
+Queries `node_tags` for nodes whose tags intersect with `keywords`. Returns up to `limit` nodes ranked by tag-match count, formatted as a compact list. Callable by the LLM on demand during a turn. Note: the automated pre-turn retrieval (below) calls the same underlying SQL logic directly in Rust — not through this tool — so it doesn't consume a tool-call slot.
 
 ### `update_memory_node`
 **Args:** `id: string`, `content?: string`, `tags?: string[]`, `node_type?: string`  
@@ -118,7 +118,7 @@ The old `memory.md` is never deleted by the migration.
 | `agent_server/src/graph_memory.rs` | **New** — SQLite graph engine: schema init, CRUD operations, tag-based query, migration from flat file |
 | `agent_server/src/tools.rs` | **Replace** `ReadMemory`, `SaveToMemory`, `AppendToMemory` with `AddMemoryNode`, `QueryMemories`, `UpdateMemoryNode`, `LinkMemories`, `DeleteMemoryNode` |
 | `agent_server/src/llm.rs` | **Add** pre-turn `retrieve_relevant_memories()` call; inject `### Relevant Memories` block; append memory check-in instruction to system prompt |
-| `agent_server/src/logic.rs` | **Update** `get_memory`/`save_memory` WebSocket handlers to read/write graph; update `active_tools` list |
+| `agent_server/src/logic.rs` | **Update** `get_memory` handler to return a formatted text dump of all graph nodes (so the SwiftUI settings panel still shows memory content). `save_memory` becomes a no-op that returns a message indicating memory is now graph-managed via the agent. Update `active_tools` list. |
 | `agent_server/Cargo.toml` | **Add** `rusqlite = { version = "0.31", features = ["bundled"] }`, `uuid = { version = "1", features = ["v4"] }` |
 | `agent_server/prompts/system_prompt.txt` | **Update** memory section to describe graph tools and the always-on check-in protocol |
 
