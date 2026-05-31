@@ -11,6 +11,7 @@ mod mcp_proxy;
 mod routes;
 mod state;
 mod tools;
+mod graph_memory;
 
 use state::AppState;
 
@@ -56,18 +57,19 @@ fn main() {
 async fn async_main() {
     tracing_subscriber::fmt::init();
 
-    // Initialize State
-    let state = Arc::new(Mutex::new(AppState::new()));
+    let graph_memory = Arc::new(
+        graph_memory::GraphMemory::open(graph_memory::db_path())
+            .expect("Failed to initialize memory graph"),
+    );
 
-    // Setup Router
+    let state = Arc::new(Mutex::new(AppState::new(graph_memory)));
+
     let app = Router::new()
         .route("/ws", get(routes::ws_handler))
         .with_state(state);
 
-    // Bind to port 0 so the OS picks a guaranteed-free port
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    // Print the actual port so the Swift parent process can read it
     println!("PORT={}", port);
     println!("🚀 Rust Server listening on 127.0.0.1:{}", port);
 

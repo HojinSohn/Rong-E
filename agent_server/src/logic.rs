@@ -277,8 +277,16 @@ async fn handle_config(
         }
 
         "get_memory" => {
-            let memory_path = crate::tools::default_memory_path();
-            let content = tokio::fs::read_to_string(&memory_path).await.unwrap_or_default();
+            let graph_memory = {
+                let s = state.lock().await;
+                std::sync::Arc::clone(&s.graph_memory)
+            };
+            let content = tokio::task::spawn_blocking(move || {
+                let nodes = graph_memory.all_nodes().unwrap_or_default();
+                crate::graph_memory::format_for_prompt(&nodes)
+            })
+            .await
+            .unwrap_or_default();
             let _ = sender
                 .send(Message::Text(
                     json!({"type": "memory_content", "content": content}).to_string(),
@@ -287,34 +295,12 @@ async fn handle_config(
         }
 
         "save_memory" => {
-            let content = data["content"].as_str().unwrap_or("");
-            let memory_path = crate::tools::default_memory_path();
-            let result = async {
-                if let Some(parent) = memory_path.parent() {
-                    tokio::fs::create_dir_all(parent).await?;
-                }
-                tokio::fs::write(&memory_path, content).await
-            }
-            .await;
-            match result {
-                Ok(()) => {
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "memory_saved", "content": "Memory updated successfully."})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-                Err(e) => {
-                    println!("❌ Failed to save memory: {}", e);
-                    let _ = sender
-                        .send(Message::Text(
-                            json!({"type": "memory_error", "content": "Could not save memory notes. Please try again."})
-                                .to_string(),
-                        ))
-                        .await;
-                }
-            }
+            let _ = sender
+                .send(Message::Text(
+                    json!({"type": "memory_saved", "content": "Memory is now graph-managed. Use the AI assistant to add, update, or delete memories."})
+                        .to_string(),
+                ))
+                .await;
         }
 
         // ── MCP (user-managed servers) ──────────────────────────────────────
@@ -531,9 +517,11 @@ async fn handle_config(
                 json!({"name": "calculator", "source": "built-in", "description": "Evaluate mathematical expressions"}),
                 json!({"name": "open_application", "source": "built-in", "description": "Launch a macOS application by name"}),
                 json!({"name": "open_chrome_tab", "source": "built-in", "description": "Open a URL in Google Chrome"}),
-                json!({"name": "read_memory", "source": "built-in", "description": "Read from the agent's persistent knowledge base"}),
-                json!({"name": "save_to_memory", "source": "built-in", "description": "Save information to the agent's persistent knowledge base"}),
-                json!({"name": "append_to_memory", "source": "built-in", "description": "Append content to an existing memory entry"}),
+                json!({"name": "add_memory_node", "source": "built-in", "description": "Store a new memory node in the knowledge graph"}),
+                json!({"name": "query_memories", "source": "built-in", "description": "Search memory nodes by keyword"}),
+                json!({"name": "update_memory_node", "source": "built-in", "description": "Update an existing memory node"}),
+                json!({"name": "link_memories", "source": "built-in", "description": "Create a relationship between two memory nodes"}),
+                json!({"name": "delete_memory_node", "source": "built-in", "description": "Remove a memory node"}),
             ];
             for (server_name, conn) in &s.mcp_connections {
                 for tool in &conn.tools {
@@ -853,7 +841,7 @@ async fn handle_chat(
         return;
     }
 
-    let (api_key, model, provider, mcp_tool_sets) = {
+    let (api_key, model, provider, mcp_tool_sets, graph_memory) = {
         let s = state.lock().await;
         let key = s.api_keys.get(&s.current_provider).cloned();
         (
@@ -861,6 +849,7 @@ async fn handle_chat(
             s.current_model.clone(),
             s.current_provider.clone(),
             s.all_mcp_tools(),
+            std::sync::Arc::clone(&s.graph_memory),
         )
     };
 
@@ -896,6 +885,7 @@ async fn handle_chat(
         base64_image,
         tool_tx,
         user_name,
+        graph_memory,
     ));
 
     let llm_result = loop {
